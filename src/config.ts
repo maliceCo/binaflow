@@ -16,7 +16,10 @@ export interface BinaflowConfig {
   profiles: Record<string, AgentProfile>;
 }
 
-export function resolveProfile(config: BinaflowConfig, profileName: string): AgentProfile {
+export function resolveProfile(
+  config: Pick<BinaflowConfig, 'profiles'>,
+  profileName: string,
+): AgentProfile {
   const profile = config.profiles[profileName];
   if (!profile) throw new Error(`Unknown agent profile: ${profileName}`);
   return profile;
