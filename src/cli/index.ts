@@ -3,6 +3,10 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
+import { registerResumeCommand } from './commands/resume.js';
+import { registerRunCommand } from './commands/run.js';
+import { registerRunsCommand } from './commands/runs.js';
+import { registerShowCommand } from './commands/show.js';
 
 export function createCli(): Command {
   const cli = new Command();
@@ -10,24 +14,23 @@ export function createCli(): Command {
   cli
     .name('binaflow')
     .description('Local workflow orchestrator for coding agents')
-    .version('0.1.0');
+    .version('0.1.0')
+    .option('--config <path>', 'path to the external Binaflow config')
+    .option('--cwd <path>', 'workspace directory for the agent');
 
-  cli
-    .command('run')
-    .description('Start a workflow run')
-    .argument('<workflow>', 'workflow name')
-    .option('--objective <text>', 'objective for the workflow');
-
-  cli.command('runs').description('List persisted workflow runs');
-  cli.command('show').description('Show a persisted workflow run').argument('<run-id>', 'run ID');
-  cli
-    .command('resume')
-    .description('Resume a persisted workflow run')
-    .argument('<run-id>', 'run ID');
+  registerRunCommand(cli);
+  registerRunsCommand(cli);
+  registerShowCommand(cli);
+  registerResumeCommand(cli);
 
   return cli;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  createCli().parseAsync(process.argv);
+  createCli()
+    .parseAsync(process.argv)
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
 }
