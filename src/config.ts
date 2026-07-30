@@ -2,6 +2,7 @@ export type WorkspaceMode = 'read-only' | 'read-write';
 
 export interface AgentProfile {
   driver: string;
+  provider?: string;
   model: string;
   thinking?: string;
   tools: string[];
