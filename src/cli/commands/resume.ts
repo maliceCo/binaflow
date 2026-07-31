@@ -7,7 +7,7 @@ export function registerResumeCommand(cli: Command): void {
     .command('resume')
     .description('Resume a persisted workflow run')
     .argument('<run-id>', 'run ID')
-    .action(async (runId: string, command: Command) => {
+    .action(async (runId: string, _options: unknown, command: Command) => {
       const context = await openContext(rootOptions(command));
       try {
         const previous = await context.store.getRun(runId);

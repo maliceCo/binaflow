@@ -210,14 +210,20 @@ This hardening keeps the MVP sequential and adds no generic conditions, branchin
 
 ## Phase 6: End-To-End Verification
 
-- [ ] Create a small fixture repository for a safe `plan-build` run.
+- [x] Run the opt-in temporary fixture for a safe `plan-build` E2E run.
 - [ ] Configure a planner model and a lower-cost builder model through profiles.
-- [ ] Run a live execution when Pi credentials are available.
-- [ ] Verify planner read-only tool restrictions and builder write permissions.
-- [ ] Interrupt a run after planning and verify resume does not repeat planning.
-- [ ] Verify persisted plan artifact, step results, events, and usage display.
-- [ ] Run formatter, linting, type checks, unit tests, and relevant integration tests.
-- [ ] Update this document with verified completion status and any blockers.
+- [x] Run a live execution when Pi credentials are available.
+- [x] Verify planner read-only tool restrictions and builder write permissions.
+- [x] Interrupt a run after planning and verify resume does not repeat planning.
+- [x] Verify persisted plan artifact and step results through CLI inspection.
+- [ ] Verify persisted events and usage display.
+- [x] Run formatter, linting, type checks, unit tests, and relevant integration tests.
+- [x] Update this document with verified completion status and any blockers.
+
+E2E implementation note:
+
+- The live fixture is implemented in `test/e2e/plan-build.e2e.ts` and is excluded from the normal test suite.
+- Run it explicitly with `BINAFLOW_E2E=1`, `BINAFLOW_E2E_PROVIDER`, and `BINAFLOW_E2E_PLANNER_MODEL`; the live fixture passed with Pi and `openai-codex`.
 
 Acceptance criteria:
 
@@ -240,9 +246,11 @@ pnpm run test:integration
 
 ## Current Status
 
-Phases 0 through 5 are complete and verified. The next implementation session should begin at Phase 6 with end-to-end verification when Pi credentials are available.
+Phases 0 through 5 are complete and verified. Phase 6 has passing opt-in live E2E coverage for execution, permissions, artifacts, CLI inspection, and interruption/resume. Separate model assignments and complete event/usage inspection remain pending.
 
 ## Blockers And Decisions Log
 
-- Pi is not currently available in `PATH`; this blocks only optional live integration testing.
+- Pi 0.83.0 is available in the WSL environment; live E2E requires valid authentication for the selected provider.
 - Testing must remain intentionally minimal and value-focused. Each test must protect meaningful behavior or document an important flow.
+- Verification was executed in WSL because the Windows environment could not use its existing `node_modules` directory due to permissions.
+- Pi selected Azure when the E2E provider was omitted; specifying `BINAFLOW_E2E_PROVIDER=openai-codex` matched the configured `gpt-5.6-luna` model and the live E2E passed.

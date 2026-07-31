@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "bin": {
-    "binaflow": "dist/cli/index.js"
+    "binaflow": "dist/src/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -18,7 +18,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run --passWithNoTests --config vitest.integration.config.ts",
+    "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts",
+    "test:integration": "pnpm run test:e2e",
     "cli": "tsx src/cli/index.ts"
   },
   "dependencies": {

@@ -6,7 +6,7 @@ export function registerShowCommand(cli: Command): void {
     .command('show')
     .description('Show a persisted workflow run')
     .argument('<run-id>', 'run ID')
-    .action(async (runId: string, command: Command) => {
+    .action(async (runId: string, _options: unknown, command: Command) => {
       const context = await openContext(rootOptions(command));
       try {
         const run = await context.store.getRun(runId);
