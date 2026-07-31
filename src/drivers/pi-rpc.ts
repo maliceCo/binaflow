@@ -178,7 +178,9 @@ async function normalizePiEvent(
     return { error };
   }
   if (message.type === 'tool_execution_start' || message.type === 'tool_execution_end') {
-    await emitStatus(request, emit, `Pi ${message.type}`);
+    const tool = typeof message.toolName === 'string' ? ` tool=${message.toolName}` : '';
+    const id = typeof message.toolCallId === 'string' ? ` id=${message.toolCallId}` : '';
+    await emitStatus(request, emit, `Pi ${message.type}${tool}${id}`);
   }
   return {};
 }

@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS step_runs (
   finished_at TEXT,
   result_json TEXT,
   error_json TEXT,
+  disposition_json TEXT,
+  skip_reason_json TEXT,
   PRIMARY KEY (run_id, step_id)
 );
 

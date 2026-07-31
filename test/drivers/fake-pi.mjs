@@ -14,6 +14,8 @@ process.stdin.on('data', (chunk) => {
     buffer = buffer.slice(index + 1);
     if (command.type === 'prompt') {
       write({ id: command.id, type: 'response', command: 'prompt', success: true });
+      write({ type: 'tool_execution_start', toolName: 'read', toolCallId: 'call-1' });
+      write({ type: 'tool_execution_end', toolName: 'read', toolCallId: 'call-1' });
       write({
         type: 'message_update',
         assistantMessageEvent: { type: 'text_delta', delta: 'hello' },

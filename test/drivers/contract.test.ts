@@ -85,7 +85,7 @@ describe('PiDriver', () => {
       costUsd: 0.25,
     });
     expect(events.some((event) => event.type === 'text' && event.message === 'hello')).toBe(true);
-    expect(events.some((event) => event.type === 'status')).toBe(true);
+    expect(events.some((event) => event.message.includes('tool=read id=call-1'))).toBe(true);
   });
 
   it('reports an unavailable Pi executable as an actionable driver error', async () => {

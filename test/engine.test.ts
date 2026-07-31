@@ -76,6 +76,7 @@ function createEnvironment(driver: AgentDriver, events: NormalizedEvent[] = []) 
 function plannerResult(): AgentStepResult {
   return {
     text: JSON.stringify({
+      decision: 'build',
       summary: 'Implement the objective',
       tasks: [
         {
@@ -88,8 +89,22 @@ function plannerResult(): AgentStepResult {
       ],
       verification: ['Run the focused test'],
       risks: [],
+      clarificationQuestions: [],
     }),
     sessionId: 'planner-session',
+  };
+}
+
+function clarificationResult(): AgentStepResult {
+  return {
+    text: JSON.stringify({
+      decision: 'needs_clarification',
+      summary: 'The objective needs clarification',
+      tasks: [],
+      verification: ['Confirm the clarified behavior'],
+      risks: [],
+      clarificationQuestions: ['What behavior should change?'],
+    }),
   };
 }
 
@@ -110,6 +125,8 @@ describe('WorkflowEngine', () => {
 
     expect(run.status).toBe('completed');
     expect(driver.calls.map((call) => call.stepId)).toEqual(['plan', 'build']);
+    expect(driver.calls[0]!.prompt).toContain('Every task must be an object');
+    expect(driver.calls[0]!.prompt).toContain('For decision=build, tasks must be non-empty');
     expect(driver.calls[1]!.prompt).toContain('objective:\nAdd a useful change');
     expect(driver.calls[1]!.prompt).toContain('plan:\n{');
     expect(events.filter((event) => event.type === 'status').length).toBe(4);
@@ -134,6 +151,29 @@ describe('WorkflowEngine', () => {
     expect(driver.calls.map((call) => call.stepId)).toEqual(['plan', 'plan']);
     expect(steps.find((step) => step.stepId === 'plan')?.error?.code).toBe('PLAN_SCHEMA_INVALID');
     expect(steps.find((step) => step.stepId === 'build')?.status).toBe('skipped');
+    store.close();
+  });
+
+  it('skips the builder when the completed plan explicitly needs clarification', async () => {
+    const driver = new FakeDriver([clarificationResult()]);
+    const { engine, store } = createEnvironment(driver);
+
+    const run = await engine.execute(planBuildWorkflow, {
+      runId: 'clarification',
+      objective: 'hola',
+      profiles,
+    });
+    const steps = await store.getStepRuns('clarification');
+
+    expect(run.status).toBe('completed');
+    expect(driver.calls.map((call) => call.stepId)).toEqual(['plan']);
+    expect(steps[0]?.disposition).toEqual({
+      kind: 'stop',
+      code: 'PLAN_NEEDS_CLARIFICATION',
+      message: 'What behavior should change?',
+    });
+    expect(steps[1]?.status).toBe('skipped');
+    expect(steps[1]?.skipReason?.code).toBe('PLAN_NEEDS_CLARIFICATION');
     store.close();
   });
 

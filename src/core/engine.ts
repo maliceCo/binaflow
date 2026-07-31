@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentDriver } from './agent.js';
 import type { EventSink, NormalizedEvent } from './events.js';
-import type { ArtifactReference, AgentStepResult, StepRun, WorkflowRun } from './run.js';
+import type {
+  ArtifactReference,
+  AgentStepResult,
+  StepDisposition,
+  StepRun,
+  StepSkipReason,
+  WorkflowRun,
+} from './run.js';
 import type { RunStore } from '../storage/run-store.js';
 import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import { resolveProfile, type AgentProfile } from '../config.js';
@@ -51,9 +58,33 @@ export class WorkflowEngine {
       const existing = stepRuns.get(step.id);
       if (existing?.status === 'completed') continue;
 
-      if (step.dependsOn.some((dependency) => isBlocked(statuses.get(dependency)))) {
-        await this.skipStep(run.id, step, existing);
-        statuses.set(step.id, 'skipped');
+      const blockedDependency = step.dependsOn.find((dependency) =>
+        isBlocked(statuses.get(dependency)),
+      );
+      if (blockedDependency) {
+        const skipped = await this.skipStep(run.id, step, existing, {
+          code: 'UPSTREAM_STEP_BLOCKED',
+          message: `Dependency ${blockedDependency} did not complete successfully`,
+        });
+        stepRuns.set(step.id, skipped);
+        statuses.set(step.id, skipped.status);
+        continue;
+      }
+
+      const stoppingDependency = step.dependsOn.find(
+        (dependency) => stepRuns.get(dependency)?.disposition?.kind === 'stop',
+      );
+      if (stoppingDependency) {
+        const disposition = stepRuns.get(stoppingDependency)?.disposition;
+        const skipped = await this.skipStep(run.id, step, existing, {
+          code: disposition?.kind === 'stop' ? disposition.code : 'UPSTREAM_STEP_STOPPED',
+          message:
+            disposition?.kind === 'stop'
+              ? `Dependency ${stoppingDependency} stopped: ${disposition.message}`
+              : `Dependency ${stoppingDependency} stopped before this step`,
+        });
+        stepRuns.set(step.id, skipped);
+        statuses.set(step.id, skipped.status);
         continue;
       }
 
@@ -154,16 +185,16 @@ export class WorkflowEngine {
           this.eventSink,
           request.signal ?? new AbortController().signal,
         );
-        const outputContents = createOutputContents(step, result);
+        const stepOutput = createOutputContents(step, result);
         const savedArtifacts = await Promise.all(
-          step.outputs.map((output) =>
+          step.outputs.map((outputDefinition) =>
             this.artifactStore.write(
               run.id,
               step.id,
-              output.name,
-              output.format === 'json' ? 'json' : 'text',
-              outputContents.get(output.name) ?? result.text,
-              output.format === 'json' ? 'application/json' : 'text/plain',
+              outputDefinition.name,
+              outputDefinition.format === 'json' ? 'json' : 'text',
+              stepOutput.contents.get(outputDefinition.name) ?? result.text,
+              outputDefinition.format === 'json' ? 'application/json' : 'text/plain',
             ),
           ),
         );
@@ -173,8 +204,9 @@ export class WorkflowEngine {
           finishedAt: new Date().toISOString(),
           result: {
             ...result,
-            text: outputContents.get(step.outputs[0]?.name ?? '') ?? result.text,
+            text: stepOutput.contents.get(step.outputs[0]?.name ?? '') ?? result.text,
           },
+          ...(stepOutput.disposition ? { disposition: stepOutput.disposition } : {}),
         };
         await this.runStore.completeStep(completed, savedArtifacts);
         await this.emitStatus(run.id, step.id, `Step ${step.id} completed`);
@@ -276,20 +308,27 @@ export class WorkflowEngine {
     });
   }
 
-  private async skipStep(runId: string, step: AgentStep, existing?: StepRun): Promise<void> {
-    if (existing?.status === 'cancelled') return;
-    const pending = existing
+  private async skipStep(
+    runId: string,
+    step: AgentStep,
+    existing: StepRun | undefined,
+    reason: StepSkipReason,
+  ): Promise<StepRun> {
+    if (existing?.status === 'cancelled' || existing?.status === 'skipped') return existing;
+    const pending: StepRun = existing
       ? existing.status === 'pending'
         ? existing
-        : { ...existing, status: 'pending' as const }
-      : { runId, stepId: step.id, profile: step.profile, status: 'pending' as const, attempt: 1 };
+        : { ...existing, status: 'pending' }
+      : { runId, stepId: step.id, profile: step.profile, status: 'pending', attempt: 1 };
     if (existing?.status === 'running') {
       await this.runStore.saveStepRun({ ...existing, status: 'interrupted' });
     }
     if (existing && existing.status !== 'pending') await this.runStore.saveStepRun(pending);
     if (!existing) await this.runStore.saveStepRun(pending);
-    await this.runStore.saveStepRun({ ...pending, status: 'skipped' });
-    await this.emitStatus(runId, step.id, `Step ${step.id} skipped because a dependency failed`);
+    const skipped: StepRun = { ...pending, status: 'skipped', skipReason: reason };
+    await this.runStore.saveStepRun(skipped);
+    await this.emitStatus(runId, step.id, `Step ${step.id} skipped: ${reason.message}`);
+    return skipped;
   }
 
   private async saveRunStatus(
@@ -341,12 +380,25 @@ async function resolveInputs(
   return values;
 }
 
-function createOutputContents(step: AgentStep, result: AgentStepResult): Map<string, string> {
+function createOutputContents(
+  step: AgentStep,
+  result: AgentStepResult,
+): { contents: Map<string, string>; disposition?: StepDisposition } {
   const contents = new Map<string, string>();
+  let disposition: StepDisposition | undefined;
   for (const output of step.outputs) {
     if (output.format === 'json' && output.name === 'plan') {
       try {
-        contents.set(output.name, JSON.stringify(parseBuildPlan(JSON.parse(result.text)), null, 2));
+        const plan = parseBuildPlan(JSON.parse(result.text));
+        contents.set(output.name, JSON.stringify(plan, null, 2));
+        disposition =
+          plan.decision === 'build'
+            ? { kind: 'continue' }
+            : {
+                kind: 'stop',
+                code: 'PLAN_NEEDS_CLARIFICATION',
+                message: plan.clarificationQuestions.join(' '),
+              };
       } catch (error) {
         throw new PlannerSchemaError(
           error instanceof Error ? error.message : 'Invalid planner output',
@@ -356,7 +408,7 @@ function createOutputContents(step: AgentStep, result: AgentStepResult): Map<str
       contents.set(output.name, result.text);
     }
   }
-  return contents;
+  return { contents, ...(disposition ? { disposition } : {}) };
 }
 
 function renderPrompt(

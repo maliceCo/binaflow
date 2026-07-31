@@ -21,7 +21,17 @@ export interface StepRun {
   startedAt?: string;
   finishedAt?: string;
   result?: AgentStepResult;
+  disposition?: StepDisposition;
+  skipReason?: StepSkipReason;
   error?: StepError;
+}
+
+export type StepDisposition =
+  { kind: 'continue' } | { kind: 'stop'; code: string; message: string };
+
+export interface StepSkipReason {
+  code: string;
+  message: string;
 }
 
 export interface AgentStepResult {

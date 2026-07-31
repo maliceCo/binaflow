@@ -63,6 +63,7 @@ describe('local persistence', () => {
       startedAt: '2026-01-01T00:00:02.000Z',
       finishedAt: '2026-01-01T00:00:03.000Z',
       result: { text: planContent, sessionId: 'session-1' },
+      disposition: { kind: 'continue' },
     };
     await store.completeStep(completedStep, [artifact]);
     store.close();

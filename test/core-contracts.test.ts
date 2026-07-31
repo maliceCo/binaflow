@@ -24,6 +24,7 @@ describe('plan-build contracts', () => {
 
   it('accepts the planner contract and rejects incomplete output', () => {
     const plan = {
+      decision: 'build',
       summary: 'Add the requested behavior',
       tasks: [
         {
@@ -36,6 +37,7 @@ describe('plan-build contracts', () => {
       ],
       verification: ['Run the focused test'],
       risks: [],
+      clarificationQuestions: [],
     };
 
     expect(parseBuildPlan(plan)).toEqual(plan);

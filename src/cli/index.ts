@@ -16,7 +16,8 @@ export function createCli(): Command {
     .description('Local workflow orchestrator for coding agents')
     .version('0.1.0')
     .option('--config <path>', 'path to the external Binaflow config')
-    .option('--cwd <path>', 'workspace directory for the agent');
+    .option('--cwd <path>', 'workspace directory for the agent')
+    .option('--verbose', 'show live agent progress and text output');
 
   registerRunCommand(cli);
   registerRunsCommand(cli);

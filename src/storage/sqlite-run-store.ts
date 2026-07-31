@@ -11,6 +11,7 @@ export class SqliteRunStore implements RunStore {
     this.database = new Database(databasePath);
     this.database.pragma('foreign_keys = ON');
     this.database.exec(initialMigration);
+    this.ensureStepRunColumns();
   }
 
   close(): void {
@@ -105,16 +106,18 @@ export class SqliteRunStore implements RunStore {
     this.database
       .prepare(
         `INSERT INTO step_runs
-          (run_id, step_id, profile, status, attempt, started_at, finished_at, result_json, error_json)
-         VALUES (@runId, @stepId, @profile, @status, @attempt, @startedAt, @finishedAt, @resultJson, @errorJson)
+          (run_id, step_id, profile, status, attempt, started_at, finished_at, result_json, error_json, disposition_json, skip_reason_json)
+         VALUES (@runId, @stepId, @profile, @status, @attempt, @startedAt, @finishedAt, @resultJson, @errorJson, @dispositionJson, @skipReasonJson)
          ON CONFLICT (run_id, step_id) DO UPDATE SET
           profile = excluded.profile,
           status = excluded.status,
           attempt = excluded.attempt,
           started_at = excluded.started_at,
-          finished_at = excluded.finished_at,
-          result_json = excluded.result_json,
-          error_json = excluded.error_json`,
+           finished_at = excluded.finished_at,
+           result_json = excluded.result_json,
+           error_json = excluded.error_json,
+           disposition_json = excluded.disposition_json,
+           skip_reason_json = excluded.skip_reason_json`,
       )
       .run(row);
 
@@ -135,6 +138,15 @@ export class SqliteRunStore implements RunStore {
         externalSessionId: stepRun.result?.sessionId ?? null,
         startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
       });
+  }
+
+  private ensureStepRunColumns(): void {
+    const columns = this.database.pragma('table_info(step_runs)') as Array<{ name: string }>;
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('disposition_json'))
+      this.database.exec('ALTER TABLE step_runs ADD COLUMN disposition_json TEXT');
+    if (!names.has('skip_reason_json'))
+      this.database.exec('ALTER TABLE step_runs ADD COLUMN skip_reason_json TEXT');
   }
 }
 
@@ -158,6 +170,8 @@ interface StepRunRow {
   finished_at: string | null;
   result_json: string | null;
   error_json: string | null;
+  disposition_json: string | null;
+  skip_reason_json: string | null;
 }
 
 interface ArtifactRow {
@@ -206,6 +220,8 @@ function toStepRunRow(stepRun: StepRun): Record<string, unknown> {
     finishedAt: stepRun.finishedAt ?? null,
     resultJson: stepRun.result ? JSON.stringify(stepRun.result) : null,
     errorJson: stepRun.error ? JSON.stringify(stepRun.error) : null,
+    dispositionJson: stepRun.disposition ? JSON.stringify(stepRun.disposition) : null,
+    skipReasonJson: stepRun.skipReason ? JSON.stringify(stepRun.skipReason) : null,
   };
 }
 
@@ -220,6 +236,8 @@ function fromStepRunRow(row: StepRunRow): StepRun {
     ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
     ...(row.result_json ? { result: JSON.parse(row.result_json) } : {}),
     ...(row.error_json ? { error: JSON.parse(row.error_json) } : {}),
+    ...(row.disposition_json ? { disposition: JSON.parse(row.disposition_json) } : {}),
+    ...(row.skip_reason_json ? { skipReason: JSON.parse(row.skip_reason_json) } : {}),
   };
 }
 
