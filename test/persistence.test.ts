@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import type { StepRun, WorkflowRun } from '../src/core/run.js';
+import type { NormalizedEvent } from '../src/core/events.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 
 const temporaryDirectories: string[] = [];
@@ -66,6 +67,14 @@ describe('local persistence', () => {
       disposition: { kind: 'continue' },
     };
     await store.completeStep(completedStep, [artifact]);
+    const event: NormalizedEvent = {
+      runId: run.id,
+      stepId: 'plan',
+      type: 'status',
+      message: 'Plan completed',
+      occurredAt: '2026-01-01T00:00:03.000Z',
+    };
+    await store.saveEvent(event);
     store.close();
 
     const reopenedStore = new SqliteRunStore(databasePath);
@@ -77,6 +86,7 @@ describe('local persistence', () => {
     expect(savedSteps).toEqual([completedStep]);
     expect(savedArtifacts).toEqual([artifact]);
     expect(await artifactStore.read(savedArtifacts[0]!)).toBe(planContent);
+    expect(await reopenedStore.getEvents(run.id)).toEqual([event]);
     await expect(
       reopenedStore.saveRun({
         ...savedRun!,

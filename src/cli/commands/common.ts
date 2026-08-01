@@ -28,15 +28,16 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
   await mkdir(config.dataDir, { recursive: true });
   const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
-  const eventSink: EventSink | undefined = rootOptions.verbose
-    ? (event) => {
-        if (event.type === 'text') {
-          process.stderr.write(event.message);
-        } else {
-          process.stderr.write(`\n[${event.stepId}] ${event.type}: ${event.message}\n`);
-        }
+  const eventSink: EventSink = async (event) => {
+    await store.saveEvent(event);
+    if (rootOptions.verbose) {
+      if (event.type === 'text') {
+        process.stderr.write(event.message);
+      } else {
+        process.stderr.write(`\n[${event.stepId}] ${event.type}: ${event.message}\n`);
       }
-    : undefined;
+    }
+  };
   const engine = new WorkflowEngine(
     store,
     artifacts,
@@ -54,6 +55,10 @@ export function rootOptions(command: Command): RootOptions {
 
 export function printRunSummary(run: WorkflowRun, steps: StepRun[], config: BinaflowConfig): void {
   console.log(`Run ${run.id}  workflow=${run.workflowId}  status=${run.status}`);
+  let totalTokens = 0;
+  let totalCost = 0;
+  let hasTokens = false;
+  let hasCost = false;
   for (const step of steps) {
     const profile = config.profiles[step.profile];
     const duration = step.startedAt
@@ -63,8 +68,17 @@ export function printRunSummary(run: WorkflowRun, steps: StepRun[], config: Bina
       step.result?.usage?.totalTokens === undefined
         ? '-'
         : `${step.result.usage.totalTokens} tokens`;
+    const cost = step.result?.costUsd === undefined ? '-' : `$${step.result.costUsd.toFixed(4)}`;
+    if (step.result?.usage?.totalTokens !== undefined) {
+      totalTokens += step.result.usage.totalTokens;
+      hasTokens = true;
+    }
+    if (step.result?.costUsd !== undefined) {
+      totalCost += step.result.costUsd;
+      hasCost = true;
+    }
     console.log(
-      `  ${step.stepId}  profile=${step.profile}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${step.status}  duration=${duration}  usage=${usage}`,
+      `  ${step.stepId}  profile=${step.profile}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${step.status}  duration=${duration}  usage=${usage}  cost=${cost}`,
     );
     if (step.error) {
       console.log(
@@ -74,14 +88,17 @@ export function printRunSummary(run: WorkflowRun, steps: StepRun[], config: Bina
     if (step.skipReason) {
       console.log(`    skipped=${step.skipReason.code}  ${step.skipReason.message}`);
     }
+    if (step.approval?.decision) {
+      console.log(
+        `    approval=${step.approval.decision}${step.approval.feedback ? `  ${step.approval.feedback}` : ''}`,
+      );
+    }
   }
+  console.log(
+    `  total  usage=${hasTokens ? `${totalTokens} tokens` : '-'}  cost=${hasCost ? `$${totalCost.toFixed(4)}` : '-'}`,
+  );
 }
 
 export function durationMs(startedAt: string, finishedAt: string): number {
   return Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
-}
-
-export function requirePlanBuild(workflowId: string): 'plan-build' {
-  if (workflowId !== 'plan-build') throw new Error(`Unknown workflow: ${workflowId}`);
-  return 'plan-build';
 }

@@ -28,6 +28,7 @@ describe('Binaflow config', () => {
             model: 'claude-test',
             tools: ['read'],
             workspaceMode: 'read-only',
+            projectTrust: 'always',
             timeoutMs: 1000,
             retryLimit: 0,
           },
@@ -39,5 +40,6 @@ describe('Binaflow config', () => {
 
     expect(config.dataDir).toBe(join(directory, 'data'));
     expect(config.profiles.planner?.provider).toBe('anthropic');
+    expect(config.profiles.planner?.projectTrust).toBe('always');
   });
 });

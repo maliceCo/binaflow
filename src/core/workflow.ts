@@ -5,6 +5,13 @@ export interface WorkflowDefinition {
   id: string;
   input: WorkflowInputDefinition;
   steps: WorkflowStep[];
+  approval?: WorkflowApprovalDefinition;
+}
+
+export interface WorkflowApprovalDefinition {
+  id: string;
+  after: string;
+  message: string;
 }
 
 export interface WorkflowInputDefinition {
@@ -47,6 +54,7 @@ export interface StepOutputDefinition {
   name: string;
   kind: 'artifact';
   format: 'json' | 'text';
+  schema?: Record<string, unknown>;
 }
 
 export function validateWorkflowDefinition(
@@ -110,6 +118,22 @@ export function validateWorkflowDefinition(
           errors.push(`step ${step.id} references unknown output ${source.output}`);
         }
       }
+    }
+  }
+
+  if (workflow.approval !== undefined) {
+    if (!isRecord(workflow.approval)) {
+      errors.push('approval must be an object');
+    } else if (
+      !isNonEmptyString(workflow.approval.id) ||
+      !isNonEmptyString(workflow.approval.after) ||
+      typeof workflow.approval.message !== 'string'
+    ) {
+      errors.push('approval must have id, after, and message');
+    } else if (!stepsById.has(workflow.approval.after)) {
+      errors.push(`approval references unknown step ${workflow.approval.after}`);
+    } else if (stepsById.has(workflow.approval.id)) {
+      errors.push(`approval id conflicts with step ${workflow.approval.id}`);
     }
   }
 

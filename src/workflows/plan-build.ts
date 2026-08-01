@@ -125,7 +125,14 @@ export const planBuildWorkflow: WorkflowDefinition = {
       inputReferences: [
         { name: 'objective', source: { kind: 'workflow-input', key: 'objective' } },
       ],
-      outputs: [{ name: 'plan', kind: 'artifact', format: 'json' }],
+      outputs: [
+        {
+          name: 'plan',
+          kind: 'artifact',
+          format: 'json',
+          schema: buildPlanSchema as unknown as Record<string, unknown>,
+        },
+      ],
     },
     {
       kind: 'agent',

@@ -12,6 +12,13 @@ export function registerShowCommand(cli: Command): void {
         const run = await context.store.getRun(runId);
         if (!run) throw new Error(`Unknown run: ${runId}`);
         printRunSummary(run, await context.store.getStepRuns(runId), context.config);
+        const events = await context.store.getEvents(runId);
+        if (events.length > 0) {
+          console.log(`\nEvents (${events.length})`);
+          for (const event of events) {
+            console.log(`  [${event.stepId}] ${event.type}: ${event.message}`);
+          }
+        }
         for (const artifact of await context.store.getArtifacts(runId)) {
           const content = await context.artifacts.read(artifact);
           console.log(`\nArtifact ${artifact.stepId}.${artifact.name} (${artifact.mediaType})`);

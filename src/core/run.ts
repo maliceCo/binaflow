@@ -1,5 +1,5 @@
 export type RunStatus =
-  'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export type StepStatus = RunStatus | 'skipped';
 
 export interface WorkflowRun {
@@ -24,6 +24,7 @@ export interface StepRun {
   disposition?: StepDisposition;
   skipReason?: StepSkipReason;
   error?: StepError;
+  approval?: ApprovalDecision;
 }
 
 export type StepDisposition =
@@ -51,6 +52,12 @@ export interface StepError {
   message: string;
   code?: string;
   retryable: boolean;
+}
+
+export interface ApprovalDecision {
+  decision?: 'approved' | 'rejected';
+  feedback?: string;
+  decidedAt?: string;
 }
 
 export interface ArtifactReference {

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 export type WorkspaceMode = 'read-only' | 'read-write';
+export type ProjectTrust = 'never' | 'always';
 
 export interface AgentProfile {
   driver: string;
@@ -10,6 +11,7 @@ export interface AgentProfile {
   thinking?: string;
   tools: string[];
   workspaceMode: WorkspaceMode;
+  projectTrust?: ProjectTrust;
   timeoutMs: number;
   retryLimit: number;
 }
@@ -77,6 +79,9 @@ function parseProfile(name: string, value: unknown): AgentProfile {
     timeoutMs: value.timeoutMs,
     retryLimit: value.retryLimit,
   };
+  if (value.projectTrust === 'never' || value.projectTrust === 'always') {
+    profile.projectTrust = value.projectTrust;
+  }
   if (typeof value.provider === 'string') profile.provider = value.provider;
   if (typeof value.thinking === 'string') profile.thinking = value.thinking;
   return profile;

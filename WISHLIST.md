@@ -28,6 +28,10 @@ This document records future directions only. None of these items are in the act
 - Add specialized web scraping, document ingestion, deduplication, and provenance tracking.
 - Add MCP-backed tool integrations where an agent needs to choose and invoke a tool.
 - Add deterministic native step handlers for operations that should not depend on model decisions.
+- Add optional Binaflow-native research source providers for web search and URL fetching. Keep harness tools as the default.
+- Add a deterministic code visualizer step that produces human-facing HTML/SVG and machine-readable JSON artifacts.
+- Add a visual planner step that produces diagrams and a structured plan artifact consumable by a downstream harness.
+- Add artifact renderers for architecture diagrams, source maps, test reports, and other workflow outputs.
 
 ## Interfaces And Triggers
 

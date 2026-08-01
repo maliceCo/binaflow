@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
-import { planBuildWorkflow } from '../../workflows/plan-build.js';
-import { openContext, printRunSummary, requirePlanBuild, rootOptions } from './common.js';
+import { resolveWorkflow } from '../../workflows/catalog.js';
+import { openContext, printRunSummary, rootOptions } from './common.js';
 
 export function registerRunCommand(cli: Command): void {
   cli
@@ -9,10 +9,10 @@ export function registerRunCommand(cli: Command): void {
     .argument('<workflow>', 'workflow name')
     .requiredOption('--objective <text>', 'objective for the workflow')
     .action(async (workflowId: string, options: { objective: string }, command: Command) => {
-      requirePlanBuild(workflowId);
+      const workflow = resolveWorkflow(workflowId);
       const context = await openContext(rootOptions(command));
       try {
-        const run = await context.engine.execute(planBuildWorkflow, {
+        const run = await context.engine.execute(workflow, {
           objective: options.objective,
           profiles: context.config.profiles,
         });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseBuildPlan, planBuildWorkflow } from '../src/workflows/plan-build.js';
+import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 import { serializeWorkflow, validateWorkflowDefinition } from '../src/core/workflow.js';
 
 describe('plan-build contracts', () => {
@@ -42,5 +43,17 @@ describe('plan-build contracts', () => {
 
     expect(parseBuildPlan(plan)).toEqual(plan);
     expect(() => parseBuildPlan({ summary: 'missing tasks' })).toThrow('Invalid build plan');
+  });
+});
+
+describe('research-plan-build contracts', () => {
+  it('is serializable and keeps harness tools out of the workflow', () => {
+    const serialized = serializeWorkflow(researchPlanBuildWorkflow);
+    const restored: unknown = JSON.parse(serialized);
+
+    validateWorkflowDefinition(restored);
+
+    expect(researchPlanBuildWorkflow.approval?.after).toBe('research-review');
+    expect(researchPlanBuildWorkflow.steps.every((step) => !('driver' in step))).toBe(true);
   });
 });

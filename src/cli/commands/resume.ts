@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
-import { planBuildWorkflow } from '../../workflows/plan-build.js';
-import { openContext, printRunSummary, requirePlanBuild, rootOptions } from './common.js';
+import { resolveWorkflow } from '../../workflows/catalog.js';
+import { openContext, printRunSummary, rootOptions } from './common.js';
 
 export function registerResumeCommand(cli: Command): void {
   cli
@@ -12,8 +12,7 @@ export function registerResumeCommand(cli: Command): void {
       try {
         const previous = await context.store.getRun(runId);
         if (!previous) throw new Error(`Unknown run: ${runId}`);
-        requirePlanBuild(previous.workflowId);
-        const run = await context.engine.execute(planBuildWorkflow, {
+        const run = await context.engine.execute(resolveWorkflow(previous.workflowId), {
           runId,
           input: { objective: previous.objective },
           profiles: context.config.profiles,

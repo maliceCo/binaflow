@@ -9,6 +9,8 @@ describe('Binaflow CLI', () => {
     expect(help).toContain('runs');
     expect(help).toContain('show');
     expect(help).toContain('resume');
+    expect(help).toContain('approve');
+    expect(help).toContain('reject');
     expect(help).toContain('--verbose');
   });
 });

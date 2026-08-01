@@ -120,7 +120,8 @@ function buildPiArgs(request: AgentRequest, sessionDir?: string): string[] {
   if (request.profile.thinking) args.push('--thinking', request.profile.thinking);
   if (request.profile.tools.length > 0) args.push('--tools', request.profile.tools.join(','));
   else args.push('--no-tools');
-  if (request.profile.workspaceMode === 'read-only') args.push('--no-approve');
+  if (request.profile.projectTrust === 'always') args.push('--approve');
+  if (request.profile.projectTrust === 'never') args.push('--no-approve');
   if (sessionDir) args.push('--session-dir', sessionDir);
   return args;
 }

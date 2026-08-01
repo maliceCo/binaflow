@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Ajv } from 'ajv';
 import type { AgentDriver } from './agent.js';
 import type { EventSink, NormalizedEvent } from './events.js';
 import type {
@@ -13,6 +14,10 @@ import type { RunStore } from '../storage/run-store.js';
 import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import { resolveProfile, type AgentProfile } from '../config.js';
 import { parseBuildPlan } from '../workflows/plan-build.js';
+import {
+  parseResearchReview,
+  researchPlanBuildWorkflow,
+} from '../workflows/research-plan-build.js';
 import { resolveStepOrder } from './references.js';
 import { validateWorkflowDefinition, type AgentStep, type WorkflowDefinition } from './workflow.js';
 
@@ -40,6 +45,10 @@ export class WorkflowEngine {
     validateWorkflowDefinition(workflow);
     const input = request.input ?? (request.objective ? { objective: request.objective } : {});
     validateInput(workflow, input);
+
+    if (workflow.id === researchPlanBuildWorkflow.id) {
+      return this.executeResearchPlanBuild(workflow, request, input);
+    }
 
     let run = await this.prepareRun(workflow, request, input);
     if (run.status === 'completed') return run;
@@ -114,6 +123,178 @@ export class WorkflowEngine {
     return run;
   }
 
+  private async executeResearchPlanBuild(
+    workflow: WorkflowDefinition,
+    request: ExecuteWorkflowRequest,
+    initialInput: Record<string, unknown>,
+  ): Promise<WorkflowRun> {
+    const run = await this.prepareRun(workflow, request, initialInput);
+    if (run.status === 'completed') return run;
+
+    const stepRuns = new Map(
+      (await this.runStore.getStepRuns(run.id)).map((step) => [step.stepId, step]),
+    );
+    let artifacts = await this.runStore.getArtifacts(run.id);
+    let input = {
+      ...initialInput,
+      researchFeedback:
+        typeof initialInput.researchFeedback === 'string' ? initialInput.researchFeedback : '',
+    };
+    const researchStep = workflow.steps.find((step) => step.id === 'research');
+    const reviewStep = workflow.steps.find((step) => step.id === 'research-review');
+    const planStep = workflow.steps.find((step) => step.id === 'plan');
+    const buildStep = workflow.steps.find((step) => step.id === 'build');
+    if (!researchStep || !reviewStep || !planStep || !buildStep || !workflow.approval) {
+      throw new Error('Invalid research-plan-build workflow definition');
+    }
+
+    try {
+      while (true) {
+        let research = stepRuns.get(researchStep.id);
+        if (!research || research.status !== 'completed') {
+          const result = await this.executeStep(
+            run,
+            researchStep,
+            research,
+            input,
+            artifacts,
+            request,
+          );
+          research = result.stepRun;
+          stepRuns.set(researchStep.id, research);
+          artifacts = replaceArtifacts(artifacts, result.artifacts);
+        }
+
+        let review = stepRuns.get(reviewStep.id);
+        if (!review || review.status !== 'completed') {
+          const result = await this.executeStep(run, reviewStep, review, input, artifacts, request);
+          review = result.stepRun;
+          stepRuns.set(reviewStep.id, review);
+          artifacts = replaceArtifacts(artifacts, result.artifacts);
+        }
+
+        const reviewArtifact = findArtifact(artifacts, reviewStep.id, 'review');
+        if (!reviewArtifact) throw new Error('Missing research review artifact');
+        const researchReview = parseResearchReview(
+          JSON.parse(await this.artifactStore.read(reviewArtifact)),
+        );
+
+        if (researchReview.decision === 'needs_more_research') {
+          if (research.attempt >= MAX_RESEARCH_ITERATIONS) {
+            await this.emitStatus(
+              run.id,
+              reviewStep.id,
+              `Research stopped after ${MAX_RESEARCH_ITERATIONS} iterations`,
+            );
+            return this.saveRunStatus(run, 'failed');
+          }
+          input = {
+            ...input,
+            researchFeedback: researchReview.nextResearchQuestions.join('\n'),
+          };
+          const resetResearch = await this.resetLoopStep(research);
+          const resetReview = await this.resetLoopStep(review);
+          stepRuns.set(researchStep.id, resetResearch);
+          stepRuns.set(reviewStep.id, resetReview);
+          continue;
+        }
+
+        let approval = stepRuns.get(workflow.approval.id);
+        if (!approval) {
+          approval = {
+            runId: run.id,
+            stepId: workflow.approval.id,
+            profile: 'human',
+            status: 'pending',
+            attempt: 1,
+          };
+          await this.runStore.saveStepRun(approval);
+        }
+
+        if (approval.approval?.decision === 'rejected') {
+          if (research.attempt >= MAX_RESEARCH_ITERATIONS) {
+            await this.emitStatus(run.id, workflow.approval.id, 'Research approval limit reached');
+            return this.saveRunStatus(run, 'failed');
+          }
+          input = {
+            ...input,
+            researchFeedback:
+              approval.approval.feedback ?? 'The user requested another research iteration.',
+          };
+          const resetResearch = await this.resetLoopStep(research);
+          const resetReview = await this.resetLoopStep(review);
+          approval = {
+            runId: approval.runId,
+            stepId: approval.stepId,
+            profile: approval.profile,
+            status: 'pending',
+            attempt: approval.attempt + 1,
+            approval: { feedback: input.researchFeedback as string },
+          };
+          await this.runStore.saveStepRun(approval);
+          stepRuns.set(researchStep.id, resetResearch);
+          stepRuns.set(reviewStep.id, resetReview);
+          stepRuns.set(workflow.approval.id, approval);
+          continue;
+        }
+
+        if (approval.approval?.decision !== 'approved') {
+          if (approval.status !== 'waiting') {
+            approval = { ...approval, status: 'waiting' };
+            await this.runStore.saveStepRun(approval);
+          }
+          stepRuns.set(workflow.approval.id, approval);
+          return this.saveRunStatus(run, 'waiting');
+        }
+
+        if (approval.status !== 'completed') {
+          approval = {
+            ...approval,
+            status: 'completed',
+            finishedAt: new Date().toISOString(),
+          };
+          await this.runStore.saveStepRun(approval);
+          stepRuns.set(workflow.approval.id, approval);
+        }
+        break;
+      }
+
+      let plan = stepRuns.get(planStep.id);
+      if (!plan || plan.status !== 'completed') {
+        const result = await this.executeStep(run, planStep, plan, input, artifacts, request);
+        plan = result.stepRun;
+        stepRuns.set(planStep.id, plan);
+        artifacts = replaceArtifacts(artifacts, result.artifacts);
+      }
+      if (plan.disposition?.kind === 'stop') {
+        const skipped = await this.skipStep(run.id, buildStep, stepRuns.get(buildStep.id), {
+          code: plan.disposition.code,
+          message: `Dependency plan stopped: ${plan.disposition.message}`,
+        });
+        stepRuns.set(buildStep.id, skipped);
+        return this.saveRunStatus(run, 'completed');
+      }
+
+      const build = stepRuns.get(buildStep.id);
+      if (!build || build.status !== 'completed') {
+        const result = await this.executeStep(run, buildStep, build, input, artifacts, request);
+        stepRuns.set(buildStep.id, result.stepRun);
+      }
+      return this.saveRunStatus(run, 'completed');
+    } catch (error) {
+      if (!(error instanceof StepExecutionFailure)) throw error;
+      for (const step of workflow.steps) {
+        const existing = stepRuns.get(step.id);
+        if (existing?.status === 'completed' || step.id === error.stepRun.stepId) continue;
+        await this.skipStep(run.id, step, existing, {
+          code: 'UPSTREAM_STEP_BLOCKED',
+          message: `Dependency ${error.stepRun.stepId} failed`,
+        });
+      }
+      return this.saveRunStatus(run, error.stepRun.status === 'cancelled' ? 'cancelled' : 'failed');
+    }
+  }
+
   private async prepareRun(
     workflow: WorkflowDefinition,
     request: ExecuteWorkflowRequest,
@@ -153,6 +334,18 @@ export class WorkflowEngine {
     };
     await this.runStore.createRun(run);
     return this.saveRunStatus(run, 'running');
+  }
+
+  private async resetLoopStep(step: StepRun): Promise<StepRun> {
+    const reset: StepRun = {
+      runId: step.runId,
+      stepId: step.stepId,
+      profile: step.profile,
+      status: 'pending',
+      attempt: step.attempt + 1,
+    };
+    await this.runStore.saveStepRun(reset);
+    return reset;
   }
 
   private async executeStep(
@@ -387,18 +580,24 @@ function createOutputContents(
   const contents = new Map<string, string>();
   let disposition: StepDisposition | undefined;
   for (const output of step.outputs) {
-    if (output.format === 'json' && output.name === 'plan') {
+    if (output.format === 'json') {
       try {
-        const plan = parseBuildPlan(JSON.parse(result.text));
-        contents.set(output.name, JSON.stringify(plan, null, 2));
-        disposition =
-          plan.decision === 'build'
-            ? { kind: 'continue' }
-            : {
-                kind: 'stop',
-                code: 'PLAN_NEEDS_CLARIFICATION',
-                message: plan.clarificationQuestions.join(' '),
-              };
+        const value = JSON.parse(result.text) as unknown;
+        if (output.schema) validateJsonOutput(value, output.schema);
+        if (output.name === 'plan') {
+          const plan = parseBuildPlan(value);
+          contents.set(output.name, JSON.stringify(plan, null, 2));
+          disposition =
+            plan.decision === 'build'
+              ? { kind: 'continue' }
+              : {
+                  kind: 'stop',
+                  code: 'PLAN_NEEDS_CLARIFICATION',
+                  message: plan.clarificationQuestions.join(' '),
+                };
+        } else {
+          contents.set(output.name, JSON.stringify(value, null, 2));
+        }
       } catch (error) {
         throw new PlannerSchemaError(
           error instanceof Error ? error.message : 'Invalid planner output',
@@ -411,6 +610,16 @@ function createOutputContents(
   return { contents, ...(disposition ? { disposition } : {}) };
 }
 
+function validateJsonOutput(value: unknown, schema: Record<string, unknown>): void {
+  const validate = new Ajv({ allErrors: true }).compile(schema);
+  if (!validate(value)) {
+    const details = validate.errors?.map((error) => error.message).join(', ');
+    throw new PlannerSchemaError(
+      `Structured output schema invalid${details ? `: ${details}` : ''}`,
+    );
+  }
+}
+
 function renderPrompt(
   prompt: string,
   inputs: Record<string, string>,
@@ -420,7 +629,7 @@ function renderPrompt(
     .map(([name, value]) => `${name}:\n${value}`)
     .join('\n\n');
   const repairText = repairAttempted
-    ? '\nThe previous response failed schema validation. Return only valid JSON matching the requested BuildPlan schema.'
+    ? '\nThe previous response failed schema validation. Return only valid JSON matching the requested structured output schema.'
     : '';
   return `${prompt}${repairText}\n\nInputs:\n${inputText}`;
 }
@@ -476,4 +685,29 @@ class StepExecutionFailure extends Error {
   constructor(readonly stepRun: StepRun) {
     super(stepRun.error?.message ?? 'Step failed');
   }
+}
+
+const MAX_RESEARCH_ITERATIONS = 3;
+
+function replaceArtifacts(
+  existing: ArtifactReference[],
+  replacements: ArtifactReference[],
+): ArtifactReference[] {
+  const result = existing.filter(
+    (artifact) =>
+      !replacements.some(
+        (replacement) =>
+          replacement.stepId === artifact.stepId && replacement.name === artifact.name,
+      ),
+  );
+  result.push(...replacements);
+  return result;
+}
+
+function findArtifact(
+  artifacts: ArtifactReference[],
+  stepId: string,
+  name: string,
+): ArtifactReference | undefined {
+  return artifacts.find((artifact) => artifact.stepId === stepId && artifact.name === name);
 }

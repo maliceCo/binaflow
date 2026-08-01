@@ -2,7 +2,8 @@ import type { RunStatus, StepStatus } from './run.js';
 
 const runTransitions: Record<RunStatus, readonly RunStatus[]> = {
   pending: ['pending', 'running', 'cancelled'],
-  running: ['running', 'completed', 'failed', 'cancelled', 'interrupted'],
+  running: ['running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted'],
+  waiting: ['waiting', 'running', 'failed', 'cancelled'],
   completed: ['completed'],
   failed: ['failed', 'pending'],
   cancelled: ['cancelled'],
@@ -10,9 +11,11 @@ const runTransitions: Record<RunStatus, readonly RunStatus[]> = {
 };
 
 const stepTransitions: Record<StepStatus, readonly StepStatus[]> = {
-  pending: ['pending', 'running', 'cancelled', 'skipped'],
+  pending: ['pending', 'running', 'waiting', 'completed', 'cancelled', 'skipped'],
   running: ['running', 'completed', 'failed', 'cancelled', 'interrupted'],
-  completed: ['completed'],
+  waiting: ['waiting', 'pending', 'running', 'failed', 'cancelled'],
+  // Bounded workflow loops may explicitly restart a completed step.
+  completed: ['completed', 'pending'],
   failed: ['failed', 'pending'],
   cancelled: ['cancelled'],
   interrupted: ['interrupted', 'pending'],
