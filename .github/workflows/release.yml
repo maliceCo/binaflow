@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          version: 11.18.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release source and test
+        run: |
+          set -eu
+          git fetch origin main:refs/remotes/origin/main
+          release_commit="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          git merge-base --is-ancestor "$release_commit" origin/main
+          test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./package.json').version")"
+          pnpm run format:check
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test
+
+      - name: Build Linux x64 bundle
+        run: pnpm run build:bundle
+
+      - name: Smoke test extracted bundle
+        run: |
+          set -eu
+          version="$(node -p "require('./package.json').version")"
+          archive="release/binaflow-linux-x64-${version}.tar.gz"
+          smoke="$(mktemp -d)"
+          trap 'rm -rf "$smoke"' EXIT
+          tar -xzf "$archive" -C "$smoke"
+          "$smoke/binaflow/runtime/bin/node" "$smoke/binaflow/app/dist/src/cli/index.js" --version
+          "$smoke/binaflow/runtime/bin/node" "$smoke/binaflow/app/dist/src/cli/index.js" --help >/dev/null
+          (
+            cd "$smoke/binaflow/app"
+            "$smoke/binaflow/runtime/bin/node" -e "import('better-sqlite3').then(() => process.exit(0))"
+          )
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version="$(node -p "require('./package.json').version")"
+          archive="release/binaflow-linux-x64-${version}.tar.gz"
+          args=("$GITHUB_REF_NAME" "$archive" "${archive}.sha256" --repo "$GITHUB_REPOSITORY" --title "Binaflow ${version}" --generate-notes)
+          case "$version" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "${args[@]}"

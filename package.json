@@ -1,0 +1,45 @@
+{
+  "name": "binaflow",
+  "version": "0.1.0-preview.0",
+  "description": "Local workflow orchestrator for coding agents",
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "binaflow": "dist/src/cli/index.js"
+  },
+  "files": [
+    "dist/src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:bundle": "pnpm run build && node scripts/build-linux-bundle.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts",
+    "test:integration": "pnpm run test:e2e",
+    "cli": "tsx src/cli/index.ts",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "better-sqlite3": "^12.4.1",
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.2.1",
+    "eslint": "^9.32.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0",
+    "vitest": "^3.2.4"
+  }
+}
