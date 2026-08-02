@@ -8,6 +8,8 @@ import { registerRunCommand } from './commands/run.js';
 import { registerRunsCommand } from './commands/runs.js';
 import { registerShowCommand } from './commands/show.js';
 import { registerApprovalCommands } from './commands/approval.js';
+import { registerUpdateCommand } from './commands/update.js';
+import { VERSION } from '../version.js';
 
 export function createCli(): Command {
   const cli = new Command();
@@ -15,7 +17,7 @@ export function createCli(): Command {
   cli
     .name('binaflow')
     .description('Local workflow orchestrator for coding agents')
-    .version('0.1.0-preview.0')
+    .version(VERSION)
     .option('--config <path>', 'path to the external Binaflow config')
     .option('--cwd <path>', 'workspace directory for the agent')
     .option('--verbose', 'show live agent progress and text output');
@@ -25,6 +27,7 @@ export function createCli(): Command {
   registerShowCommand(cli);
   registerResumeCommand(cli);
   registerApprovalCommands(cli);
+  registerUpdateCommand(cli);
 
   return cli;
 }

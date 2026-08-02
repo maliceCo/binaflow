@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
-import { initialMigration } from './migrations/001-initial.js';
+import { applyMigrations } from './migrations/index.js';
 import type { RunStore } from './run-store.js';
 
 export class SqliteRunStore implements RunStore {
@@ -11,9 +11,7 @@ export class SqliteRunStore implements RunStore {
   constructor(databasePath: string) {
     this.database = new Database(databasePath);
     this.database.pragma('foreign_keys = ON');
-    this.database.exec(initialMigration);
-    this.ensureWaitingStatusSupport();
-    this.ensureStepRunColumns();
+    applyMigrations(this.database, databasePath);
   }
 
   close(): void {
@@ -177,117 +175,6 @@ export class SqliteRunStore implements RunStore {
         externalSessionId: stepRun.result?.sessionId ?? null,
         startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
       });
-  }
-
-  private ensureStepRunColumns(): void {
-    const columns = this.database.pragma('table_info(step_runs)') as Array<{ name: string }>;
-    const names = new Set(columns.map((column) => column.name));
-    if (!names.has('disposition_json'))
-      this.database.exec('ALTER TABLE step_runs ADD COLUMN disposition_json TEXT');
-    if (!names.has('skip_reason_json'))
-      this.database.exec('ALTER TABLE step_runs ADD COLUMN skip_reason_json TEXT');
-    if (!names.has('approval_json'))
-      this.database.exec('ALTER TABLE step_runs ADD COLUMN approval_json TEXT');
-  }
-
-  private ensureWaitingStatusSupport(): void {
-    const row = this.database
-      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'step_runs'")
-      .get() as { sql?: string } | undefined;
-    if (row?.sql?.includes("'waiting'")) return;
-
-    this.database.pragma('foreign_keys = OFF');
-    try {
-      const migrate = this.database.transaction(() => {
-        this.database.exec(`
-          ALTER TABLE normalized_events RENAME TO normalized_events_legacy;
-          ALTER TABLE artifacts RENAME TO artifacts_legacy;
-          ALTER TABLE step_attempts RENAME TO step_attempts_legacy;
-          ALTER TABLE step_runs RENAME TO step_runs_legacy;
-          ALTER TABLE runs RENAME TO runs_legacy;
-
-          CREATE TABLE runs (
-            id TEXT PRIMARY KEY,
-            workflow_id TEXT NOT NULL,
-            workflow_version INTEGER NOT NULL,
-            objective TEXT NOT NULL,
-            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted')),
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-          );
-          INSERT INTO runs SELECT * FROM runs_legacy;
-
-          CREATE TABLE step_runs (
-            run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-            step_id TEXT NOT NULL,
-            profile TEXT NOT NULL,
-            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted', 'skipped')),
-            attempt INTEGER NOT NULL,
-            started_at TEXT,
-            finished_at TEXT,
-            result_json TEXT,
-            error_json TEXT,
-            disposition_json TEXT,
-            skip_reason_json TEXT,
-            approval_json TEXT,
-            PRIMARY KEY (run_id, step_id)
-          );
-          INSERT INTO step_runs
-            (run_id, step_id, profile, status, attempt, started_at, finished_at, result_json, error_json, disposition_json, skip_reason_json)
-          SELECT run_id, step_id, profile, status, attempt, started_at, finished_at, result_json, error_json, disposition_json, skip_reason_json
-          FROM step_runs_legacy;
-
-          CREATE TABLE step_attempts (
-            run_id TEXT NOT NULL,
-            step_id TEXT NOT NULL,
-            attempt INTEGER NOT NULL,
-            status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted', 'skipped')),
-            started_at TEXT NOT NULL,
-            finished_at TEXT,
-            external_session_id TEXT,
-            result_json TEXT,
-            error_json TEXT,
-            PRIMARY KEY (run_id, step_id, attempt),
-            FOREIGN KEY (run_id, step_id) REFERENCES step_runs(run_id, step_id) ON DELETE CASCADE
-          );
-          INSERT INTO step_attempts SELECT * FROM step_attempts_legacy;
-
-          CREATE TABLE artifacts (
-            id TEXT PRIMARY KEY,
-            run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-            step_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('json', 'text')),
-            path TEXT NOT NULL,
-            media_type TEXT NOT NULL,
-            size_bytes INTEGER NOT NULL,
-            UNIQUE (run_id, step_id, name)
-          );
-          INSERT INTO artifacts SELECT * FROM artifacts_legacy;
-
-          CREATE TABLE normalized_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-            step_id TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('status', 'text', 'error')),
-            message TEXT NOT NULL,
-            occurred_at TEXT NOT NULL
-          );
-          INSERT INTO normalized_events SELECT * FROM normalized_events_legacy;
-
-          DROP TABLE normalized_events_legacy;
-          DROP TABLE artifacts_legacy;
-          DROP TABLE step_attempts_legacy;
-          DROP TABLE step_runs_legacy;
-          DROP TABLE runs_legacy;
-          CREATE INDEX IF NOT EXISTS artifacts_by_run ON artifacts(run_id);
-          CREATE INDEX IF NOT EXISTS events_by_run ON normalized_events(run_id, id);
-        `);
-      });
-      migrate();
-    } finally {
-      this.database.pragma('foreign_keys = ON');
-    }
   }
 }
 

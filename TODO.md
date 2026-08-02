@@ -271,6 +271,22 @@ Keep these in `WISHLIST.md` until a concrete workflow requires them:
 - Deterministic code visualization artifacts.
 - Visual planning artifacts consumed by an agent harness.
 
+## Phase 8: Linux Preview Distribution
+
+The preview distribution is intentionally limited to Linux x86_64 with glibc.
+The bundle includes a pinned Node runtime and production dependencies; Pi,
+provider credentials, workspace configuration, SQLite data, and artifacts stay
+external to the installation.
+
+- [x] Define the bundle layout, versioned install root, stable launcher, and atomic `current` symlink.
+- [x] Build `binaflow-linux-x64-<version>.tar.gz` with bundled Node, production dependencies, native SQLite binding, manifest, checksum, and installer.
+- [x] Add explicit GitHub Release `update --check`, `update`, and `update --rollback` commands with preview/stable channel selection.
+- [x] Verify HTTPS release assets, SHA-256 checksums, manifest payload checksums, safe archive paths, smoke tests, and update locks.
+- [x] Add formal transactional SQLite migrations with a schema ledger and backups before destructive legacy rebuilds.
+- [x] Add release workflow and focused release, updater, bundle smoke, and migration verification.
+- [x] Document Linux/glibc support, external Pi, XDG install paths, data separation, updates, rollback, and preview trust limits.
+- [ ] Add Ed25519 signed release manifests before the first stable channel.
+
 ## Verification Commands
 
 Finalize these commands during Phase 0 and keep this section current:
@@ -285,15 +301,16 @@ pnpm run test:integration
 
 ## Current Status
 
-Phases 0 through 6 are complete and verified except for the separate planner/builder model assignment live check. Phase 7 is implemented and covered by focused workflow, persistence, contract, CLI, and configuration tests. Native Binaflow search and visualizer steps remain deferred.
+Phases 0 through 6 are complete and verified except for the separate planner/builder model assignment live check. Phase 7 is implemented and covered by focused workflow, persistence, contract, CLI, and configuration tests. Phase 8 preview distribution is implemented and verified locally for Linux x86_64/glibc. Native Binaflow search and visualizer steps remain deferred.
 
-### Preview Distribution
+### Preview Package Metadata
 
-- [x] Prepare the package as `0.1.0-preview.0` for an npm preview release.
+- [x] Prepare package metadata as `0.1.0-preview.0` for the Linux preview bundle.
 - [x] Add README installation, configuration, workflow, update, and limitation instructions.
-- [x] Add an MIT license and restrict the published package to compiled `dist/src` files.
-- [x] Verify the preview package with `pnpm pack --dry-run`.
-- [ ] Publish the preview to npm with the `preview` dist-tag when the npm package name and publisher account are ready.
+- [x] Document GitHub Release bundle installation without requiring npm or repository cloning.
+- [x] Add an MIT license and keep the package metadata usable for the production dependency bundle.
+- [x] Verify the Linux bundle with the bundled Node runtime and `better-sqlite3` smoke test.
+- [ ] Add signed manifests before stable distribution.
 
 ## Blockers And Decisions Log
 
@@ -305,3 +322,14 @@ Phases 0 through 6 are complete and verified except for the separate planner/bui
 - Native Binaflow search and visualizer steps remain deferred until a concrete workflow requires them.
 - Phase 7 verification was run in WSL after rebuilding the local `better-sqlite3` binding for the WSL Node ABI; the Windows-installed binding targets a different ABI.
 - A non-interactive WSL shell initially hid the user's nvm, pnpm, and Pi paths; the E2E skill's interactive `bash -ic` procedure loaded Node 22.23.2, pnpm 11.18.0, and Pi 0.83.0 successfully.
+- The preview updater trusts HTTPS plus SHA-256 release sidecars; Ed25519 signing is intentionally deferred until stable releases.
+- The bundle build stages outside the repository workspace so production dependency installation cannot mutate the development `node_modules` tree.
+- SQLite migrations are applied by application startup, never by the updater; rollback changes only the installation symlink and cannot undo a completed database migration.
+- Final local verification passed with 24 unit tests, skipped optional live Pi E2E tests, and a generated bundle installer/update smoke test; pnpm hardlinks and symlinks are accepted only when they remain inside the `binaflow/` archive root.
+
+### Code Review Remediation
+
+- [x] Make the bundle installer lock concurrent installs, resolve relative roots before writing the launcher, and avoid deleting the active version during reinstall.
+- [x] Separate the historical schema snapshot from the current schema migration and preserve legacy databases that predate `normalized_events`.
+- [x] Reuse the existing updater and migration tests; no new test files were added.
+- [x] Re-run 24 unit tests, optional integration tests, linting, formatting, type checking, bundle build, and installer smoke coverage.

@@ -16,34 +16,38 @@ agent profiles before allowing a builder to edit files.
 
 ## Requirements
 
-- Node.js 22 or newer
-- pnpm, npm, or another Node.js package manager
+- The release bundle supports Linux x86_64 with glibc
 - Pi installed and available as the `pi` command
 - Pi configured with a provider and authenticated credentials
 
 Binaflow does not include an agent model or provider. Pi handles model access,
 tool execution, and project trust.
 
-## Install The Preview
+## Install The Linux Preview
 
-Install globally from the npm preview tag:
+Preview releases are self-contained Linux x86_64/glibc bundles. They include
+the Node runtime and production dependencies, including the Linux
+`better-sqlite3` binding. Pi remains an external executable and is not
+installed or updated by Binaflow.
+
+Download the release asset and verify its SHA-256 checksum:
 
 ```bash
-pnpm add --global binaflow@preview
-```
-
-Check the installation:
-
-```bash
-binaflow --help
+version=0.1.0-preview.0
+curl -LO "https://github.com/maliceCo/binaflow/releases/download/v${version}/binaflow-linux-x64-${version}.tar.gz"
+curl -LO "https://github.com/maliceCo/binaflow/releases/download/v${version}/binaflow-linux-x64-${version}.tar.gz.sha256"
+sha256sum -c "binaflow-linux-x64-${version}.tar.gz.sha256"
+mkdir -p /tmp/binaflow-install
+tar -xzf "binaflow-linux-x64-${version}.tar.gz" -C /tmp/binaflow-install
+/tmp/binaflow-install/binaflow/install.sh
+export PATH="$HOME/.local/bin:$PATH"
 binaflow --version
 ```
 
-The preview can also be run without a global installation:
-
-```bash
-pnpm dlx binaflow@preview --help
-```
+The installer requires no sudo and does not modify a workspace. It stores
+versions under `~/.local/share/binaflow/versions`, selects one with the
+`current` symlink, and installs the stable launcher at `~/.local/bin/binaflow`.
+Set `XDG_DATA_HOME` to change the data root. Keep `$HOME/.local/bin` on PATH.
 
 ## Configure A Workspace
 
@@ -51,7 +55,7 @@ Create `.binaflow/config.json` in the workspace where Binaflow will run:
 
 ```json
 {
-  "dataDir": "./.binaflow",
+  "dataDir": ".",
   "piCommand": "pi",
   "profiles": {
     "planner": {
@@ -138,14 +142,19 @@ binaflow reject <run-id> --feedback "Verify the token refresh path"
 
 ## Update
 
-Preview releases are installed from the `preview` tag. Update an existing
-global installation with:
+Updates are explicit and only work from the managed bundle installation:
 
 ```bash
-pnpm update --global binaflow@preview
+binaflow update --check --channel preview
+binaflow update --channel preview
+binaflow update --rollback
 ```
 
-The local `.binaflow` data directory is not replaced by package updates.
+The updater downloads the canonical GitHub Release over HTTPS, verifies the
+SHA-256 sidecar, validates the bundle, and atomically switches `current`.
+Previous versions are retained. Direct source or package-manager executions
+refuse self-update. The updater never opens or migrates `runs.db` and does not
+change `.binaflow`, configured `dataDir`, or artifacts.
 
 ## Development
 
@@ -154,14 +163,17 @@ pnpm install
 pnpm run build
 pnpm run cli -- --help
 pnpm test
+pnpm run build:bundle
 ```
 
-The package is published with compiled files from `dist/src`. Pi integration
-tests are optional and require a working Pi installation and credentials.
+Development requires Node.js 22 or newer and pnpm. Pi integration tests are
+optional and require a working Pi installation and credentials.
 
 ## Preview Limitations
 
 - Pi is the only supported agent driver.
+- The preview release supports Linux x86_64/glibc only.
 - Execution is local and sequential.
+- Updates use HTTPS and SHA-256; signed manifests are reserved for a stable release.
 - There is no daemon, web UI, remote worker, or native web search provider.
 - The API and persisted data format may change before the stable release.
