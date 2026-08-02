@@ -285,6 +285,7 @@ external to the installation.
 - [x] Add formal transactional SQLite migrations with a schema ledger and backups before destructive legacy rebuilds.
 - [x] Add release workflow and focused release, updater, bundle smoke, and migration verification.
 - [x] Document Linux/glibc support, external Pi, XDG install paths, data separation, updates, rollback, and preview trust limits.
+- [x] Use GitHub Releases as the only user distribution channel; release tags must point to commits already integrated into `main`.
 - [ ] Add Ed25519 signed release manifests before the first stable channel.
 
 ## Verification Commands
@@ -326,6 +327,7 @@ Phases 0 through 6 are complete and verified except for the separate planner/bui
 - The bundle build stages outside the repository workspace so production dependency installation cannot mutate the development `node_modules` tree.
 - SQLite migrations are applied by application startup, never by the updater; rollback changes only the installation symlink and cannot undo a completed database migration.
 - Final local verification passed with 24 unit tests, skipped optional live Pi E2E tests, and a generated bundle installer/update smoke test; pnpm hardlinks and symlinks are accepted only when they remain inside the `binaflow/` archive root.
+- Merges to `main` are integration events, not releases. A public bundle is created only when an annotated `v<version>` tag is pushed from a commit already reachable from `main`.
 
 ### Code Review Remediation
 

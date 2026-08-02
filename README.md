@@ -30,6 +30,10 @@ the Node runtime and production dependencies, including the Linux
 `better-sqlite3` binding. Pi remains an external executable and is not
 installed or updated by Binaflow.
 
+GitHub Releases is the only user distribution channel. Development merges to
+`main` do not produce user-downloadable builds; download a versioned release
+from the repository's **Releases** page.
+
 Download the release asset and verify its SHA-256 checksum:
 
 ```bash
