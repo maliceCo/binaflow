@@ -1,7 +1,7 @@
 export type WorkflowStep = AgentStep;
 
 export interface WorkflowDefinition {
-  version: 1;
+  version: number;
   id: string;
   input: WorkflowInputDefinition;
   steps: WorkflowStep[];
@@ -66,7 +66,7 @@ export function validateWorkflowDefinition(
     throw new Error('Invalid workflow definition: expected an object');
   }
 
-  if (workflow.version !== 1) errors.push('version must be 1');
+  if (!isPositiveInteger(workflow.version)) errors.push('version must be a positive integer');
   if (!isNonEmptyString(workflow.id)) errors.push('id must be a non-empty string');
   if (!isRecord(workflow.input)) errors.push('input must be an object');
   if (!Array.isArray(workflow.steps) || workflow.steps.length === 0) {
@@ -213,4 +213,8 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }

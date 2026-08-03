@@ -1,5 +1,13 @@
 # Active Implementation Plan
 
+## QA Corrections
+
+- [x] Use real workflow revisions for resume compatibility.
+- [x] Persist complete run input in the `run.input` artifact and restore it on resume.
+- [x] Complete JSONL failure lifecycle and reject conflicting output modes.
+- [x] Normalize invalid invocation exit codes and allow inspection without profiles.
+- [x] Await JSONL child termination and verify the focused regression suite.
+
 ## CLI Protocol v1
 
 - [x] Add versioned JSON results and JSONL execution records for subprocess consumers.
@@ -35,6 +43,9 @@ test`, and `corepack pnpm run build` passed.
 - The full Vitest suite runs 32 of 34 tests successfully. Two pre-existing
   update tests fail because Windows symlink creation is denied with `EPERM`;
   they are unrelated to the CLI protocol changes.
+- Current QA-correction verification: full suite runs 36 of 38 tests
+  successfully. The same two Windows symlink permission failures remain; all
+  workflow, persistence, CLI protocol, inspection, and driver tests pass.
 - In this Windows environment, `corepack pnpm run <script>` currently fails
   while resolving the nested `pnpm` executable; direct binaries were used for
   current-session verification.
@@ -52,5 +63,5 @@ test`, and `corepack pnpm run build` passed.
 
 ## Current Session Notes
 
-- Protocol implementation is complete. Full-suite verification is limited by
+- QA corrections are implemented. Full-suite verification remains limited by
   the two Windows symlink permission failures recorded above.

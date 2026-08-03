@@ -28,6 +28,7 @@ export interface ExecuteWorkflowRequest {
   runId?: string;
   resume?: boolean;
   signal?: AbortSignal;
+  onRunStarted?: (run: WorkflowRun) => Promise<void> | void;
 }
 
 export class WorkflowVersionMismatchError extends Error {
@@ -54,7 +55,7 @@ export class WorkflowEngine {
     request: ExecuteWorkflowRequest,
   ): Promise<WorkflowRun> {
     validateWorkflowDefinition(workflow);
-    const input = request.input ?? (request.objective ? { objective: request.objective } : {});
+    const input = await this.resolveInput(request);
     validateInput(workflow, input);
 
     if (workflow.id === researchPlanBuildWorkflow.id) {
@@ -62,6 +63,7 @@ export class WorkflowEngine {
     }
 
     let run = await this.prepareRun(workflow, request, input);
+    await request.onRunStarted?.(run);
     if (run.status === 'completed') return run;
 
     const stepRuns = new Map(
@@ -140,6 +142,7 @@ export class WorkflowEngine {
     initialInput: Record<string, unknown>,
   ): Promise<WorkflowRun> {
     const run = await this.prepareRun(workflow, request, initialInput);
+    await request.onRunStarted?.(run);
     if (run.status === 'completed') return run;
 
     const stepRuns = new Map(
@@ -350,8 +353,40 @@ export class WorkflowEngine {
       createdAt: now,
       updatedAt: now,
     };
-    await this.runStore.createRun(run);
+    const inputArtifact = await this.artifactStore.write(
+      run.id,
+      'run',
+      'input',
+      'json',
+      JSON.stringify(input),
+      'application/json',
+    );
+    await this.runStore.createRun(run, [inputArtifact]);
     return this.saveRunStatus(run, 'running');
+  }
+
+  private async resolveInput(request: ExecuteWorkflowRequest): Promise<Record<string, unknown>> {
+    if (!request.resume || request.input !== undefined) {
+      return request.input ?? (request.objective ? { objective: request.objective } : {});
+    }
+
+    if (!request.runId) throw new Error('A run ID is required to resume a workflow');
+    const run = await this.runStore.getRun(request.runId);
+    if (!run) throw new Error(`Unknown run: ${request.runId}`);
+    const inputArtifact = (await this.runStore.getArtifacts(run.id)).find(
+      (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+    );
+    if (!inputArtifact) return { objective: run.objective };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await this.artifactStore.read(inputArtifact));
+    } catch (error) {
+      throw new Error(
+        `Persisted run input is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!isRecord(parsed)) throw new Error('Persisted run input must be a JSON object');
+    return parsed;
   }
 
   private async resetLoopStep(step: StepRun): Promise<StepRun> {
@@ -671,11 +706,16 @@ function validateInput(workflow: WorkflowDefinition, input: Record<string, unkno
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function canRetry(step: StepRun, resume: boolean): boolean {
   if (!resume) return step.status === 'pending';
   return (
     step.status === 'pending' ||
     step.status === 'interrupted' ||
+    step.status === 'skipped' ||
     (step.status === 'failed' && step.error?.retryable === true)
   );
 }

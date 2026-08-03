@@ -55,6 +55,15 @@ export interface RunFinishedRecord {
   artifacts: ArtifactReference[];
 }
 
+export interface RunFailedRecord {
+  protocol: typeof CLI_PROTOCOL;
+  version: typeof CLI_PROTOCOL_VERSION;
+  type: 'run.failed';
+  command: string;
+  runId: string;
+  error: CliErrorPayload;
+}
+
 export class CliError extends Error {
   constructor(
     readonly code: string,
@@ -76,6 +85,12 @@ export function machineMode(options: RootOptions): MachineMode | undefined {
   return undefined;
 }
 
+export function validateMachineMode(options: RootOptions): void {
+  if (options.json && options.jsonl) {
+    throw cliUsageError('CONFLICTING_OUTPUT_MODES', 'Choose either --json or --jsonl');
+  }
+}
+
 export function writeJsonResult<T>(command: string, data: T): void {
   const result: CliResult<T> = {
     protocol: CLI_PROTOCOL,
@@ -87,8 +102,21 @@ export function writeJsonResult<T>(command: string, data: T): void {
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
-export function writeJsonl(record: RunStartedRecord | RunEventRecord | RunFinishedRecord): void {
+export function writeJsonl(
+  record: RunStartedRecord | RunEventRecord | RunFinishedRecord | RunFailedRecord,
+): void {
   process.stdout.write(`${JSON.stringify(record)}\n`);
+}
+
+export function writeJsonlFailure(command: string, runId: string, error: unknown): void {
+  writeJsonl({
+    protocol: CLI_PROTOCOL,
+    version: CLI_PROTOCOL_VERSION,
+    type: 'run.failed',
+    command,
+    runId,
+    error: errorPayload(error),
+  });
 }
 
 export function writeJsonError(error: unknown, command?: string): void {
@@ -98,15 +126,16 @@ export function writeJsonError(error: unknown, command?: string): void {
     type: 'error',
     ...(command ? { command } : {}),
     error: {
-      code: error instanceof CliError ? error.code : isCodedError(error) ? error.code : 'CLI_ERROR',
-      message: error instanceof Error ? error.message : String(error),
+      ...errorPayload(error),
     },
   };
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 export function exitCodeFor(error: unknown): number {
-  return error instanceof CliError ? error.exitCode : 1;
+  if (error instanceof CliError) return error.exitCode;
+  if (isCodedError(error) && error.code.startsWith('commander.')) return 2;
+  return 1;
 }
 
 export function runFinishedRecord(
@@ -130,4 +159,11 @@ function isCodedError(error: unknown): error is { code: string } {
   return (
     typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
   );
+}
+
+function errorPayload(error: unknown): CliErrorPayload {
+  return {
+    code: error instanceof CliError ? error.code : isCodedError(error) ? error.code : 'CLI_ERROR',
+    message: error instanceof Error ? error.message : String(error),
+  };
 }

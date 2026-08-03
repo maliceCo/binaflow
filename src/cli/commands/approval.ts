@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { machineMode, writeJsonl } from '../protocol.js';
+import { exitCodeFor, machineMode, writeJsonl, writeJsonlFailure } from '../protocol.js';
 
 export function registerApprovalCommands(cli: Command): void {
   cli
@@ -61,23 +61,28 @@ async function decide(
     });
     const controller = new AbortController();
     const removeSignalHandlers = installSignalHandlers(controller, runId);
+    let started = false;
     try {
-      if (mode === 'jsonl') {
-        writeJsonl({
-          protocol: 'binaflow-cli',
-          version: 1,
-          type: 'run.started',
-          command: decision === 'approved' ? 'approve' : 'reject',
-          runId,
-          workflowId: previous.workflowId,
-        });
-      }
       const run = await context.engine.execute(workflow, {
         runId,
-        input: { objective: previous.objective },
         profiles: context.config.profiles,
         resume: true,
         signal: controller.signal,
+        ...(mode === 'jsonl'
+          ? {
+              onRunStarted: (startedRun: typeof previous) => {
+                started = true;
+                writeJsonl({
+                  protocol: 'binaflow-cli',
+                  version: 1,
+                  type: 'run.started',
+                  command: decision === 'approved' ? 'approve' : 'reject',
+                  runId: startedRun.id,
+                  workflowId: startedRun.workflowId,
+                });
+              },
+            }
+          : {}),
       });
       if (mode) {
         await printMachineRunResult(
@@ -92,6 +97,13 @@ async function decide(
       if (run.status === 'failed' || run.status === 'cancelled') {
         process.exitCode = run.status === 'cancelled' ? 130 : 1;
       }
+    } catch (error) {
+      if (mode === 'jsonl' && started) {
+        writeJsonlFailure(decision === 'approved' ? 'approve' : 'reject', runId, error);
+        process.exitCode = exitCodeFor(error);
+        return;
+      }
+      throw error;
     } finally {
       removeSignalHandlers();
     }

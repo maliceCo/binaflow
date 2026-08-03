@@ -12,7 +12,14 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { VERSION } from '../version.js';
 import { workflowSummaries } from '../workflows/catalog-info.js';
-import { exitCodeFor, machineMode, writeJsonError, writeJsonResult } from './protocol.js';
+import {
+  exitCodeFor,
+  cliUsageError,
+  machineMode,
+  validateMachineMode,
+  writeJsonError,
+  writeJsonResult,
+} from './protocol.js';
 
 export function createCli(): Command {
   const cli = new Command();
@@ -33,6 +40,11 @@ export function createCli(): Command {
     'after',
     `\nWorkflows:\n${workflowSummaries.map((item) => `  ${item.id.padEnd(22)} ${item.description}`).join('\n')}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow --cwd /path/to/project runs\n  $ binaflow run --interactive\n`,
   );
+  cli.hook('preAction', (command) => {
+    let root = command;
+    while (root.parent) root = root.parent;
+    validateMachineMode(root.opts());
+  });
 
   registerRunCommand(cli);
   registerRunsCommand(cli);
@@ -57,7 +69,11 @@ function registerWorkflowCommand(cli: Command): void {
       while (root.parent) root = root.parent;
       const mode = machineMode(root.opts());
       if (mode) {
-        if (mode === 'jsonl') throw new Error('The workflows command supports --json, not --jsonl');
+        if (mode === 'jsonl')
+          throw cliUsageError(
+            'UNSUPPORTED_OUTPUT_MODE',
+            'The workflows command supports --json, not --jsonl',
+          );
         writeJsonResult('workflows', { workflows });
         return;
       }
@@ -74,8 +90,24 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
         : process.argv.includes('--json')
           ? 'json'
           : undefined;
-      if (mode) writeJsonError(error);
+      if (mode) writeJsonError(error, commandFromArgv(process.argv));
       else console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = exitCodeFor(error);
     });
+}
+
+function commandFromArgv(argv: string[]): string | undefined {
+  const commands = new Set([
+    'run',
+    'runs',
+    'show',
+    'resume',
+    'approve',
+    'reject',
+    'update',
+    'artifacts',
+    'artifact',
+    'workflows',
+  ]);
+  return argv.slice(2).find((argument) => commands.has(argument));
 }

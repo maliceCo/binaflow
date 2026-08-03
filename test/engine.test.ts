@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink, NormalizedEvent } from '../src/core/events.js';
 import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
+import type { WorkflowDefinition } from '../src/core/workflow.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { planBuildWorkflow } from '../src/workflows/plan-build.js';
@@ -70,7 +71,7 @@ function createEnvironment(driver: AgentDriver, events: NormalizedEvent[] = []) 
   const engine = new WorkflowEngine(store, artifactStore, driver, (event) => {
     events.push(event);
   });
-  return { engine, store };
+  return { engine, store, artifactStore };
 }
 
 function plannerResult(): AgentStepResult {
@@ -115,7 +116,7 @@ describe('WorkflowEngine', () => {
       plannerResult(),
       { text: 'Build completed', sessionId: 'builder-session' },
     ]);
-    const { engine, store } = createEnvironment(driver, events);
+    const { engine, store, artifactStore } = createEnvironment(driver, events);
 
     const run = await engine.execute(planBuildWorkflow, {
       runId: 'success',
@@ -133,15 +134,23 @@ describe('WorkflowEngine', () => {
     expect((await store.getStepRuns('success')).every((step) => step.status === 'completed')).toBe(
       true,
     );
+    const inputArtifact = (await store.getArtifacts('success')).find(
+      (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+    );
+    expect(inputArtifact).toBeDefined();
+    expect(JSON.parse(await artifactStore.read(inputArtifact!))).toEqual({
+      objective: 'Add a useful change',
+    });
     store.close();
   });
 
   it('rejects resume when the persisted workflow version is incompatible', async () => {
     const { engine, store } = createEnvironment(new FakeDriver([]));
+    const revisedWorkflow = { ...planBuildWorkflow, version: 2 };
     const run: WorkflowRun = {
       id: 'old-workflow',
       workflowId: planBuildWorkflow.id,
-      workflowVersion: 99,
+      workflowVersion: 1,
       objective: 'Resume an old run',
       status: 'pending',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -150,13 +159,64 @@ describe('WorkflowEngine', () => {
     await store.createRun(run);
 
     await expect(
-      engine.execute(planBuildWorkflow, {
+      engine.execute(revisedWorkflow, {
         runId: run.id,
         input: { objective: run.objective },
         profiles,
         resume: true,
       }),
-    ).rejects.toThrow('workflow version 99');
+    ).rejects.toThrow('workflow version 1; installed version is 2');
+    store.close();
+  });
+
+  it('restores structured input from the persisted input artifact on resume', async () => {
+    const driver = new FakeDriver([
+      new Error('temporary failure'),
+      plannerResult(),
+      { text: 'built' },
+    ]);
+    const { engine, store } = createEnvironment(driver);
+    const workflow: WorkflowDefinition = {
+      ...planBuildWorkflow,
+      id: 'input-resume',
+      input: {
+        required: ['objective'],
+        properties: {
+          objective: { type: 'string', minLength: 1 },
+          feedback: { type: 'string' },
+        },
+      },
+      steps: [
+        {
+          ...planBuildWorkflow.steps[0]!,
+          inputReferences: [
+            ...planBuildWorkflow.steps[0]!.inputReferences,
+            { name: 'feedback', source: { kind: 'workflow-input', key: 'feedback' } },
+          ],
+        },
+      ],
+    };
+    const retryProfiles = {
+      ...profiles,
+      planner: { ...profiles.planner, retryLimit: 1 },
+    };
+
+    const first = await engine.execute(workflow, {
+      runId: 'input-resume',
+      objective: 'Add the change',
+      input: { objective: 'Add the change', feedback: 'Preserve this feedback' },
+      profiles: retryProfiles,
+    });
+    expect(first.status).toBe('failed');
+
+    const resumed = await engine.execute(workflow, {
+      runId: 'input-resume',
+      profiles: retryProfiles,
+      resume: true,
+    });
+
+    expect(resumed.status).toBe('completed');
+    expect(driver.calls[1]?.prompt).toContain('Preserve this feedback');
     store.close();
   });
 

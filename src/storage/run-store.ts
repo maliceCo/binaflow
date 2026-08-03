@@ -2,7 +2,7 @@ import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 
 export interface RunStore {
-  createRun(run: WorkflowRun): Promise<void>;
+  createRun(run: WorkflowRun, artifacts?: ArtifactReference[]): Promise<void>;
   getRun(runId: string): Promise<WorkflowRun | undefined>;
   listRuns(): Promise<WorkflowRun[]>;
   saveRun(run: WorkflowRun): Promise<void>;

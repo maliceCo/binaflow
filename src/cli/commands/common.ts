@@ -157,7 +157,11 @@ export function validateWorkflowProfiles(
   }
 }
 
-export function printRunSummary(run: WorkflowRun, steps: StepRun[], config: BinaflowConfig): void {
+export function printRunSummary(
+  run: WorkflowRun,
+  steps: StepRun[],
+  config?: Pick<BinaflowConfig, 'profiles'>,
+): void {
   console.log(`Run ${run.id}  workflow=${run.workflowId}  status=${run.status}`);
   console.log(`  objective=${singleLine(run.objective, 240)}`);
   console.log(`  created=${run.createdAt}  updated=${run.updatedAt}`);
@@ -166,7 +170,7 @@ export function printRunSummary(run: WorkflowRun, steps: StepRun[], config: Bina
   let hasTokens = false;
   let hasCost = false;
   for (const step of steps) {
-    const profile = config.profiles[step.profile];
+    const profile = config?.profiles[step.profile];
     const duration = step.startedAt
       ? `${durationMs(step.startedAt, step.finishedAt ?? new Date().toISOString())}ms`
       : '-';

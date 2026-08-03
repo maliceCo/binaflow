@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { cliUsageError } from '../protocol.js';
 
 export function registerShowCommand(cli: Command): void {
   cli
@@ -18,7 +19,11 @@ export function registerShowCommand(cli: Command): void {
         const events = await context.store.getEvents(runId);
         const artifacts = await context.store.getArtifacts(runId);
         if (optionsAtRoot.json || optionsAtRoot.jsonl) {
-          if (optionsAtRoot.jsonl) throw new Error('The show command supports --json, not --jsonl');
+          if (optionsAtRoot.jsonl)
+            throw cliUsageError(
+              'UNSUPPORTED_OUTPUT_MODE',
+              'The show command supports --json, not --jsonl',
+            );
           printMachineResult('show', {
             run,
             steps,
@@ -27,9 +32,16 @@ export function registerShowCommand(cli: Command): void {
           });
           return;
         }
-        const config = await import('../../config.js').then(({ loadConfig }) =>
-          loadConfig(optionsAtRoot.config ?? '.binaflow/config.json', optionsAtRoot.cwd),
-        );
+        let config:
+          { profiles: Record<string, import('../../config.js').AgentProfile> } | undefined;
+        try {
+          const loaded = await import('../../config.js').then(({ loadConfig }) =>
+            loadConfig(optionsAtRoot.config ?? '.binaflow/config.json', optionsAtRoot.cwd),
+          );
+          config = { profiles: loaded.profiles };
+        } catch {
+          // Inspection remains useful when the current execution config is unavailable.
+        }
         printRunSummary(run, steps, config);
         if (options.events && events.length > 0) {
           console.log(`\nEvents (${events.length})`);

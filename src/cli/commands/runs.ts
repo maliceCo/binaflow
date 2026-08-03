@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { cliUsageError } from '../protocol.js';
 
 export function registerRunsCommand(cli: Command): void {
   cli
@@ -12,7 +13,10 @@ export function registerRunsCommand(cli: Command): void {
         const runs = await context.store.listRuns();
         if (optionsAtRoot.json || optionsAtRoot.jsonl) {
           if (optionsAtRoot.jsonl) {
-            throw new Error('The runs command supports --json, not --jsonl');
+            throw cliUsageError(
+              'UNSUPPORTED_OUTPUT_MODE',
+              'The runs command supports --json, not --jsonl',
+            );
           }
           printMachineResult('runs', { runs });
           return;

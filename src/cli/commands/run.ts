@@ -1,7 +1,14 @@
 import type { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
+import type { WorkflowRun } from '../../core/run.js';
 import { workflowSummaries } from '../../workflows/catalog-info.js';
-import { cliUsageError, machineMode, writeJsonl } from '../protocol.js';
+import {
+  cliUsageError,
+  exitCodeFor,
+  machineMode,
+  writeJsonl,
+  writeJsonlFailure,
+} from '../protocol.js';
 
 interface RunOptions {
   objective?: string;
@@ -44,18 +51,10 @@ export function registerRunCommand(cli: Command): void {
       const runId = randomUUID();
       const controller = new AbortController();
       const removeSignalHandlers = installSignalHandlers(controller, runId);
+      let started = false;
       try {
         validateWorkflowProfiles(workflow, context.config.profiles);
-        if (mode === 'jsonl') {
-          writeJsonl({
-            protocol: 'binaflow-cli',
-            version: 1,
-            type: 'run.started',
-            command: 'run',
-            runId,
-            workflowId: workflow.id,
-          });
-        } else if (!mode) {
+        if (!mode) {
           console.log(`Started run ${runId}  workflow=${workflow.id}`);
         }
         const run = await context.engine.execute(workflow, {
@@ -64,6 +63,21 @@ export function registerRunCommand(cli: Command): void {
           profiles: context.config.profiles,
           runId,
           signal: controller.signal,
+          ...(mode === 'jsonl'
+            ? {
+                onRunStarted: (startedRun: WorkflowRun) => {
+                  started = true;
+                  writeJsonl({
+                    protocol: 'binaflow-cli',
+                    version: 1,
+                    type: 'run.started',
+                    command: 'run',
+                    runId: startedRun.id,
+                    workflowId: startedRun.workflowId,
+                  });
+                },
+              }
+            : {}),
         });
         if (mode) {
           await printMachineRunResult('run', run, context, mode);
@@ -73,6 +87,13 @@ export function registerRunCommand(cli: Command): void {
         if (run.status === 'failed' || run.status === 'cancelled') {
           process.exitCode = run.status === 'cancelled' ? 130 : 1;
         }
+      } catch (error) {
+        if (mode === 'jsonl' && started) {
+          writeJsonlFailure('run', runId, error);
+          process.exitCode = exitCodeFor(error);
+          return;
+        }
+        throw error;
       } finally {
         removeSignalHandlers();
         context.close();

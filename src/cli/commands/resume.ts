@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { machineMode, writeJsonl } from '../protocol.js';
+import { exitCodeFor, machineMode, writeJsonl, writeJsonlFailure } from '../protocol.js';
 
 export function registerResumeCommand(cli: Command): void {
   cli
@@ -22,7 +22,9 @@ export function registerResumeCommand(cli: Command): void {
       try {
         const previous = await context.store.getRun(runId);
         if (!previous) throw new Error(`Unknown run: ${runId}`);
-        if (mode === 'jsonl') {
+        let started = false;
+        if (mode === 'jsonl' && previous.status === 'completed') {
+          started = true;
           writeJsonl({
             protocol: 'binaflow-cli',
             version: 1,
@@ -47,16 +49,37 @@ export function registerResumeCommand(cli: Command): void {
         try {
           const run = await context.engine.execute(workflow, {
             runId,
-            input: { objective: previous.objective },
             profiles: context.config.profiles,
             resume: true,
             signal: controller.signal,
+            ...(mode === 'jsonl'
+              ? {
+                  onRunStarted: (startedRun: typeof previous) => {
+                    started = true;
+                    writeJsonl({
+                      protocol: 'binaflow-cli',
+                      version: 1,
+                      type: 'run.started',
+                      command: 'resume',
+                      runId: startedRun.id,
+                      workflowId: startedRun.workflowId,
+                    });
+                  },
+                }
+              : {}),
           });
           if (mode) await printMachineRunResult('resume', run, context, mode);
           else printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
           if (run.status === 'failed' || run.status === 'cancelled') {
             process.exitCode = run.status === 'cancelled' ? 130 : 1;
           }
+        } catch (error) {
+          if (mode === 'jsonl' && started) {
+            writeJsonlFailure('resume', runId, error);
+            process.exitCode = exitCodeFor(error);
+            return;
+          }
+          throw error;
         } finally {
           removeSignalHandlers();
         }

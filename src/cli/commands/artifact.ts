@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { cliUsageError, machineMode } from '../protocol.js';
 
 export function registerArtifactCommands(cli: Command): void {
   cli
@@ -14,7 +15,11 @@ export function registerArtifactCommands(cli: Command): void {
         if (!run) throw new Error(`Unknown run: ${runId}`);
         const artifacts = await context.store.getArtifacts(runId);
         if (options.json || options.jsonl) {
-          if (options.jsonl) throw new Error('The artifacts command supports --json, not --jsonl');
+          if (options.jsonl)
+            throw cliUsageError(
+              'UNSUPPORTED_OUTPUT_MODE',
+              'The artifacts command supports --json, not --jsonl',
+            );
           printMachineResult('artifacts', { runId, artifacts });
           return;
         }
@@ -42,6 +47,12 @@ export function registerArtifactCommands(cli: Command): void {
       async (runId: string, artifactKey: string, options: { raw?: boolean }, command: Command) => {
         const { openStorageContext, printMachineResult, rootOptions } = await import('./common.js');
         const root = rootOptions(command);
+        if (options.raw && machineMode(root)) {
+          throw cliUsageError(
+            'CONFLICTING_OUTPUT_MODES',
+            '--raw cannot be combined with --json or --jsonl',
+          );
+        }
         const context = await openStorageContext(root);
         try {
           const run = await context.store.getRun(runId);
@@ -59,7 +70,11 @@ export function registerArtifactCommands(cli: Command): void {
             return;
           }
           if (root.json || root.jsonl) {
-            if (root.jsonl) throw new Error('The artifact command supports --json, not --jsonl');
+            if (root.jsonl)
+              throw cliUsageError(
+                'UNSUPPORTED_OUTPUT_MODE',
+                'The artifact command supports --json, not --jsonl',
+              );
             printMachineResult('artifact', { artifact, content });
             return;
           }

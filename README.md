@@ -160,15 +160,19 @@ binaflow --jsonl resume <run-id>
 `--input-json` accepts a JSON object from a file or `-` for stdin. The
 `objective` property is required by the current workflows; `--objective`
 remains the convenient short form and overrides the JSON object's objective.
-Use `artifacts` to list references and `artifact` to retrieve one exact
-artifact. `artifact --raw` writes only its content and is intended for direct
-file pipelines.
+The complete input is persisted as the `run.input` JSON artifact and is the
+source used by `resume`, `approve`, and `reject`. Use `artifacts` to list
+references and `artifact` to retrieve one exact artifact. `artifact --raw`
+writes only its content and cannot be combined with `--json` or `--jsonl`.
 
 The CLI exit codes are: `0` for a successful command (including a run waiting
 for approval), `1` for execution or operational failure, `2` for invalid
-invocation or input, and `130` for graceful cancellation. A persisted run can
-only be resumed with the same workflow version; upgrades that change a
-workflow require starting a new run.
+invocation or input, and `130` for graceful cancellation. `--json` and
+`--jsonl` are mutually exclusive. A persisted run can only be resumed with
+the same workflow revision; increment the workflow's `version` when changing
+its behavior or input/output contract incompatibly. JSONL executions end with
+`run.finished` or `run.failed` after `run.started`; failures before a run is
+created use a standalone `error` record.
 
 Use `--cwd` to run against another workspace or `--config` to select a config
 file:

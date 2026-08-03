@@ -18,13 +18,17 @@ export class SqliteRunStore implements RunStore {
     this.database.close();
   }
 
-  async createRun(run: WorkflowRun): Promise<void> {
-    this.database
-      .prepare(
-        `INSERT INTO runs (id, workflow_id, workflow_version, objective, status, created_at, updated_at)
-         VALUES (@id, @workflowId, @workflowVersion, @objective, @status, @createdAt, @updatedAt)`,
-      )
-      .run(toRunParams(run));
+  async createRun(run: WorkflowRun, artifacts: ArtifactReference[] = []): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO runs (id, workflow_id, workflow_version, objective, status, created_at, updated_at)
+           VALUES (@id, @workflowId, @workflowVersion, @objective, @status, @createdAt, @updatedAt)`,
+        )
+        .run(toRunParams(run));
+      for (const artifact of artifacts) this.insertArtifact(artifact);
+    });
+    transaction();
   }
 
   async getRun(runId: string): Promise<WorkflowRun | undefined> {
@@ -129,6 +133,15 @@ export class SqliteRunStore implements RunStore {
       }
     });
     transaction();
+  }
+
+  private insertArtifact(artifact: ArtifactReference): void {
+    this.database
+      .prepare(
+        `INSERT INTO artifacts (id, run_id, step_id, name, kind, path, media_type, size_bytes)
+         VALUES (@id, @runId, @stepId, @name, @kind, @path, @mediaType, @sizeBytes)`,
+      )
+      .run(toArtifactParams(artifact));
   }
 
   private writeStepRun(stepRun: StepRun): void {

@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import type { ReleaseChannel } from '../../update/release-client.js';
-import { machineMode, writeJsonResult } from '../protocol.js';
+import { cliUsageError, machineMode, writeJsonResult } from '../protocol.js';
 
 interface UpdateOptions {
   check?: boolean;
@@ -25,7 +25,11 @@ export function registerUpdateCommand(cli: Command): void {
       const { managedInstallRoot } = await import('../../update/paths.js');
       const { rootOptions } = await import('./common.js');
       const mode = machineMode(rootOptions(command));
-      if (mode === 'jsonl') throw new Error('The update command supports --json, not --jsonl');
+      if (mode === 'jsonl')
+        throw cliUsageError(
+          'UNSUPPORTED_OUTPUT_MODE',
+          'The update command supports --json, not --jsonl',
+        );
       managedInstallRoot();
       if (options.rollback) {
         const version = await rollbackUpdate();

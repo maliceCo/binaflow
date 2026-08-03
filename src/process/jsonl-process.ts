@@ -32,11 +32,16 @@ export class JsonlProcess {
   private readonly messageListeners = new Set<MessageListener>();
   private readonly stderrListeners = new Set<StderrListener>();
   private readonly decoder = new StringDecoder('utf8');
+  private readonly exitPromise: Promise<void>;
+  private resolveExit!: () => void;
   private stdoutBuffer = '';
   private stderrText = '';
   private closed = false;
 
   constructor(options: JsonlProcessOptions) {
+    this.exitPromise = new Promise<void>((resolve) => {
+      this.resolveExit = resolve;
+    });
     this.child = spawn(options.command, options.args ?? [], {
       cwd: options.cwd,
       env: options.env,
@@ -50,8 +55,12 @@ export class JsonlProcess {
       this.stderrText = `${this.stderrText}${text}`.slice(-MAX_STDERR_BYTES);
       for (const listener of this.stderrListeners) listener(text);
     });
-    this.child.on('error', (error) => this.fail(error));
+    this.child.on('error', (error) => {
+      this.fail(error);
+      this.resolveExit();
+    });
     this.child.on('exit', (code, signal) => {
+      this.resolveExit();
       if (!this.closed) {
         this.fail(
           new Error(`JSONL process exited (${code ?? 'unknown'}, ${signal ?? 'no signal'})`),
@@ -121,7 +130,13 @@ export class JsonlProcess {
       this.rejectPending(new Error('JSONL process terminated'));
       this.child.stdin.destroy();
     }
-    if (this.child.exitCode === null && !this.child.killed) this.child.kill();
+    if (this.child.exitCode !== null) return;
+    this.child.kill();
+    await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
+    if (this.child.exitCode === null) {
+      this.child.kill('SIGKILL');
+      await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
+    }
   }
 
   private readStdout(chunk: string, final = false): void {
@@ -183,7 +198,7 @@ export class JsonlProcess {
       ? `${error.message}; stderr: ${this.stderrText.trim()}`
       : error.message;
     this.rejectPending(new Error(details));
-    if (this.child.exitCode === null && !this.child.killed) this.child.kill();
+    if (this.child.exitCode === null) this.child.kill();
   }
 
   private rejectPending(error: Error): void {
@@ -197,3 +212,8 @@ export class JsonlProcess {
 }
 
 const MAX_STDERR_BYTES = 64 * 1024;
+const PROCESS_TERMINATION_GRACE_MS = 1_000;
+
+async function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<void> {
+  await Promise.race([exit, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+}
