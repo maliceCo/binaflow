@@ -42,4 +42,27 @@ describe('Binaflow config', () => {
     expect(config.profiles.planner?.provider).toBe('anthropic');
     expect(config.profiles.planner?.projectTrust).toBe('always');
   });
+
+  it('rejects invalid runtime limits instead of silently accepting them', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-config-invalid-'));
+    temporaryDirectories.push(directory);
+    const configPath = join(directory, 'config.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        profiles: {
+          planner: {
+            driver: 'pi',
+            model: 'claude-test',
+            tools: ['read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 0,
+            retryLimit: -1,
+          },
+        },
+      }),
+    );
+
+    await expect(loadConfig(configPath)).rejects.toThrow('Profile planner has invalid');
+  });
 });

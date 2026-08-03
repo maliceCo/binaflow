@@ -1,6 +1,12 @@
 import type { Command } from 'commander';
 import { resolveWorkflow } from '../../workflows/catalog.js';
-import { openContext, printRunSummary, rootOptions } from './common.js';
+import {
+  installSignalHandlers,
+  openContext,
+  printRunSummary,
+  rootOptions,
+  validateWorkflowProfiles,
+} from './common.js';
 
 export function registerApprovalCommands(cli: Command): void {
   cli
@@ -32,6 +38,7 @@ async function decide(
     const previous = await context.store.getRun(runId);
     if (!previous) throw new Error(`Unknown run: ${runId}`);
     const workflow = resolveWorkflow(previous.workflowId);
+    validateWorkflowProfiles(workflow, context.config.profiles);
     if (!workflow.approval) throw new Error(`Workflow ${workflow.id} has no approval gate`);
     const steps = await context.store.getStepRuns(runId);
     const approval = steps.find((step) => step.stepId === workflow.approval?.id);
@@ -48,15 +55,22 @@ async function decide(
         decidedAt: new Date().toISOString(),
       },
     });
-    const run = await context.engine.execute(workflow, {
-      runId,
-      input: { objective: previous.objective },
-      profiles: context.config.profiles,
-      resume: true,
-    });
-    printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
-    if (run.status === 'failed' || run.status === 'cancelled') {
-      throw new Error(`Run ${run.id} ended with status ${run.status}`);
+    const controller = new AbortController();
+    const removeSignalHandlers = installSignalHandlers(controller, runId);
+    try {
+      const run = await context.engine.execute(workflow, {
+        runId,
+        input: { objective: previous.objective },
+        profiles: context.config.profiles,
+        resume: true,
+        signal: controller.signal,
+      });
+      printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
+      if (run.status === 'failed' || run.status === 'cancelled') {
+        process.exitCode = 1;
+      }
+    } finally {
+      removeSignalHandlers();
     }
   } finally {
     context.close();

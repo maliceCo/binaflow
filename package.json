@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsc",
     "build:bundle": "pnpm run build && node scripts/build-linux-bundle.mjs",
+    "build:testrelease": "pnpm run build && node scripts/build-testrelease.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

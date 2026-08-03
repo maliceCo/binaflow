@@ -53,6 +53,26 @@ versions under `~/.local/share/binaflow/versions`, selects one with the
 `current` symlink, and installs the stable launcher at `~/.local/bin/binaflow`.
 Set `XDG_DATA_HOME` to change the data root. Keep `$HOME/.local/bin` on PATH.
 
+## Local Test Release
+
+Developers can build an unpacked local bundle without GitHub, a tag, or an
+installation:
+
+```bash
+pnpm run build:testrelease
+```
+
+This replaces the ignored `testrelease/binaflow` directory. Run it against any
+workspace by using its absolute path:
+
+```bash
+/path/to/binaflow/testrelease/binaflow/bin/binaflow --cwd /path/to/project runs
+```
+
+The workspace still supplies `.binaflow/config.json`, its run database, and
+artifacts. This direct local bundle is not a managed installation, so
+`binaflow update` is intentionally unavailable.
+
 ## Configure A Workspace
 
 Create `.binaflow/config.json` in the workspace where Binaflow will run:
@@ -119,6 +139,28 @@ Use `--verbose` to display live normalized agent progress:
 ```bash
 binaflow --verbose run plan-build --objective "Add a health check"
 ```
+
+Normal execution also shows compact live activity on the terminal: agent
+messages, step states, tool activity, and errors. The final run summary is
+written to stdout; live activity is written to stderr so scripts can capture
+the result separately. `--verbose` keeps the raw event types and protocol
+detail. Press `Ctrl-C` once to request a graceful cancellation; press it again
+only when the agent does not stop.
+
+The run ID is printed as soon as execution starts. Failed retryable runs show
+the exact `resume` command in their summary. Inspect a run without dumping all
+of its event history:
+
+```bash
+binaflow show <run-id>
+binaflow show <run-id> --events
+```
+
+The default `show` output includes the objective, timestamps, step attempts,
+agent responses, and artifact paths. `--events` adds the complete normalized
+event history. `runs` displays creation time and safely truncates multi-line
+objectives. Configuration errors and missing workflow profiles are reported
+before an agent step starts.
 
 Run data and artifacts are stored in the configured `dataDir`. Completed steps
 are reused when a run is resumed; planning is not silently repeated.

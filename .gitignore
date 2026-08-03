@@ -3,3 +3,4 @@ dist/
 coverage/
 .binaflow/
 release/
+testrelease/
