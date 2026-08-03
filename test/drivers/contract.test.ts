@@ -95,4 +95,28 @@ describe('PiDriver', () => {
       driver.execute(requestFor(), () => undefined, new AbortController().signal),
     ).rejects.toMatchObject({ code: 'PI_RPC_FAILED' });
   });
+
+  it('waits briefly for Pi to settle after cancellation before terminating it', async () => {
+    const events: NormalizedEvent[] = [];
+    const controller = new AbortController();
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/canceling-pi.mjs'],
+    });
+    const startedAt = Date.now();
+    const execution = driver.execute(
+      requestFor(),
+      (event) => {
+        events.push(event);
+      },
+      controller.signal,
+    );
+    setTimeout(() => {
+      controller.abort();
+    }, 20);
+
+    await expect(execution).rejects.toMatchObject({ code: 'PI_CANCELLED' });
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(80);
+    expect(events.some((event) => event.message === 'Pi agent settled')).toBe(true);
+  });
 });

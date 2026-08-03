@@ -47,7 +47,7 @@ export class JsonlProcess {
     this.child.stdout.on('end', () => this.readStdout(this.decoder.end(), true));
     this.child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf8');
-      this.stderrText += text;
+      this.stderrText = `${this.stderrText}${text}`.slice(-MAX_STDERR_BYTES);
       for (const listener of this.stderrListeners) listener(text);
     });
     this.child.on('error', (error) => this.fail(error));
@@ -116,10 +116,11 @@ export class JsonlProcess {
   }
 
   async terminate(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    this.rejectPending(new Error('JSONL process terminated'));
-    this.child.stdin.destroy();
+    if (!this.closed) {
+      this.closed = true;
+      this.rejectPending(new Error('JSONL process terminated'));
+      this.child.stdin.destroy();
+    }
     if (this.child.exitCode === null && !this.child.killed) this.child.kill();
   }
 
@@ -182,6 +183,7 @@ export class JsonlProcess {
       ? `${error.message}; stderr: ${this.stderrText.trim()}`
       : error.message;
     this.rejectPending(new Error(details));
+    if (this.child.exitCode === null && !this.child.killed) this.child.kill();
   }
 
   private rejectPending(error: Error): void {
@@ -193,3 +195,5 @@ export class JsonlProcess {
     }
   }
 }
+
+const MAX_STDERR_BYTES = 64 * 1024;

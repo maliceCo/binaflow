@@ -65,4 +65,50 @@ describe('Binaflow config', () => {
 
     await expect(loadConfig(configPath)).rejects.toThrow('Profile planner has invalid');
   });
+
+  it('rejects unsupported drivers and malformed tool names', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-config-driver-'));
+    temporaryDirectories.push(directory);
+    const configPath = join(directory, 'config.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        profiles: {
+          planner: {
+            driver: 'other',
+            model: 'claude-test',
+            tools: [' read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+        },
+      }),
+    );
+
+    await expect(loadConfig(configPath)).rejects.toThrow('driver must be pi');
+  });
+
+  it('rejects empty or padded tool names', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-config-tools-'));
+    temporaryDirectories.push(directory);
+    const configPath = join(directory, 'config.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        profiles: {
+          planner: {
+            driver: 'pi',
+            model: 'claude-test',
+            tools: [' '],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+        },
+      }),
+    );
+
+    await expect(loadConfig(configPath)).rejects.toThrow('Profile planner has invalid');
+  });
 });

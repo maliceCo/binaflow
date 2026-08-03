@@ -62,21 +62,41 @@ export async function loadConfig(configPath: string, cwd = process.cwd()): Promi
   };
 }
 
+export async function loadDataDir(configPath: string, cwd = process.cwd()): Promise<string> {
+  const absoluteConfigPath = resolve(cwd, configPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(absoluteConfigPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Cannot read Binaflow config ${absoluteConfigPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!isRecord(parsed)) throw new Error('Binaflow config must be a JSON object');
+  if (parsed.dataDir !== undefined && typeof parsed.dataDir !== 'string') {
+    throw new Error('Binaflow config dataDir must be a string');
+  }
+  return resolve(dirname(absoluteConfigPath), parsed.dataDir ?? './data');
+}
+
 function parseProfile(name: string, value: unknown): AgentProfile {
   if (!isRecord(value)) throw new Error(`Profile ${name} must be an object`);
   if (
     typeof value.driver !== 'string' ||
     !value.driver.trim() ||
+    value.driver !== 'pi' ||
     typeof value.model !== 'string' ||
     !value.model.trim() ||
     !Array.isArray(value.tools) ||
-    !value.tools.every((tool) => typeof tool === 'string') ||
+    !value.tools.every(
+      (tool) => typeof tool === 'string' && tool.length > 0 && tool === tool.trim(),
+    ) ||
     (value.workspaceMode !== 'read-only' && value.workspaceMode !== 'read-write') ||
     !isPositiveInteger(value.timeoutMs) ||
     !isNonNegativeInteger(value.retryLimit)
   ) {
     throw new Error(
-      `Profile ${name} has invalid driver, model, tools, workspaceMode, timeoutMs, or retryLimit`,
+      `Profile ${name} has invalid driver, model, tools, workspaceMode, timeoutMs, or retryLimit; driver must be pi and tools must be non-empty names`,
     );
   }
   if (

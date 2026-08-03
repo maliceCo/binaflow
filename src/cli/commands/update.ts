@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
-import { checkForUpdate, installUpdate, rollbackUpdate } from '../../update/installer.js';
-import { managedInstallRoot } from '../../update/paths.js';
 import type { ReleaseChannel } from '../../update/release-client.js';
+import { machineMode, writeJsonResult } from '../protocol.js';
 
 interface UpdateOptions {
   check?: boolean;
@@ -16,26 +15,50 @@ export function registerUpdateCommand(cli: Command): void {
     .option('--check', 'only check for an available update')
     .option('--rollback', 'switch to the previously installed version')
     .option('--channel <channel>', 'release channel: preview or stable', 'preview')
-    .action(async (options: UpdateOptions) => {
+    .action(async (options: UpdateOptions, command: Command) => {
       if (options.check && options.rollback) throw new Error('Choose either --check or --rollback');
       if (options.channel !== 'preview' && options.channel !== 'stable') {
         throw new Error(`Unsupported release channel: ${options.channel}`);
       }
+      const { checkForUpdate, installUpdate, rollbackUpdate } =
+        await import('../../update/installer.js');
+      const { managedInstallRoot } = await import('../../update/paths.js');
+      const { rootOptions } = await import('./common.js');
+      const mode = machineMode(rootOptions(command));
+      if (mode === 'jsonl') throw new Error('The update command supports --json, not --jsonl');
       managedInstallRoot();
       if (options.rollback) {
-        console.log(`Rolled back to Binaflow ${await rollbackUpdate()}`);
+        const version = await rollbackUpdate();
+        if (mode) {
+          writeJsonResult('update', { action: 'rollback', version });
+        } else {
+          console.log(`Rolled back to Binaflow ${version}`);
+        }
         return;
       }
       const result = await checkForUpdate(options.channel);
       if (options.check) {
-        console.log(
-          result.available
-            ? `Update available: ${result.release.version}`
-            : `Binaflow ${result.current} is up to date`,
-        );
+        if (mode) {
+          writeJsonResult('update', {
+            action: 'check',
+            current: result.current,
+            available: result.available,
+            ...(result.available ? { release: result.release } : {}),
+          });
+        } else {
+          console.log(
+            result.available
+              ? `Update available: ${result.release.version}`
+              : `Binaflow ${result.current} is up to date`,
+          );
+        }
         return;
       }
       const release = await installUpdate(options.channel);
-      console.log(`Updated Binaflow to ${release.version}`);
+      if (mode) {
+        writeJsonResult('update', { action: 'install', version: release.version });
+      } else {
+        console.log(`Updated Binaflow to ${release.version}`);
+      }
     });
 }

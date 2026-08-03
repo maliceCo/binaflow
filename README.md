@@ -126,6 +126,50 @@ binaflow show <run-id>
 binaflow resume <run-id>
 ```
 
+## Consume The CLI
+
+The CLI has a versioned subprocess protocol for LLMs, scripts, and other
+applications. Human-readable output remains the default.
+
+Use JSON for inspection and discovery. JSON output is one document on stdout;
+diagnostics remain on stderr:
+
+```bash
+binaflow --json workflows
+binaflow --json runs
+binaflow --json show <run-id> --events
+binaflow --json artifacts <run-id>
+binaflow --json artifact <run-id> plan.plan
+```
+
+Every JSON result has `protocol: "binaflow-cli"`, `version: 1`, `type:
+"result"`, a command name, and command-specific `data`. Errors use the same
+protocol with `type: "error"` and a structured `error.code` and
+`error.message`.
+
+Use JSONL for execution. stdout contains only protocol records, one per line:
+`run.started`, `event`, and `run.finished`. Agent activity is structured in
+the `event` record, with a monotonically increasing stream `sequence`, and is
+never mixed into the result:
+
+```bash
+binaflow --jsonl run plan-build --input-json objective.json
+binaflow --jsonl resume <run-id>
+```
+
+`--input-json` accepts a JSON object from a file or `-` for stdin. The
+`objective` property is required by the current workflows; `--objective`
+remains the convenient short form and overrides the JSON object's objective.
+Use `artifacts` to list references and `artifact` to retrieve one exact
+artifact. `artifact --raw` writes only its content and is intended for direct
+file pipelines.
+
+The CLI exit codes are: `0` for a successful command (including a run waiting
+for approval), `1` for execution or operational failure, `2` for invalid
+invocation or input, and `130` for graceful cancellation. A persisted run can
+only be resumed with the same workflow version; upgrades that change a
+workflow require starting a new run.
+
 Use `--cwd` to run against another workspace or `--config` to select a config
 file:
 
@@ -144,8 +188,9 @@ Normal execution also shows compact live activity on the terminal: agent
 messages, step states, tool activity, and errors. The final run summary is
 written to stdout; live activity is written to stderr so scripts can capture
 the result separately. `--verbose` keeps the raw event types and protocol
-detail. Press `Ctrl-C` once to request a graceful cancellation; press it again
-only when the agent does not stop.
+detail. Press `Ctrl-C` once to request a graceful cancellation; Binaflow gives
+Pi up to five seconds to settle before terminating it. Press it again only when
+the agent does not stop.
 
 The run ID is printed as soon as execution starts. Failed retryable runs show
 the exact `resume` command in their summary. Inspect a run without dumping all
@@ -223,3 +268,5 @@ optional and require a working Pi installation and credentials.
 - Updates use HTTPS and SHA-256; signed manifests are reserved for a stable release.
 - There is no daemon, web UI, remote worker, or native web search provider.
 - The API and persisted data format may change before the stable release.
+- The CLI subprocess protocol is versioned independently, but version 1 is
+  still preview API and may change before the stable release.

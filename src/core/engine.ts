@@ -30,6 +30,17 @@ export interface ExecuteWorkflowRequest {
   signal?: AbortSignal;
 }
 
+export class WorkflowVersionMismatchError extends Error {
+  readonly code = 'WORKFLOW_VERSION_MISMATCH';
+
+  constructor(runId: string, persistedVersion: number, installedVersion: number) {
+    super(
+      `Run ${runId} uses workflow version ${persistedVersion}; installed version is ${installedVersion}. Resume is not supported across workflow versions`,
+    );
+    this.name = 'WorkflowVersionMismatchError';
+  }
+}
+
 export class WorkflowEngine {
   constructor(
     private readonly runStore: RunStore,
@@ -306,6 +317,13 @@ export class WorkflowEngine {
       if (!existing) throw new Error(`Unknown run: ${request.runId}`);
       if (existing.workflowId !== workflow.id) {
         throw new Error(`Run ${existing.id} belongs to workflow ${existing.workflowId}`);
+      }
+      if (existing.workflowVersion !== workflow.version) {
+        throw new WorkflowVersionMismatchError(
+          existing.id,
+          existing.workflowVersion,
+          workflow.version,
+        );
       }
       if (existing.status === 'completed') return existing;
       if (existing.status === 'cancelled') throw new Error(`Run ${existing.id} was cancelled`);

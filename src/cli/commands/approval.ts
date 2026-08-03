@@ -1,12 +1,5 @@
 import type { Command } from 'commander';
-import { resolveWorkflow } from '../../workflows/catalog.js';
-import {
-  installSignalHandlers,
-  openContext,
-  printRunSummary,
-  rootOptions,
-  validateWorkflowProfiles,
-} from './common.js';
+import { machineMode, writeJsonl } from '../protocol.js';
 
 export function registerApprovalCommands(cli: Command): void {
   cli
@@ -33,7 +26,18 @@ async function decide(
   decision: 'approved' | 'rejected',
   feedback?: string,
 ): Promise<void> {
-  const context = await openContext(rootOptions(command));
+  const { resolveWorkflow } = await import('../../workflows/catalog.js');
+  const {
+    installSignalHandlers,
+    openContext,
+    printMachineRunResult,
+    printRunSummary,
+    rootOptions,
+    validateWorkflowProfiles,
+  } = await import('./common.js');
+  const optionsAtRoot = rootOptions(command);
+  const mode = machineMode(optionsAtRoot);
+  const context = await openContext(optionsAtRoot);
   try {
     const previous = await context.store.getRun(runId);
     if (!previous) throw new Error(`Unknown run: ${runId}`);
@@ -58,6 +62,16 @@ async function decide(
     const controller = new AbortController();
     const removeSignalHandlers = installSignalHandlers(controller, runId);
     try {
+      if (mode === 'jsonl') {
+        writeJsonl({
+          protocol: 'binaflow-cli',
+          version: 1,
+          type: 'run.started',
+          command: decision === 'approved' ? 'approve' : 'reject',
+          runId,
+          workflowId: previous.workflowId,
+        });
+      }
       const run = await context.engine.execute(workflow, {
         runId,
         input: { objective: previous.objective },
@@ -65,9 +79,18 @@ async function decide(
         resume: true,
         signal: controller.signal,
       });
-      printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
+      if (mode) {
+        await printMachineRunResult(
+          decision === 'approved' ? 'approve' : 'reject',
+          run,
+          context,
+          mode,
+        );
+      } else {
+        printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
+      }
       if (run.status === 'failed' || run.status === 'cancelled') {
-        process.exitCode = 1;
+        process.exitCode = run.status === 'cancelled' ? 130 : 1;
       }
     } finally {
       removeSignalHandlers();

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink, NormalizedEvent } from '../src/core/events.js';
-import type { AgentStepResult } from '../src/core/run.js';
+import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { planBuildWorkflow } from '../src/workflows/plan-build.js';
@@ -133,6 +133,30 @@ describe('WorkflowEngine', () => {
     expect((await store.getStepRuns('success')).every((step) => step.status === 'completed')).toBe(
       true,
     );
+    store.close();
+  });
+
+  it('rejects resume when the persisted workflow version is incompatible', async () => {
+    const { engine, store } = createEnvironment(new FakeDriver([]));
+    const run: WorkflowRun = {
+      id: 'old-workflow',
+      workflowId: planBuildWorkflow.id,
+      workflowVersion: 99,
+      objective: 'Resume an old run',
+      status: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await store.createRun(run);
+
+    await expect(
+      engine.execute(planBuildWorkflow, {
+        runId: run.id,
+        input: { objective: run.objective },
+        profiles,
+        resume: true,
+      }),
+    ).rejects.toThrow('workflow version 99');
     store.close();
   });
 

@@ -12,5 +12,15 @@ describe('Binaflow CLI', () => {
     expect(help).toContain('approve');
     expect(help).toContain('reject');
     expect(help).toContain('--verbose');
+    expect(help).toContain('--json');
+    expect(help).toContain('--jsonl');
+    expect(help).toContain('workflows');
+    expect(help).toContain('artifact');
+  });
+
+  it('guides an incomplete run command without opening runtime dependencies', async () => {
+    await expect(createCli().parseAsync(['node', 'binaflow', 'run'])).rejects.toThrow(
+      /Missing workflow and objective.*Available workflows:.*plan-build/s,
+    );
   });
 });

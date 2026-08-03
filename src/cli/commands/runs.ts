@@ -1,14 +1,22 @@
 import type { Command } from 'commander';
-import { openContext, rootOptions } from './common.js';
 
 export function registerRunsCommand(cli: Command): void {
   cli
     .command('runs')
     .description('List persisted workflow runs')
     .action(async (_options, command: Command) => {
-      const context = await openContext(rootOptions(command));
+      const { openStorageContext, printMachineResult, rootOptions } = await import('./common.js');
+      const optionsAtRoot = rootOptions(command);
+      const context = await openStorageContext(optionsAtRoot);
       try {
         const runs = await context.store.listRuns();
+        if (optionsAtRoot.json || optionsAtRoot.jsonl) {
+          if (optionsAtRoot.jsonl) {
+            throw new Error('The runs command supports --json, not --jsonl');
+          }
+          printMachineResult('runs', { runs });
+          return;
+        }
         if (runs.length === 0) {
           console.log(
             'No workflow runs found. Start one with: binaflow run plan-build --objective "..."',

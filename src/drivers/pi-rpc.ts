@@ -32,10 +32,8 @@ export class PiDriver implements AgentDriver {
     let finalText: string | undefined;
     let terminalError: string | undefined;
     let settle: (() => void) | undefined;
-    let rejectSettle: ((error: Error) => void) | undefined;
-    const settled = new Promise<void>((resolve, reject) => {
+    const settled = new Promise<void>((resolve) => {
       settle = resolve;
-      rejectSettle = reject;
     });
     let abortSent = false;
     const sendAbort = () => {
@@ -49,7 +47,6 @@ export class PiDriver implements AgentDriver {
     };
     const abortListener = () => {
       sendAbort();
-      rejectSettle?.(new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED'));
     };
     const removeListener = process.onMessage((message) => {
       void normalizePiEvent(message, request, emit, textParts).then((event) => {
@@ -70,11 +67,11 @@ export class PiDriver implements AgentDriver {
 
       const state = await process.request(
         { type: 'get_state' },
-        { timeoutMs: request.profile.timeoutMs },
+        { timeoutMs: request.profile.timeoutMs, signal },
       );
       const stats = await process.request(
         { type: 'get_session_stats' },
-        { timeoutMs: request.profile.timeoutMs },
+        { timeoutMs: request.profile.timeoutMs, signal },
       );
       const result: AgentStepResult = { text: finalText ?? textParts.join('') };
       const sessionId = readSessionId(state);
@@ -87,6 +84,7 @@ export class PiDriver implements AgentDriver {
     } catch (error) {
       if (signal.aborted) {
         sendAbort();
+        await waitForSettled(settled, CANCELLATION_GRACE_MS, sendAbort).catch(() => undefined);
         throw new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED');
       }
       if (error instanceof AgentDriverError) throw error;
@@ -246,10 +244,22 @@ async function waitForSettled(
   settled: Promise<void>,
   timeoutMs: number,
   sendAbort: () => void,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
+  let removeAbortListener: (() => void) | undefined;
   try {
+    const aborted = signal
+      ? new Promise<never>((_, reject) => {
+          const onAbort = () =>
+            reject(new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED'));
+          if (signal.aborted) onAbort();
+          else {
+            signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+          }
+        })
+      : new Promise<never>(() => undefined);
     await Promise.race([
       settled,
       new Promise<never>((_, reject) => {
@@ -258,11 +268,12 @@ async function waitForSettled(
           reject(new AgentDriverError('Pi execution timed out', 'PI_TIMEOUT', true));
         }, timeoutMs);
       }),
-      signal.aborted
-        ? Promise.reject(new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED'))
-        : new Promise<never>(() => undefined),
+      aborted,
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    removeAbortListener?.();
   }
 }
+
+const CANCELLATION_GRACE_MS = 5_000;

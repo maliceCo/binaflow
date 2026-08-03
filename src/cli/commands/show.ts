@@ -1,5 +1,4 @@
 import type { Command } from 'commander';
-import { openContext, printRunSummary, rootOptions } from './common.js';
 
 export function registerShowCommand(cli: Command): void {
   cli
@@ -8,12 +7,30 @@ export function registerShowCommand(cli: Command): void {
     .argument('<run-id>', 'run ID')
     .option('--events', 'show the complete normalized event history')
     .action(async (runId: string, options: { events?: boolean }, command: Command) => {
-      const context = await openContext(rootOptions(command));
+      const { openStorageContext, printMachineResult, printRunSummary, rootOptions } =
+        await import('./common.js');
+      const optionsAtRoot = rootOptions(command);
+      const context = await openStorageContext(optionsAtRoot);
       try {
         const run = await context.store.getRun(runId);
         if (!run) throw new Error(`Unknown run: ${runId}`);
-        printRunSummary(run, await context.store.getStepRuns(runId), context.config);
+        const steps = await context.store.getStepRuns(runId);
         const events = await context.store.getEvents(runId);
+        const artifacts = await context.store.getArtifacts(runId);
+        if (optionsAtRoot.json || optionsAtRoot.jsonl) {
+          if (optionsAtRoot.jsonl) throw new Error('The show command supports --json, not --jsonl');
+          printMachineResult('show', {
+            run,
+            steps,
+            artifacts,
+            ...(options.events ? { events } : {}),
+          });
+          return;
+        }
+        const config = await import('../../config.js').then(({ loadConfig }) =>
+          loadConfig(optionsAtRoot.config ?? '.binaflow/config.json', optionsAtRoot.cwd),
+        );
+        printRunSummary(run, steps, config);
         if (options.events && events.length > 0) {
           console.log(`\nEvents (${events.length})`);
           for (const event of events) {
@@ -24,7 +41,7 @@ export function registerShowCommand(cli: Command): void {
             `\nActivity: ${events.length} events (use show ${runId} --events for full history)`,
           );
         }
-        for (const artifact of await context.store.getArtifacts(runId)) {
+        for (const artifact of artifacts) {
           const content = await context.artifacts.read(artifact);
           console.log(`\nArtifact ${artifact.stepId}.${artifact.name} (${artifact.mediaType})`);
           console.log(`  size=${artifact.sizeBytes} bytes  path=${artifact.path}`);
