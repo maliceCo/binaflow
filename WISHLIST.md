@@ -44,6 +44,7 @@ This document records future directions only. None of these items are in the act
 
 ## Security And Operations
 
+- Add Ed25519-signed release manifests before publishing the first stable channel.
 - Add sandboxing and environment-secret isolation beyond harness-level permissions.
 - Add audit trails, policy controls, and approval gates for destructive operations.
 - Add read-only security analysis and authorized threat-hunting workflows using SIEM, EDR, logs, IOC feeds, and vulnerability data.
