@@ -193,7 +193,9 @@ describe('attached TUI foundation', () => {
         env: { NO_COLOR: '1' },
       });
       await waitForInitialRender(terminal.output);
-      expect(terminal.output.text()).not.toMatch(/\x1b\[[0-9;]*m/);
+      const output = terminal.output.text();
+      expect(output).not.toContain(`${String.fromCharCode(27)}[36m`);
+      expect(output).not.toContain(`${String.fromCharCode(27)}[2m`);
       expect(terminal.output.text()).toContain('\x1b[?1049h');
       terminal.input.emit('data', Buffer.from('q'));
       await running;

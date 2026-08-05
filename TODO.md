@@ -710,53 +710,53 @@ action.
 
 ### Usability
 
-- [ ] Use consistent status language across TUI and CLI.
-- [ ] Use human-readable durations and timestamps.
-- [ ] Keep detailed IDs available but visually secondary.
-- [ ] Ensure errors state what failed, why it matters, and the next action.
-- [ ] Ensure every empty state has one useful next action.
-- [ ] Verify narrow, normal, and wide terminal layouts.
-- [ ] Verify keyboard-only operation.
-- [ ] Verify `NO_COLOR`.
+- [x] Use consistent status language across TUI and CLI.
+- [x] Use human-readable durations and timestamps.
+- [x] Keep detailed IDs available but visually secondary.
+- [x] Ensure errors state what failed, why it matters, and the next action.
+- [x] Ensure every empty state has one useful next action.
+- [x] Verify narrow, normal, and wide terminal layouts.
+- [x] Verify keyboard-only operation.
+- [x] Verify `NO_COLOR`.
 - [ ] Verify behavior over SSH and tmux where available.
-- [ ] Ensure experimental functionality is labeled everywhere.
+- [x] Ensure experimental functionality is labeled everywhere.
 
 ### Documentation
 
-- [ ] Document the normal TUI journey.
-- [ ] Document the non-interactive CLI journey.
-- [ ] Document JSON and JSONL plugin consumption.
-- [ ] Document the distinction between CLI consumers and `AgentDriver`.
-- [ ] Document attached execution and lack of reconnection.
-- [ ] Document configuration safety and permission prompts.
-- [ ] Document recovery of interrupted and failed runs.
-- [ ] Update preview limitations.
+- [x] Document the normal TUI journey.
+- [x] Document the non-interactive CLI journey.
+- [x] Document JSON and JSONL plugin consumption.
+- [x] Document the distinction between CLI consumers and `AgentDriver`.
+- [x] Document attached execution and lack of reconnection.
+- [x] Document configuration safety and permission prompts.
+- [x] Document recovery of interrupted and failed runs.
+- [x] Update preview limitations.
 
 ### Performance
 
-- [ ] Re-run startup and execution measurements.
-- [ ] Compare CLI startup against the pre-TUI baseline.
-- [ ] Compare TUI startup from native Linux storage.
-- [ ] Compare event persistence throughput.
-- [ ] Compare large-history inspection.
-- [ ] Record measured regressions and accepted tradeoffs.
-- [ ] Do not propose a Rust rewrite without new evidence.
+- [x] Re-run startup measurements.
+- [x] Compare CLI startup against the pre-TUI baseline.
+- [x] Compare bundle startup from native Linux and mounted WSL storage.
+- [x] Compare event persistence throughput.
+- [x] Compare large-history inspection.
+- [x] Record measured regressions and accepted tradeoffs.
+- [x] Do not propose a Rust rewrite without new evidence.
 
 ### Full Verification
 
-- [ ] Run `pnpm run format:check`.
-- [ ] Run `pnpm run lint`.
-- [ ] Run `pnpm run typecheck`.
-- [ ] Run `pnpm test`.
-- [ ] Run `pnpm run build`.
-- [ ] Run `pnpm run build:bundle`.
-- [ ] Run focused protocol checks against the built CLI.
-- [ ] Run the TUI from the built Linux bundle.
+- [x] Run repository-equivalent `format:check`.
+- [x] Run repository-equivalent `lint`.
+- [x] Run repository-equivalent `typecheck`.
+- [x] Run repository-equivalent tests.
+- [x] Run repository-equivalent `build`.
+- [x] Run the Linux bundle build script directly from verified WSL Node.
+- [x] Run focused protocol checks against the built CLI.
+- [x] Run the TUI from the built Linux bundle under a pseudo-terminal.
 - [ ] Run optional live Pi E2E validation when available.
-- [ ] Record environmental failures separately from product failures.
-- [ ] Confirm no existing JSON or JSONL consumer contract changed.
-- [ ] Confirm explicit CLI commands work without loading the TUI.
-- [ ] Confirm no daemon, parallel execution, or new harness driver was added.
+- [x] Record environmental failures separately from product failures.
+- [x] Confirm no existing JSON or JSONL consumer contract changed.
+- [x] Confirm explicit CLI commands work without loading the TUI.
+- [x] Confirm no daemon, parallel execution, or new harness driver was added.
 
 ### Exit Criteria
 
@@ -995,8 +995,8 @@ BY` for both default and filtered history queries.
   launch through application operations.
 - The TUI refuses to overwrite existing configuration, previews the complete
   generated configuration before writing, and keeps the TUI attached while a
-  workflow is running. Quitting during execution is ignored and signals abort
-  the active workflow instead of detaching it.
+  workflow is running. `q` requests graceful cancellation and signals abort the
+  active workflow instead of detaching it.
 - Phase 6 focused verification passed 31 TUI/CLI tests, including 6 new setup
   and workflow-launch scenarios.
 - Full Phase 6 verification passed 108 of 110 tests. The same two update tests
@@ -1032,3 +1032,51 @@ BY` for both default and filtered history queries.
 - Direct Prettier, ESLint, TypeScript typecheck, TypeScript build, and
   `git diff --check` passed.
 - Stop here for external review of Phase 8 before starting Phase 9.
+
+## Phase 9 Session Notes
+
+- Product polish is implemented across the TUI and human CLI: status labels
+  are human-readable, durations and timestamps use shared formatting, short
+  IDs are used in lists while detail retains the full ID, and terminal errors
+  include a next action.
+- Completion screens now distinguish completed, failed, cancelled, waiting,
+  and interrupted runs. Unavailable artifact actions are omitted, empty
+  artifact states are actionable, and `q` returns home without activating the
+  selected artifact action.
+- Experimental `research-plan-build` labels are visible in human workflow
+  lists, run detail, live/completion views, and approval command help.
+- The TUI now preserves the key-hint footer when content exceeds the viewport,
+  supports SS3 cursor sequences, honors `NO_COLOR`, and has layout regression
+  coverage at 56, 80, and 120 columns. A true scrollable viewport remains a
+  documented preview limitation.
+- README documentation now covers TUI and CLI journeys, configuration safety,
+  JSON/JSONL consumption, attached execution, recovery, experimental approval,
+  and preview limitations.
+- Focused Phase 9 verification passed 67 tests across TUI, CLI, protocol, and
+  presentation behavior.
+- Windows performance rerun: warm built-CLI `--help` was approximately
+  53-55 ms and `--json workflows` approximately 139-142 ms; cold samples were
+  approximately 71 ms and 161 ms. The Linux bundle archive is 48,493,068
+  bytes.
+- Current storage benchmark persisted 1,000 normalized events in approximately
+  9.3 ms and listed the first 20 runs from a 1,001-run database in approximately
+  0.63 ms. These are local smoke measurements, not performance targets.
+- Linux bundle verification used WSL Ubuntu 24.04 with Node `v22.23.2`, pnpm
+  `11.18.0`, and Pi `0.83.0`. The bundle built successfully, its launcher
+  printed version/help, `better-sqlite3` loaded from the bundled runtime, and
+  the attached TUI launched under a pseudo-terminal and restored the terminal.
+- Native `/tmp` bundle smoke timings were approximately 0.03 s, while the
+  same bundle executed from `/mnt/d` took approximately 1.56-1.98 s. This is
+  accepted WSL mounted-filesystem overhead, not a product regression.
+- The optional live Pi E2E was not run because it consumes model requests and
+  was not explicitly requested. Pi availability was confirmed, but provider
+  credentials/model access were not validated.
+- SSH/tmux verification was not run because this Windows session has no remote
+  SSH or tmux target. Standard pseudo-terminal bundle smoke passed; unusual
+  `TERM` capabilities remain a release follow-up.
+- Full verification passed 164 tests with 2 skipped tests. The same two update
+  tests remain blocked by Windows symlink `EPERM` at `test/update.test.ts`.
+- Direct Windows Prettier, ESLint, TypeScript typecheck, TypeScript build, and
+  `git diff --check` passed. WSL `pnpm run` was blocked by its non-TTY attempt
+  to purge the existing mounted `node_modules`; the bundle script was run
+  directly with the verified WSL Node runtime instead.
