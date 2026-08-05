@@ -1080,3 +1080,7 @@ BY` for both default and filtered history queries.
   `git diff --check` passed. WSL `pnpm run` was blocked by its non-TTY attempt
   to purge the existing mounted `node_modules`; the bundle script was run
   directly with the verified WSL Node runtime instead.
+- A local Linux x64 test release was built at
+  `testrelease/binaflow` with WSL Ubuntu 24.04, Node `v22.23.2`, and pnpm
+  `11.18.0`. Its launcher, help output, bundled `better-sqlite3`, and attached
+  TUI smoke test passed. The bundle is intentionally ignored and unpublished.
