@@ -2,7 +2,8 @@
 
 This plan is the execution contract for the consumer-facing Binaflow
 milestone. Work through phases in order. Complete and verify one phase before
-starting the next phase. At the end of every phase, stop for external review.
+starting the next phase. Phase 10 supersedes the previous external-review
+pauses with its execution, review, remediation, and commit protocol.
 
 ## Product Direction
 
@@ -35,7 +36,7 @@ Binaflow has two complementary interfaces:
 - [x] Exclude daemon, detached execution, reattachment, scheduling, parallel
       runs, remote workers, and new harness drivers from this milestone.
 
-## Instructions For Luna
+## Instructions For Implementation Models
 
 Each phase must be completed in order.
 
@@ -58,7 +59,23 @@ Each phase must be completed in order.
 - [ ] Record blockers and deviations in this file immediately.
 - [ ] Run focused verification before marking any item complete.
 - [ ] Mark only verified items as completed.
-- [ ] Stop for external review after each completed phase.
+- [ ] Prefer composition over inheritance. Do not introduce inheritance for TUI
+      behavior, presentation, or state.
+- [ ] Treat the TUI as a Binaflow consumer: use application operations, never
+      SQLite, `RunStore`, `ArtifactStore`, or engine state transitions directly.
+- [ ] Add a capability to Binaflow's application layer before using it in the
+      TUI when another presentation layer could reasonably need it.
+- [ ] Keep components, hooks, and application operations single-purpose. Do
+      not add patterns, state libraries, frameworks, or abstractions without a
+      demonstrated current need.
+- [ ] Keep tests minimal and behavior-focused. Every test must protect a user,
+      safety, lifecycle, or compatibility contract.
+- [ ] For every active Phase 10 subphase: implement, verify, review the diff,
+      implement and verify the review remediation, commit the phase, update
+      this file, then continue immediately to the next subphase.
+- [ ] Do not pause for external review between Phase 10 subphases. Stop only
+      for an unresolved blocker, an explicit user direction, or after Phase
+      10 is fully complete.
 
 ## Phase 0: Align Scope And Documentation
 
@@ -764,6 +781,423 @@ The consumer TUI milestone is complete when a new user can configure a
 workspace, start a workflow, understand progress, inspect results, recover a
 failed run, and handle experimental approval without memorizing CLI commands.
 
+## Phase 10: Replace The Attached TUI With Ink
+
+### Goal
+
+Replace the handwritten terminal renderer with a fresh Ink implementation that
+is easier to maintain, supports deliberate responsive layouts and scrolling,
+and preserves all Binaflow safety and CLI contracts. This is a presentation
+replacement, not a workflow-engine, storage, or protocol rewrite.
+
+### Architecture Decision
+
+- Ink and React are justified for the TUI only: the current renderer clears the
+  terminal on every interaction, has manual layout logic, and clips long
+  content rather than supporting a viewport.
+- The new TUI lives temporarily in `src/tui-ink/`. It is built as a fresh
+  composition of small screen components and narrowly scoped hooks; do not
+  copy the legacy `src/tui` controller or renderers into React.
+- The TUI is a consumer of Binaflow application operations. It must never read
+  SQLite or call `RunStore`, `ArtifactStore`, or engine state transitions.
+- A new reusable Binaflow capability belongs in `src/application` first, with
+  focused operation tests, before a TUI component consumes it. Presentation-
+  only state remains in Ink.
+- The legacy TUI remains the production route until the formal parity gate. The
+  two implementations must never run in one process or share terminal input,
+  signal, raw-mode, cursor, or alternate-screen ownership.
+- Keep `runTui(options): Promise<void>` and the CLI's lazy dynamic-import
+  boundary. Explicit CLI commands must not load React, Ink, or Yoga.
+- Ink is the official attached human interface. Future independent TUIs consume
+  Binaflow through the versioned CLI JSON/JSONL protocol, not internal TUI
+  modules. There is still no daemon, detach, reconnection, or reattachment.
+- This `TODO.md` is the temporary execution contract for this migration. After
+  Phase 10.8 is verified and committed, delete it as directed by the product
+  owner; preserve final user-facing behavior in `README.md` and repository
+  instructions in `AGENTS.md` before deletion.
+
+### Phase 10 Execution Protocol
+
+For every subphase below, complete this sequence without waiting for external
+review:
+
+1. Implement only the listed scope and run its focused verification.
+2. Review the complete phase diff against this architecture, existing product
+   contracts, single responsibility, composition, security, lifecycle safety,
+   and unnecessary complexity. Require every changed line to have a concrete
+   purpose.
+3. Record review findings in this file. Create and execute the smallest
+   remediation plan for every real finding, then rerun affected verification.
+4. Run the phase-wide verification, update only verified checkboxes and notes,
+   inspect `git status`, `git diff --check`, and the full phase diff, then make
+   one non-interactive commit with a concise phase-specific message.
+5. Start the next subphase immediately. Stop only for an unresolved blocker or
+   an explicit user decision.
+
+Do not create a public implementation selector, a permanent legacy fallback,
+a global state library, a generic component framework, generic approval/loop
+primitives, or unrelated application refactors.
+
+### Phase 10.0: Freeze Parity And Baseline
+
+#### Tasks
+
+- [x] Add a parity matrix that maps each meaningful legacy TUI test and README
+      promise to an Ink replacement test and a migration subphase.
+- [x] Classify old assertions as product, safety/lifecycle, or handwritten
+      implementation detail. Only the first two require behavioral parity.
+- [x] Record the explicit decision that Ink supersedes the earlier no-React TUI
+      decision because responsive layout and scrollable content are now a
+      concrete requirement.
+- [x] Record the current focused TUI tests, full verification result, explicit
+      CLI startup timing, and Linux bundle size as the baseline.
+- [x] Confirm the current public TUI entry points remain legacy during all
+      pre-cutover subphases.
+
+#### Parity Matrix
+
+The matrix distinguishes behavior that users or process safety depend on from
+assertions about the handwritten implementation. Ink tests will use semantic
+screen behavior and injected streams rather than reproducing legacy parser,
+renderer, or output-chunk details.
+
+| Legacy source and scenario                                                                | Class            | Ink replacement                       | Phase |
+| ----------------------------------------------------------------------------------------- | ---------------- | ------------------------------------- | ----- |
+| `test/tui.test.ts`: home screen and wrapped navigation                                    | Product          | `home.navigation`                     | 10.2  |
+| `test/tui.test.ts`: keyboard navigation and minimum-size fallback                         | Product          | `foundation.input-minimum-size`       | 10.1  |
+| `test/tui.test.ts`: split escape sequences and UTF-8 prompt input                         | Safety/lifecycle | `foundation.input-decoding`           | 10.1  |
+| `test/tui.test.ts`: raw Ctrl-C distinct from `q`                                          | Safety/lifecycle | `foundation.interrupt-input`          | 10.1  |
+| `test/tui.test.ts`: idle Ctrl-C exit code 130                                             | Safety/lifecycle | `foundation.sigint-exit`              | 10.1  |
+| `test/tui.test.ts`: actions blocked below minimum size                                    | Product          | `shell.minimum-size-input`            | 10.2  |
+| `test/tui.test.ts`: dynamic path and error sanitization                                   | Safety/lifecycle | `shell.dynamic-text-safety`           | 10.2  |
+| `test/tui.test.ts`: `NO_COLOR` and alternate-screen lifecycle                             | Safety/lifecycle | `foundation.no-color-terminal`        | 10.1  |
+| `test/tui.test.ts`: normal exit, SIGINT, and SIGTERM restoration                          | Safety/lifecycle | `foundation.terminal-restoration`     | 10.1  |
+| `test/tui.test.ts`: input and output stream errors restore terminal                       | Safety/lifecycle | `foundation.stream-error-cleanup`     | 10.1  |
+| `test/tui.test.ts`: refresh result discarded after shutdown                               | Safety/lifecycle | `shell.stale-refresh`                 | 10.2  |
+| `test/tui.test.ts`: diagnosis refresh requests are coalesced                              | Product          | `shell.refresh-coalescing`            | 10.2  |
+| `test/tui.test.ts`: setup failure cleanup and non-TTY refusal                             | Safety/lifecycle | `foundation.tty-refusal-cleanup`      | 10.1  |
+| `test/tui.test.ts`: resize redraw                                                         | Product          | `shell.resize-layout`                 | 10.2  |
+| `test/tui-phase6.test.ts`: first-run setup writes after confirmation                      | Product          | `setup.confirmed-write`               | 10.3  |
+| `test/tui-phase6.test.ts`: existing configuration is not overwritten                      | Safety/lifecycle | `setup.existing-config-safety`        | 10.3  |
+| `test/tui-phase6.test.ts`: experimental workflows and missing profiles                    | Product          | `setup.workflow-availability`         | 10.3  |
+| `test/tui-phase6.test.ts`: invalid input correction and cancel before run                 | Safety/lifecycle | `setup.input-correction-cancel`       | 10.3  |
+| `test/tui-phase6.test.ts`: write permissions require confirmation                         | Safety/lifecycle | `setup.write-permission-confirmation` | 10.3  |
+| `test/tui-phase6.test.ts`: changed profile requires renewed confirmation                  | Safety/lifecycle | `setup.profile-review-invalidation`   | 10.3  |
+| `test/tui-phase6.test.ts`: quitting attached execution does not detach work               | Safety/lifecycle | `execution.quit-active-run`           | 10.4  |
+| `test/tui-phase7.test.ts`: completion and failure details with usage/artifacts            | Product          | `execution.completion-summary`        | 10.4  |
+| `test/tui-phase7.test.ts`: live status, steps, tools, and sanitized messages              | Product          | `execution.live-activity`             | 10.4  |
+| `test/tui-phase7.test.ts`: first cancellation is graceful and attached                    | Safety/lifecycle | `execution.graceful-cancel`           | 10.4  |
+| `test/tui-phase7.test.ts`: second cancellation is forceful and restores terminal          | Safety/lifecycle | `execution.forced-cancel`             | 10.4  |
+| `test/tui-phase7.test.ts`: second OS signal during startup force-cancels                  | Safety/lifecycle | `execution.signal-escalation`         | 10.4  |
+| `test/tui-phase7.test.ts`: active work settles before owned context closes                | Safety/lifecycle | `execution.context-shutdown-order`    | 10.4  |
+| `test/tui-phase7.test.ts`: cleanup occurs before default force signal                     | Safety/lifecycle | `execution.force-signal-cleanup`      | 10.4  |
+| `test/tui-phase7.test.ts`: displayed activity is bounded and resize works                 | Product          | `execution.activity-bounds-resize`    | 10.4  |
+| `test/tui-phase8.test.ts`: attention runs, filters, relative time, pagination             | Product          | `history.filters-pagination`          | 10.5  |
+| `test/tui-phase8.test.ts`: detail metadata, recovery, clarification, approval             | Product          | `history.detail-recovery-approval`    | 10.5  |
+| `test/tui-phase8.test.ts`: bounded artifact text and corrupt JSON errors                  | Safety/lifecycle | `artifacts.bounded-read-errors`       | 10.5  |
+| `test/tui-phase8.test.ts`: open history, filter, detail, and return                       | Product          | `history.open-return`                 | 10.5  |
+| `test/tui-phase8.test.ts`: rejection feedback can cancel with `q` or Escape               | Safety/lifecycle | `approval.feedback-cancel`            | 10.5  |
+| `test/tui-phase8.test.ts`: historical recovery stays attached and cancellable             | Safety/lifecycle | `history.attached-resume-cancel`      | 10.5  |
+| `test/tui-phase8.test.ts`: persisted running run needs explicit interruption confirmation | Safety/lifecycle | `history.stale-running-confirmation`  | 10.5  |
+| `test/phase9.test.ts`: 56, 80, and 120 column layout bounds                               | Product          | `shell.responsive-layouts`            | 10.2  |
+
+README promises are covered separately because they describe the public
+journey rather than one test implementation:
+
+| README promise                                                                                                       | Class            | Ink replacement                  | Phase |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------- | ----- |
+| No-argument TTY and `binaflow tui` open the attached interface                                                       | Product          | `entry.public-tui-routes`        | 10.7  |
+| Setup, workflow selection, validation, permissions, launch, history, recovery, approval, and artifacts are available | Product          | `journey.complete-attached-flow` | 10.6  |
+| `j`/`k`, arrows, Enter, and `q` are keyboard controls                                                                | Product          | `shell.keyboard-navigation`      | 10.2  |
+| Ctrl-C cancels gracefully first and forcefully second                                                                | Safety/lifecycle | `execution.cancel-escalation`    | 10.4  |
+| Non-TTY no-argument invocation shows help                                                                            | Safety/lifecycle | `entry.non-tty-help`             | 10.1  |
+| TUI execution is attached and has no detach, daemon, background, or reconnect path                                   | Safety/lifecycle | `execution.no-detach-lifecycle`  | 10.4  |
+| Recovery reuses completed steps and never silently reruns them                                                       | Safety/lifecycle | `history.safe-recovery`          | 10.5  |
+| Waiting approval is specific to experimental `research-plan-build`                                                   | Product          | `approval.experimental-scope`    | 10.5  |
+| Artifact previews are bounded and full reads remain explicit                                                         | Safety/lifecycle | `artifacts.preview-bounds`       | 10.5  |
+| `NO_COLOR` removes SGR colors but preserves required terminal control                                                | Product          | `foundation.no-color-terminal`   | 10.1  |
+| Explicit CLI commands remain the stable automation interface                                                         | Safety/lifecycle | `entry.cli-contracts`            | 10.6  |
+| Explicit CLI commands do not load the TUI dependency graph                                                           | Safety/lifecycle | `entry.lazy-cli-loading`         | 10.1  |
+| The current preview clips long content and has no scrollable viewport                                                | Product          | `shell.scrollable-viewports`     | 10.2  |
+
+Assertions that only inspect `parseKeys` return values, exact renderer strings,
+raw-mode call arrays, ANSI redraw chunks, or legacy module names are classified
+as handwritten implementation details and will not be ported as behavior.
+
+#### Phase 10.0 Baseline
+
+- Decision: Ink and React supersede the earlier no-React foundation decision.
+  Responsive layouts and a real scrollable viewport are now concrete product
+  requirements; the dependency cost will be measured again in Phase 10.1.
+- Public route status: both `binaflow tui` and no-argument TTY invocation still
+  dynamically import only `src/tui/app.js`; no Ink dependency or production Ink
+  launch path exists.
+- Focused TUI baseline on 2026-08-05: 5 files, 37 tests passed from
+  `test/tui.test.ts`, `test/tui-phase6.test.ts`, `test/tui-phase7.test.ts`,
+  `test/tui-phase8.test.ts`, and `test/phase9.test.ts`.
+- Full test baseline on 2026-08-05: 21 files, 164 tests passed, 2 skipped, and
+  2 failed in `test/update.test.ts` because Windows denied test symlink creation
+  with `EPERM`. The failures are environmental and unrelated to this phase.
+- Static baseline on 2026-08-05: direct Prettier check, ESLint, TypeScript
+  typecheck, TypeScript build, and `git diff --check` passed.
+- Built CLI startup samples on Windows Node 22: `--help` took 57.1-80.5 ms and
+  `--json workflows` took 164.4-201.1 ms across five warm samples.
+- Linux x86_64 bundle baseline from the verified Phase 9 bundle: compressed
+  archive 48,493,068 bytes; extracted payload 140,353,157 bytes. The bundle
+  launched help and the attached legacy TUI under a pseudo-terminal.
+- Baseline limitation: SSH/tmux validation is unavailable in this Windows
+  session, and live Pi E2E remains optional because it consumes model requests.
+
+#### Verification
+
+- [x] Run all existing TUI and Phase 9 layout tests unchanged.
+- [x] Run format, lint, typecheck, tests, build, and `git diff --check`.
+- [x] Confirm `binaflow tui` and no-argument TTY invocation still load only
+      `src/tui`.
+
+#### Exit Criteria
+
+- [x] Every current user-visible or safety-critical TUI behavior has a planned
+      Ink test and phase.
+- [x] No Ink dependency or production Ink launch path exists yet.
+
+### Phase 10.1: Prove The Ink Foundation
+
+#### Tasks
+
+- [ ] Add only the production dependencies required for Ink and React and the
+      development types required for strict TypeScript.
+- [ ] Configure TypeScript TSX support without changing non-TUI module output.
+- [ ] Create a minimal `src/tui-ink/` bootstrap and an internal-only developer
+      runner; do not add a public CLI command.
+- [ ] Prove TTY refusal, input, resize awareness, `NO_COLOR`, minimum-size
+      fallback, normal unmount, error cleanup, SIGINT, and SIGTERM handling.
+- [ ] Give Ink exclusive ownership of rendering and input. Do not wrap it in
+      the legacy terminal session or manual key parser.
+- [ ] Keep Binaflow responsible for attached-run cancellation policy, exit
+      codes, active-operation cleanup, event unsubscription, and owned
+      application-context closure.
+- [ ] Verify Node 22 ESM and Linux x86_64 bundle compatibility for React, Ink,
+      and Yoga.
+
+#### Verification
+
+- [ ] Add focused foundation tests using supported Ink test facilities or
+      injected streams.
+- [ ] Run legacy TUI tests unchanged plus format, lint, typecheck, tests,
+      build, bundle build, and a Linux pseudo-terminal smoke test.
+- [ ] Measure explicit CLI startup and bundle size against Phase 10.0.
+- [ ] Confirm normal CLI help and explicit commands do not load the Ink module
+      graph.
+
+#### Exit Criteria
+
+- [ ] The internal Ink shell starts and restores the terminal safely.
+- [ ] Dependency cost is measured and accepted in this file.
+- [ ] The production route remains legacy.
+
+### Phase 10.2: Build The Ink Shell And Viewports
+
+#### Tasks
+
+- [ ] Build small compositional components only for a screen frame, header,
+      persistent key-hint footer, status/error display, selection list, text
+      prompt, confirmation, and minimum-size fallback.
+- [ ] Implement home, documentation, diagnosis refresh, and exit with
+      application operations and lazy application-context creation.
+- [ ] Implement independent list and text viewports with selection visibility,
+      `j`/`k`, arrows, PageUp/PageDown, and previous/next content indicators.
+- [ ] Support 56, 80, and 120 column layouts without manually clearing the
+      whole screen on every keypress.
+- [ ] Sanitize every dynamic text value before rendering.
+- [ ] Coalesce diagnosis refreshes and discard results after unmount.
+
+#### Verification
+
+- [ ] Add tests for navigation, scrolling, footer visibility, resize,
+      `NO_COLOR`, sanitization, refresh coalescing, and stale async results.
+- [ ] Confirm no Ink module imports storage or engine internals.
+- [ ] Run legacy tests and phase-wide static verification.
+
+#### Exit Criteria
+
+- [ ] Long list and text content are scrollable with a stable footer.
+- [ ] The Ink shell has no generic state framework or copied legacy renderer.
+
+### Phase 10.3: Setup And Workflow Launch
+
+#### Tasks
+
+- [ ] Implement missing-config choices, planner/builder setup prompts,
+      permission explanation, full configuration preview, explicit write
+      confirmation, and existing-file refusal.
+- [ ] Implement workflow discovery, stable/experimental grouping, missing
+      profile explanations, required and optional input collection, correction,
+      objective editing, and profile/permission review.
+- [ ] Revalidate configuration and reviewed permissions immediately before
+      launch using application operations.
+- [ ] Ensure cancellation before confirmation never creates a run.
+
+#### Verification
+
+- [ ] Port all product and safety scenarios from `test/tui-phase6.test.ts` to
+      Ink tests without reproducing raw-parser implementation details.
+- [ ] Verify configuration is never written without confirmation or overwritten
+      by the TUI.
+- [ ] Verify changed profiles require a renewed confirmation.
+- [ ] Run legacy tests and phase-wide static verification.
+
+#### Exit Criteria
+
+- [ ] Ink reaches safe launch confirmation with no direct config or storage
+      access outside application operations.
+
+### Phase 10.4: Attached Execution And Completion
+
+#### Tasks
+
+- [ ] Implement attached launch and resume using application operations and
+      normalized event subscriptions.
+- [ ] Show run ID, workflow, status, elapsed time, usage, cost, step states,
+      agent activity, tool activity, errors, and summary/detail activity views.
+- [ ] Bound displayed activity by count and UTF-8 bytes, throttle rendering
+      independently from persistence, and retain all persisted events.
+- [ ] Use structured state where available; do not carry forward brittle status
+      inference from event-message text without an explicit compatibility need.
+- [ ] Implement completed, failed, cancelled, interrupted, and waiting
+      completion views with semantic artifact actions.
+- [ ] Preserve first graceful and second forced cancellation, terminal
+      restoration before force signalling, exit codes 130/143, and waiting for
+      active work before owned context cleanup.
+
+#### Verification
+
+- [ ] Port all product and lifecycle scenarios from `test/tui-phase7.test.ts`.
+- [ ] Test startup cancellation, graceful and forced cancellation, signals,
+      stream errors, large event streams, sanitization, resize, and cleanup.
+- [ ] Run focused application-runtime and engine lifecycle tests plus phase-wide
+      static verification.
+
+#### Exit Criteria
+
+- [ ] Ink safely owns an attached run from launch to every terminal state.
+- [ ] No run continues after its TUI process exits and no detach path exists.
+
+### Phase 10.5: History, Recovery, Artifacts, And Approval
+
+#### Tasks
+
+- [ ] Implement bounded history, attention runs, status/workflow filters,
+      pagination, and run detail through inspection operations only.
+- [ ] Show persisted metadata, recovery explanations, completed-step reuse,
+      explicit stale-running recovery confirmation, and clarification as a new
+      revised-objective run.
+- [ ] Implement semantic artifact browsing with on-demand bounded reads,
+      scrolling, and safe missing/corrupt-artifact errors.
+- [ ] Implement research-specific approval, non-empty rejection feedback, and
+      leave-waiting behavior without a generic approval abstraction.
+
+#### Verification
+
+- [ ] Port all product and safety scenarios from `test/tui-phase8.test.ts`.
+- [ ] Verify history never loads complete event or artifact bodies.
+- [ ] Verify completed steps are never silently rerun and resume remains
+      attached and cancellable.
+- [ ] Run focused application-operation tests and phase-wide static
+      verification.
+
+#### Exit Criteria
+
+- [ ] Every persisted run state has an equally safe Ink action or explanation.
+- [ ] Artifact and approval behavior remains bounded and workflow-specific.
+
+### Phase 10.6: Formal Parity Gate
+
+#### Tasks
+
+- [ ] Complete the parity matrix with links to passing Ink tests or explicit
+      approved deviations.
+- [ ] Run equivalent keyboard-only journeys through legacy and Ink for setup,
+      launch, completion, cancellation, history, recovery, artifacts, and
+      approval.
+- [ ] Verify narrow, normal, and wide layouts; scrolling; `NO_COLOR`; resize;
+      non-TTY refusal; terminal restoration; signal exit codes; and lazy CLI
+      loading.
+- [ ] Run the built Linux bundle under a pseudo-terminal and record all startup
+      and bundle-size changes.
+
+#### Verification
+
+- [ ] Run all Ink and legacy TUI tests, application tests, CLI protocol tests,
+      format, lint, typecheck, full tests, build, bundle build, and
+      `git diff --check`.
+- [ ] Confirm JSON/JSONL contracts and explicit CLI startup are unchanged.
+
+#### Exit Criteria
+
+- [ ] Every parity row passes or has an explicit accepted deviation.
+- [ ] No critical or high-severity lifecycle, data-safety, or compatibility
+      defect remains.
+
+### Phase 10.7: Cut Over To Ink
+
+#### Tasks
+
+- [ ] Change only the two existing lazy public TUI entry points to load Ink:
+      `binaflow tui` and no-argument TTY invocation.
+- [ ] Keep non-TTY help, JSON/JSONL rejection, and all explicit CLI commands
+      unchanged.
+- [ ] Leave legacy reachable only through an internal test/development path;
+      do not expose a public implementation selector.
+- [ ] Update README only for verified user-visible Ink behavior, including
+      scrolling and attached-execution limitations.
+
+#### Verification
+
+- [ ] Test both public entry points from `dist`, explicit CLI commands, JSON,
+      JSONL, terminal restoration, cancellation, recovery, and the Linux
+      pseudo-terminal bundle.
+- [ ] Confirm explicit commands do not load Ink.
+
+#### Exit Criteria
+
+- [ ] Ink is the only supported public TUI and legacy is not user-selectable.
+
+### Phase 10.8: Delete Legacy And Retire This Plan
+
+#### Tasks
+
+- [ ] Delete the legacy TUI renderer, terminal session, controller, legacy-only
+      parser tests, internal legacy runner, and utilities made unused by Ink.
+- [ ] Keep or replace every product and safety test; no behavior contract may
+      disappear solely because Ink renders successfully.
+- [ ] Consolidate the final implementation under `src/tui/` if that makes the
+      public source layout simpler after deletion.
+- [ ] Update `README.md` and `AGENTS.md` with the final verified user-facing
+      behavior and architecture, including removal or replacement of the
+      `AGENTS.md` session-protocol references that require this `TODO.md`.
+- [ ] Delete this `TODO.md` in the final migration commit, as directed by the
+      product owner, only after the preceding documentation updates and all
+      verification evidence are recorded in the commit history.
+
+#### Verification
+
+- [ ] Search for legacy imports and obsolete test runners.
+- [ ] Confirm `AGENTS.md` contains no instruction to read or update `TODO.md`
+      before this file is deleted.
+- [ ] Run all Ink, application, engine, CLI, and protocol tests; format, lint,
+      typecheck, build, bundle build, pseudo-terminal smoke, and
+      `git diff --check`.
+- [ ] Verify normal exit, errors, SIGINT, SIGTERM, and forced cancellation
+      restore the terminal and settle active work safely.
+
+#### Exit Criteria
+
+- [ ] Ink is the sole TUI implementation, all contracts remain protected, and
+      no legacy-only code remains.
+- [ ] The final commit deletes this temporary plan after all required evidence
+      is preserved in code, documentation, tests, and commit history.
+
 ## Known Non-Goals
 
 - Detached or background execution.
@@ -1084,3 +1518,18 @@ BY` for both default and filtered history queries.
   `testrelease/binaflow` with WSL Ubuntu 24.04, Node `v22.23.2`, and pnpm
   `11.18.0`. Its launcher, help output, bundled `better-sqlite3`, and attached
   TUI smoke test passed. The bundle is intentionally ignored and unpublished.
+
+## Phase 10 Session Notes
+
+- Phase 10.0 parity freeze is completed. The matrix covers all 37 meaningful
+  legacy TUI tests and 13 user-facing README promises, with implementation-only
+  assertions explicitly excluded from behavioral parity.
+- Phase 10.0 focused verification passed all 37 TUI and Phase 9 tests.
+- Phase 10.0 static verification passed direct Prettier, ESLint, TypeScript
+  typecheck, TypeScript build, and `git diff --check`.
+- Full verification remains 164 passed, 2 skipped, and 2 Windows symlink
+  `EPERM` failures in `test/update.test.ts`; no product failure was introduced.
+- No Ink dependency, `src/tui-ink` module, or production Ink route exists yet.
+- Phase 10.0 diff review found no remediation items: the change is limited to
+  parity planning, baseline evidence, and verified session notes; public routes,
+  application boundaries, and CLI contracts remain unchanged.
