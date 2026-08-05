@@ -60,9 +60,42 @@ describe('SQLite migrations', () => {
     const versions = verification
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
+    const columns = verification.prepare('PRAGMA table_info(step_runs)').all() as Array<{
+      name: string;
+    }>;
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    expect(columns.map((column) => column.name)).toContain('profile_json');
+    const indexes = verification
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'runs_by_%'")
+      .all() as Array<{ name: string }>;
+    expect(indexes.map((index) => index.name).sort()).toEqual([
+      'runs_by_created',
+      'runs_by_status_created',
+      'runs_by_workflow_created',
+    ]);
     verification.close();
-    expect(versions.map((row) => row.version)).toEqual([1, 2]);
     expect(readdirSync(directory).some((name) => name.startsWith('runs.db.backup-'))).toBe(true);
     expect(existsSync(databasePath)).toBe(true);
+  });
+
+  it('recovers when the profile column exists but migration 3 was not recorded', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-migration-partial-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'runs.db');
+    const store = new SqliteRunStore(databasePath);
+    store.close();
+
+    const database = new Database(databasePath);
+    database.prepare('DELETE FROM schema_migrations WHERE version >= 3').run();
+    database.close();
+
+    const reopened = new SqliteRunStore(databasePath);
+    const verification = new Database(databasePath);
+    const versions = verification
+      .prepare('SELECT version FROM schema_migrations ORDER BY version')
+      .all() as Array<{ version: number }>;
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    verification.close();
+    reopened.close();
   });
 });

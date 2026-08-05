@@ -16,8 +16,8 @@ export interface JsonlRequestOptions {
   signal?: AbortSignal;
 }
 
-type MessageListener = (message: JsonObject) => void;
-type StderrListener = (chunk: string) => void;
+type MessageListener = (message: JsonObject) => void | Promise<void>;
+type StderrListener = (chunk: string) => void | Promise<void>;
 
 interface PendingRequest {
   resolve: (message: JsonObject) => void;
@@ -50,10 +50,18 @@ export class JsonlProcess {
     });
     this.child.stdout.on('data', (chunk: Buffer) => this.readStdout(this.decoder.write(chunk)));
     this.child.stdout.on('end', () => this.readStdout(this.decoder.end(), true));
+    this.child.stdin.on('error', (error) => this.fail(error));
     this.child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString('utf8');
       this.stderrText = `${this.stderrText}${text}`.slice(-MAX_STDERR_BYTES);
-      for (const listener of this.stderrListeners) listener(text);
+      for (const listener of this.stderrListeners) {
+        try {
+          this.handleListenerResult(listener(text), 'stderr');
+        } catch (error) {
+          this.fail(listenerError('stderr', error));
+          return;
+        }
+      }
     });
     this.child.on('error', (error) => {
       this.fail(error);
@@ -130,10 +138,10 @@ export class JsonlProcess {
       this.rejectPending(new Error('JSONL process terminated'));
       this.child.stdin.destroy();
     }
-    if (this.child.exitCode !== null) return;
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
     this.child.kill();
     await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
-    if (this.child.exitCode === null) {
+    if (this.child.exitCode === null && this.child.signalCode === null) {
       this.child.kill('SIGKILL');
       await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
     }
@@ -188,7 +196,20 @@ export class JsonlProcess {
         pending.resolve(message);
       }
     }
-    for (const listener of this.messageListeners) listener(message);
+    for (const listener of this.messageListeners) {
+      try {
+        this.handleListenerResult(listener(message), 'message');
+      } catch (error) {
+        this.fail(listenerError('message', error));
+        return;
+      }
+    }
+  }
+
+  private handleListenerResult(result: void | Promise<void>, kind: 'message' | 'stderr'): void {
+    if (result instanceof Promise) {
+      void result.catch((error: unknown) => this.fail(listenerError(kind, error)));
+    }
   }
 
   private fail(error: Error): void {
@@ -214,6 +235,22 @@ export class JsonlProcess {
 const MAX_STDERR_BYTES = 64 * 1024;
 const PROCESS_TERMINATION_GRACE_MS = 1_000;
 
+function listenerError(kind: 'message' | 'stderr', error: unknown): Error {
+  return new Error(
+    `JSONL ${kind} listener failed: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
+
 async function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<void> {
-  await Promise.race([exit, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      exit,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

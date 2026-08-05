@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
-import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
+import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
-import type { RunStore } from './run-store.js';
+import type { RunListPage, RunListQuery, RunStore, StepRunQueryOptions } from './run-store.js';
 
 export class SqliteRunStore implements RunStore {
   private readonly database: Database.Database;
@@ -37,11 +37,147 @@ export class SqliteRunStore implements RunStore {
     return row ? fromRunRow(row) : undefined;
   }
 
+  async claimRun(
+    runId: string,
+    eligibleStatuses: readonly RunStatus[],
+  ): Promise<WorkflowRun | undefined> {
+    const statuses = [...new Set(eligibleStatuses)];
+    if (statuses.length === 0) return undefined;
+    for (const status of statuses) {
+      if (status === 'running') throw new Error('A running run cannot be claimed');
+      assertRunTransition(status, 'running');
+    }
+
+    const placeholders = statuses.map(() => '?').join(', ');
+    const transaction = this.database.transaction(() => {
+      const result = this.database
+        .prepare(
+          `UPDATE runs
+           SET status = 'running', updated_at = ?
+           WHERE id = ? AND status IN (${placeholders})`,
+        )
+        .run(new Date().toISOString(), runId, ...statuses);
+      if (result.changes !== 1) return undefined;
+      const row = this.database.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
+        RunRow | undefined;
+      return row ? fromRunRow(row) : undefined;
+    });
+    return transaction();
+  }
+
+  async claimApproval(runId: string, approvalStep: StepRun): Promise<WorkflowRun | undefined> {
+    if (approvalStep.runId !== runId || approvalStep.status !== 'pending') {
+      throw new Error('A pending approval step for the same run is required');
+    }
+
+    const transaction = this.database.transaction(() => {
+      const run = this.database.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
+        RunRow | undefined;
+      if (!run || run.status !== 'waiting') return undefined;
+
+      const step = this.database
+        .prepare('SELECT status FROM step_runs WHERE run_id = ? AND step_id = ?')
+        .get(runId, approvalStep.stepId) as { status: StepRun['status'] } | undefined;
+      if (!step || step.status !== 'waiting') return undefined;
+
+      this.writeStepRun(approvalStep);
+      const updatedAt = new Date().toISOString();
+      this.database
+        .prepare("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?")
+        .run(updatedAt, runId);
+      return fromRunRow({ ...run, status: 'running', updated_at: updatedAt });
+    });
+    return transaction();
+  }
+
+  async markRunInterrupted(runId: string): Promise<WorkflowRun | undefined> {
+    const transaction = this.database.transaction(() => {
+      const run = this.database.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
+        RunRow | undefined;
+      if (!run || run.status !== 'running') return undefined;
+
+      const interruptedAt = new Date().toISOString();
+      this.database
+        .prepare(
+          `UPDATE step_runs
+           SET status = 'interrupted', finished_at = ?
+           WHERE run_id = ? AND status = 'running'`,
+        )
+        .run(interruptedAt, runId);
+      this.database
+        .prepare(
+          `UPDATE step_attempts
+           SET status = 'interrupted', finished_at = ?
+           WHERE run_id = ? AND status = 'running'`,
+        )
+        .run(interruptedAt, runId);
+
+      const result = this.database
+        .prepare(
+          `UPDATE runs
+           SET status = 'interrupted', updated_at = ?
+           WHERE id = ? AND status = 'running'`,
+        )
+        .run(interruptedAt, runId);
+      if (result.changes !== 1) return undefined;
+      return fromRunRow({ ...run, status: 'interrupted', updated_at: interruptedAt });
+    });
+    return transaction();
+  }
+
   async listRuns(): Promise<WorkflowRun[]> {
+    return (await this.listRunsPage()).runs;
+  }
+
+  async listRunsPage(query: RunListQuery = {}): Promise<RunListPage> {
+    const limit = validateLimit(query.limit);
+    const conditions: string[] = [];
+    const parameters: Record<string, string | number> = { limit: limit + 1 };
+
+    if (query.status !== undefined) {
+      if (!RUN_STATUSES.has(query.status)) throw new Error(`Invalid run status: ${query.status}`);
+      conditions.push('status = @status');
+      parameters.status = query.status;
+    }
+    if (query.statuses !== undefined) {
+      if (query.status !== undefined) throw new Error('Use status or statuses, not both');
+      if (query.statuses.length === 0) return { runs: [] };
+      const placeholders = query.statuses.map((status, index) => {
+        if (!RUN_STATUSES.has(status)) throw new Error(`Invalid run status: ${status}`);
+        const parameter = `status${index}`;
+        parameters[parameter] = status;
+        return `@${parameter}`;
+      });
+      conditions.push(`status IN (${placeholders.join(', ')})`);
+    }
+    if (query.workflowId !== undefined) {
+      if (!query.workflowId.trim()) throw new Error('Workflow filter must be non-empty');
+      conditions.push('workflow_id = @workflowId');
+      parameters.workflowId = query.workflowId;
+    }
+    if (query.cursor !== undefined) {
+      const cursor = decodeCursor(query.cursor);
+      conditions.push(
+        '(created_at < @cursorCreatedAt OR (created_at = @cursorCreatedAt AND id < @cursorId))',
+      );
+      parameters.cursorCreatedAt = cursor.createdAt;
+      parameters.cursorId = cursor.id;
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = this.database
-      .prepare('SELECT * FROM runs ORDER BY created_at DESC')
-      .all() as RunRow[];
-    return rows.map(fromRunRow);
+      .prepare(
+        `SELECT * FROM runs ${where}
+         ORDER BY created_at DESC, id DESC
+         LIMIT @limit`,
+      )
+      .all(parameters) as RunRow[];
+    const hasNextPage = rows.length > limit;
+    const pageRows = hasNextPage ? rows.slice(0, limit) : rows;
+    return {
+      runs: pageRows.map(fromRunRow),
+      ...(hasNextPage ? { nextCursor: encodeCursor(pageRows[pageRows.length - 1]!) } : {}),
+    };
   }
 
   async saveRun(run: WorkflowRun): Promise<void> {
@@ -69,9 +205,14 @@ export class SqliteRunStore implements RunStore {
     transaction();
   }
 
-  async getStepRuns(runId: string): Promise<StepRun[]> {
+  async getStepRuns(runId: string, options: StepRunQueryOptions = {}): Promise<StepRun[]> {
+    const resultColumn = options.includeResult === false ? 'NULL AS result_json' : 'result_json';
     const rows = this.database
-      .prepare('SELECT * FROM step_runs WHERE run_id = ? ORDER BY rowid')
+      .prepare(
+        `SELECT run_id, step_id, profile, profile_json, status, attempt, started_at, finished_at,
+                ${resultColumn}, error_json, disposition_json, skip_reason_json, approval_json
+         FROM step_runs WHERE run_id = ? ORDER BY rowid`,
+      )
       .all(runId) as StepRunRow[];
     return rows.map(fromStepRunRow);
   }
@@ -83,19 +224,45 @@ export class SqliteRunStore implements RunStore {
     return rows.map(fromArtifactRow);
   }
 
+  async replaceArtifact(artifact: ArtifactReference): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      this.database
+        .prepare('DELETE FROM artifacts WHERE run_id = ? AND step_id = ? AND name = ?')
+        .run(artifact.runId, artifact.stepId, artifact.name);
+      this.insertArtifact(artifact);
+    });
+    transaction();
+  }
+
   async saveEvent(event: NormalizedEvent): Promise<void> {
-    this.database
-      .prepare(
-        `INSERT INTO normalized_events (run_id, step_id, type, message, occurred_at)
-         VALUES (@runId, @stepId, @type, @message, @occurredAt)`,
-      )
-      .run({
-        runId: event.runId,
-        stepId: event.stepId,
-        type: event.type,
-        message: event.message,
-        occurredAt: event.occurredAt,
-      });
+    await this.saveEvents([event]);
+  }
+
+  async saveEvents(events: NormalizedEvent[]): Promise<void> {
+    if (events.length === 0) return;
+    const insert = this.database.prepare(
+      `INSERT INTO normalized_events (run_id, step_id, type, message, occurred_at)
+       VALUES (@runId, @stepId, @type, @message, @occurredAt)`,
+    );
+    const transaction = this.database.transaction(() => {
+      for (const event of events) {
+        insert.run({
+          runId: event.runId,
+          stepId: event.stepId,
+          type: event.type,
+          message: event.message,
+          occurredAt: event.occurredAt,
+        });
+      }
+    });
+    transaction();
+  }
+
+  async countEvents(runId: string): Promise<number> {
+    const row = this.database
+      .prepare('SELECT COUNT(*) AS count FROM normalized_events WHERE run_id = ?')
+      .get(runId) as { count: number };
+    return row.count;
   }
 
   async getEvents(runId: string): Promise<NormalizedEvent[]> {
@@ -155,11 +322,12 @@ export class SqliteRunStore implements RunStore {
     this.database
       .prepare(
         `INSERT INTO step_runs
-          (run_id, step_id, profile, status, attempt, started_at, finished_at, result_json, error_json, disposition_json, skip_reason_json, approval_json)
-         VALUES (@runId, @stepId, @profile, @status, @attempt, @startedAt, @finishedAt, @resultJson, @errorJson, @dispositionJson, @skipReasonJson, @approvalJson)
+          (run_id, step_id, profile, profile_json, status, attempt, started_at, finished_at, result_json, error_json, disposition_json, skip_reason_json, approval_json)
+         VALUES (@runId, @stepId, @profile, @profileJson, @status, @attempt, @startedAt, @finishedAt, @resultJson, @errorJson, @dispositionJson, @skipReasonJson, @approvalJson)
          ON CONFLICT (run_id, step_id) DO UPDATE SET
-          profile = excluded.profile,
-          status = excluded.status,
+           profile = excluded.profile,
+           profile_json = excluded.profile_json,
+           status = excluded.status,
           attempt = excluded.attempt,
           started_at = excluded.started_at,
            finished_at = excluded.finished_at,
@@ -205,6 +373,7 @@ interface StepRunRow {
   run_id: string;
   step_id: string;
   profile: string;
+  profile_json: string | null;
   status: StepRun['status'];
   attempt: number;
   started_at: string | null;
@@ -263,6 +432,7 @@ function toStepRunRow(stepRun: StepRun): Record<string, unknown> {
     runId: stepRun.runId,
     stepId: stepRun.stepId,
     profile: stepRun.profile,
+    profileJson: stepRun.profileSnapshot ? JSON.stringify(stepRun.profileSnapshot) : null,
     status: stepRun.status,
     attempt: stepRun.attempt,
     startedAt: stepRun.startedAt ?? null,
@@ -282,6 +452,7 @@ function fromStepRunRow(row: StepRunRow): StepRun {
     profile: row.profile,
     status: row.status,
     attempt: row.attempt,
+    ...(row.profile_json ? { profileSnapshot: JSON.parse(row.profile_json) } : {}),
     ...(row.started_at ? { startedAt: row.started_at } : {}),
     ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
     ...(row.result_json ? { result: JSON.parse(row.result_json) } : {}),
@@ -317,3 +488,57 @@ function fromArtifactRow(row: ArtifactRow): ArtifactReference {
     sizeBytes: row.size_bytes,
   };
 }
+
+interface RunCursor {
+  createdAt: string;
+  id: string;
+}
+
+const RUN_STATUSES = new Set<WorkflowRun['status']>([
+  'pending',
+  'running',
+  'waiting',
+  'completed',
+  'failed',
+  'cancelled',
+  'interrupted',
+]);
+
+function validateLimit(value: number | undefined): number {
+  const limit = value ?? DEFAULT_RUN_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RUN_LIMIT) {
+    throw new Error(`Run limit must be an integer between 1 and ${MAX_RUN_LIMIT}`);
+  }
+  return limit;
+}
+
+function encodeCursor(run: RunRow): string {
+  return Buffer.from(JSON.stringify({ createdAt: run.created_at, id: run.id }), 'utf8').toString(
+    'base64url',
+  );
+}
+
+function decodeCursor(value: string): RunCursor {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    const record = parsed as Record<string, unknown>;
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof record.createdAt !== 'string' ||
+      typeof record.id !== 'string' ||
+      !record.createdAt ||
+      !record.id
+    ) {
+      throw new Error('cursor must contain createdAt and id');
+    }
+    return { createdAt: record.createdAt, id: record.id };
+  } catch (error) {
+    throw new Error(
+      `Invalid run cursor: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+const DEFAULT_RUN_LIMIT = 50;
+const MAX_RUN_LIMIT = 100;

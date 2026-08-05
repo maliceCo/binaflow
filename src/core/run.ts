@@ -18,6 +18,7 @@ export interface StepRun {
   profile: string;
   status: StepStatus;
   attempt: number;
+  profileSnapshot?: AgentProfileSnapshot;
   startedAt?: string;
   finishedAt?: string;
   result?: AgentStepResult;
@@ -25,6 +26,18 @@ export interface StepRun {
   skipReason?: StepSkipReason;
   error?: StepError;
   approval?: ApprovalDecision;
+}
+
+export interface AgentProfileSnapshot {
+  driver: string;
+  provider?: string;
+  model: string;
+  thinking?: string;
+  tools: string[];
+  workspaceMode: 'read-only' | 'read-write';
+  projectTrust?: 'never' | 'always';
+  timeoutMs: number;
+  retryLimit: number;
 }
 
 export type StepDisposition =

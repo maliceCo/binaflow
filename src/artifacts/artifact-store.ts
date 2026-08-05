@@ -10,4 +10,10 @@ export interface ArtifactStore {
     mediaType: string,
   ): Promise<ArtifactReference>;
   read(artifact: ArtifactReference): Promise<string>;
+  readBounded(artifact: ArtifactReference, maxBytes: number): Promise<BoundedArtifactContent>;
+}
+
+export interface BoundedArtifactContent {
+  content: string;
+  truncated: boolean;
 }

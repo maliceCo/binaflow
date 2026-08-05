@@ -1,14 +1,19 @@
 import { mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { FileArtifactStore } from '../../artifacts/file-artifact-store.js';
+import { createRuntimeEventSink } from '../../application/runtime.js';
 import { loadConfig, loadDataDir, type BinaflowConfig } from '../../config.js';
 import { WorkflowEngine } from '../../core/engine.js';
-import type { EventSink } from '../../core/events.js';
 import type { StepRun, WorkflowRun } from '../../core/run.js';
+import {
+  formatDurationMs,
+  formatTimestamp,
+  humanRunStatus,
+  humanStepStatus,
+} from '../../core/presentation.js';
 import { PiDriver } from '../../drivers/pi-rpc.js';
 import { SqliteRunStore } from '../../storage/sqlite-run-store.js';
 import type { NormalizedEvent } from '../../core/events.js';
-import type { WorkflowDefinition } from '../../core/workflow.js';
 import {
   machineMode,
   runFinishedRecord,
@@ -16,6 +21,7 @@ import {
   writeJsonl,
   type MachineMode,
 } from '../protocol.js';
+import { workflowSummaries } from '../../workflows/catalog-info.js';
 
 export interface RootOptions {
   config?: string;
@@ -98,8 +104,7 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
     ? new CliEventPresenter(false, () => undefined)
     : new CliEventPresenter(rootOptions.verbose);
   let eventSequence = 0;
-  const eventSink: EventSink = async (event) => {
-    await store.saveEvent(event);
+  const eventSink = createRuntimeEventSink(store, (event) => {
     presenter.present(event);
     if (mode === 'jsonl') {
       writeJsonl({
@@ -110,7 +115,7 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
         event,
       });
     }
-  };
+  });
   const engine = new WorkflowEngine(
     store,
     artifacts,
@@ -144,35 +149,27 @@ export function rootOptions(command: Command): RootOptions {
   return root.opts<RootOptions>();
 }
 
-export function validateWorkflowProfiles(
-  workflow: WorkflowDefinition,
-  profiles: BinaflowConfig['profiles'],
-): void {
-  const required = [...new Set(workflow.steps.map((step) => step.profile))];
-  const missing = required.filter((profile) => !profiles[profile]);
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing agent profile(s): ${missing.join(', ')}. Add them to .binaflow/config.json`,
-    );
-  }
+export function printHumanProgress(message: string): void {
+  process.stderr.write(`${message}\n`);
 }
 
-export function printRunSummary(
-  run: WorkflowRun,
-  steps: StepRun[],
-  config?: Pick<BinaflowConfig, 'profiles'>,
-): void {
-  console.log(`Run ${run.id}  workflow=${run.workflowId}  status=${run.status}`);
+export function printRunSummary(run: WorkflowRun, steps: StepRun[]): void {
+  console.log(
+    `Run ${run.id}  workflow=${workflowDisplayLabel(run.workflowId)}  status=${run.status}`,
+  );
   console.log(`  objective=${singleLine(run.objective, 240)}`);
-  console.log(`  created=${run.createdAt}  updated=${run.updatedAt}`);
+  console.log(`  state=${humanRunStatus(run.status)}`);
+  console.log(
+    `  created=${formatTimestamp(run.createdAt)}  updated=${formatTimestamp(run.updatedAt)}`,
+  );
   let totalTokens = 0;
   let totalCost = 0;
   let hasTokens = false;
   let hasCost = false;
   for (const step of steps) {
-    const profile = config?.profiles[step.profile];
+    const profile = step.profileSnapshot;
     const duration = step.startedAt
-      ? `${durationMs(step.startedAt, step.finishedAt ?? new Date().toISOString())}ms`
+      ? formatDurationMs(durationMs(step.startedAt, step.finishedAt ?? new Date().toISOString()))
       : '-';
     const usage =
       step.result?.usage?.totalTokens === undefined
@@ -188,8 +185,11 @@ export function printRunSummary(
       hasCost = true;
     }
     console.log(
-      `  ${step.stepId}  profile=${step.profile}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${step.status}  attempt=${step.attempt}  duration=${duration}  usage=${usage}  cost=${cost}`,
+      `  ${step.stepId}  profile=${step.profile}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${step.status} (${humanStepStatus(step.status)})  attempt=${step.attempt}  duration=${duration}  usage=${usage}  cost=${cost}`,
     );
+    if (!profile && step.status !== 'skipped') {
+      console.log('    execution metadata=unavailable (legacy run)');
+    }
     if (step.error) {
       console.log(
         `    error=${step.error.code ?? 'UNKNOWN'}  retryable=${step.error.retryable}  ${step.error.message}`,
@@ -289,6 +289,22 @@ function printNextAction(run: WorkflowRun, steps: StepRun[]): void {
     return;
   }
   if (
+    run.status === 'interrupted' &&
+    steps.some(
+      (step) =>
+        step.status === 'pending' ||
+        step.status === 'interrupted' ||
+        (step.status === 'failed' && step.error?.retryable === true),
+    )
+  ) {
+    console.log(`  next=binaflow resume ${run.id}`);
+    return;
+  }
+  if (run.status === 'failed' || run.status === 'interrupted' || run.status === 'cancelled') {
+    console.log(`  next=binaflow show ${run.id}`);
+    return;
+  }
+  if (
     run.status === 'completed' &&
     steps.some(
       (step) =>
@@ -297,6 +313,11 @@ function printNextAction(run: WorkflowRun, steps: StepRun[]): void {
   ) {
     console.log('  next=run again with an objective that answers the clarification questions');
   }
+}
+
+export function workflowDisplayLabel(workflowId: string): string {
+  const summary = workflowSummaries.find((item) => item.id === workflowId);
+  return summary?.experimental ? `${workflowId} [Experimental]` : workflowId;
 }
 
 function singleLine(value: string, maxLength: number): string {

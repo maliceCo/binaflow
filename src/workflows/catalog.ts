@@ -22,6 +22,7 @@ export interface WorkflowContract {
   id: string;
   version: number;
   description: string;
+  experimental?: boolean;
   input: WorkflowDefinition['input'];
   requiredProfiles: string[];
   steps: Array<{
@@ -40,6 +41,7 @@ export function listWorkflowContracts(): WorkflowContract[] {
       id: workflow.id,
       version: workflow.version,
       description: summary.description,
+      ...(summary.experimental ? { experimental: true } : {}),
       input: workflow.input,
       requiredProfiles: [...new Set(workflow.steps.map((step) => step.profile))],
       steps: workflow.steps.map((step) => ({

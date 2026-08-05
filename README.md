@@ -9,7 +9,26 @@ uses Pi as the first agent driver.
 The preview includes two sequential workflows:
 
 - `plan-build`: create a validated implementation plan, then build it.
-- `research-plan-build`: research, review, request approval, plan, then build.
+- `research-plan-build`: experimental research, review, approval, plan, then
+  build.
+
+For human users, Binaflow provides an attached terminal UI (TUI) with workflow
+menus, setup assistance, live progress, artifact browsing, recovery, and clear
+permission confirmations. The CLI remains the stable interface for scripts,
+plugins, and other automation.
+
+The integration boundaries are intentionally separate:
+
+```text
+Human user -> TUI -> Binaflow application operations -> workflow engine
+Script/plugin -> CLI JSON or JSONL -> Binaflow application operations
+Workflow step -> AgentDriver -> Pi (current) or future harness driver
+```
+
+A plugin that invokes Binaflow consumes the CLI protocol; Binaflow does not
+expose a generic plugin API. That is different from Binaflow invoking OpenCode
+or Codex as an agent driver; those drivers are future integrations and are not
+included in this preview milestone.
 
 This is an early preview. Keep backups of important workspaces and review the
 agent profiles before allowing a builder to edit files.
@@ -75,7 +94,26 @@ artifacts. This direct local bundle is not a managed installation, so
 
 ## Configure A Workspace
 
-Create `.binaflow/config.json` in the workspace where Binaflow will run:
+The safest setup path is to diagnose first, then initialize only when the
+configuration is missing:
+
+```bash
+binaflow doctor
+binaflow init
+```
+
+The attached TUI offers the same setup and diagnosis operations. `init` never
+overwrites an existing file, displays the complete proposed configuration,
+and writes it only after explicit confirmation. `doctor` checks configuration,
+profile validity, workflow availability, and whether Pi can launch; it does
+not verify provider authentication or model availability.
+
+By default Binaflow reads `.binaflow/config.json` relative to the workspace.
+Use `--cwd` to select the workspace and `--config` to select another config
+file. A relative `dataDir` is resolved from the workspace, not from the
+process directory.
+
+The generated configuration has this shape:
 
 ```json
 {
@@ -105,24 +143,35 @@ Create `.binaflow/config.json` in the workspace where Binaflow will run:
 ```
 
 Replace the provider and model values with models available in your Pi
-configuration. Do not commit credentials or private configuration files.
+configuration. Binaflow asks for names but does not store credentials or
+manage authentication. Do not commit private configuration files.
 
 The planner is read-only. The builder can modify the workspace and run shell
 commands, so use a test repository first.
 
 ## Run A Workflow
 
-Run the original plan and build workflow:
+For a human session, run `binaflow` with no arguments in a TTY or use
+`binaflow tui`. The TUI guides setup, workflow selection, input validation,
+permission review, attached live execution, completion, history, recovery,
+approval, and artifact browsing. Use `j`/`k` or the arrow keys to move, Enter
+to select, and `q` to go back or leave the current screen. `Ctrl-C` requests
+graceful cancellation during execution; a second request force-cancels.
+
+Non-TTY no-argument invocation shows CLI help. The TUI does not run workflows
+in the background or reconnect to a detached process; the explicit CLI
+commands below remain the stable automation interface.
+
+For an explicit CLI session, diagnose the workspace, discover a workflow, run
+it, inspect its result, and resume only when the persisted state allows it:
 
 ```bash
+binaflow doctor
+binaflow workflows
 binaflow run plan-build --objective "Add input validation to the user API"
-```
-
-Useful inspection commands:
-
-```bash
 binaflow runs
 binaflow show <run-id>
+binaflow artifacts <run-id>
 binaflow resume <run-id>
 ```
 
@@ -130,6 +179,19 @@ binaflow resume <run-id>
 
 The CLI has a versioned subprocess protocol for LLMs, scripts, and other
 applications. Human-readable output remains the default.
+
+Supported output modes are intentionally narrow:
+
+| Command family                                                 | JSON | JSONL | Human-only behavior |
+| -------------------------------------------------------------- | ---- | ----- | ------------------- |
+| `workflows`, `runs`, `show`, `artifacts`, `artifact`, `doctor` | Yes  | No    | -                   |
+| `run`, `resume`, `approve`, `reject`                           | Yes  | Yes   | `run --interactive` |
+| `tui`, `init`                                                  | No   | No    | Interactive only    |
+
+JSONL is an execution stream, not a general listing format. Its stdout
+contains only `run.started`, normalized `event`, and terminal `run.finished` or
+`run.failed` records. A failure before a run exists is a standalone `error`
+record. Human progress and diagnostics remain on stderr.
 
 Use JSON for inspection and discovery. JSON output is one document on stdout;
 diagnostics remain on stderr:
@@ -146,6 +208,9 @@ Every JSON result has `protocol: "binaflow-cli"`, `version: 1`, `type:
 "result"`, a command name, and command-specific `data`. Errors use the same
 protocol with `type: "error"` and a structured `error.code` and
 `error.message`.
+
+`doctor --json` can return a valid result and exit with code `1` when its
+`ready` field is false. This is a diagnosis result, not a protocol failure.
 
 Use JSONL for execution. stdout contains only protocol records, one per line:
 `run.started`, `event`, and `run.finished`. Agent activity is structured in
@@ -206,15 +271,37 @@ binaflow show <run-id> --events
 ```
 
 The default `show` output includes the objective, timestamps, step attempts,
-agent responses, and artifact paths. `--events` adds the complete normalized
-event history. `runs` displays creation time and safely truncates multi-line
-objectives. Configuration errors and missing workflow profiles are reported
-before an agent step starts.
+step metadata, and artifact paths. Use `--full-output` for complete persisted
+agent step results and `--events` for the complete normalized event history.
+`runs` supports `--limit`, `--status`, `--workflow`, and `--cursor`; it displays
+human-readable timestamps and short IDs while `show` retains the full ID.
+Configuration errors and missing workflow profiles are reported before an
+agent step starts.
 
 Run data and artifacts are stored in the configured `dataDir`. Completed steps
 are reused when a run is resumed; planning is not silently repeated.
 
-## Research Workflow
+## Attached Execution And Cancellation
+
+TUI and explicit CLI execution stay attached to the current process. There is
+no detach action, daemon, background worker, or reconnection protocol. The
+first `q` or `Ctrl-C` requests graceful cancellation; a second request force-
+cancels. CLI execution gives Pi up to five seconds to settle.
+
+A process can leave a persisted run marked `running` after abnormal
+termination. After confirming that the original process has stopped, use the
+TUI attention view to mark it interrupted before recovery. Binaflow never
+silently reruns completed steps.
+
+## Recovery
+
+Retryable failed, interrupted, and pending work can be resumed. Completed
+steps and their persisted artifacts are reused. Cancelled and completed runs
+cannot be resumed, waiting runs use the research-specific approval actions,
+and workflow-version mismatches block recovery. Planner clarification starts a
+new run with a revised objective rather than changing the existing run.
+
+## Research Workflow (Experimental)
 
 The research workflow additionally requires `researcher` and
 `research-reviewer` profiles in the config. Start it with:
@@ -223,17 +310,20 @@ The research workflow additionally requires `researcher` and
 binaflow run research-plan-build --objective "Understand the authentication code"
 ```
 
-When the run waits for human approval, approve it:
+When the experimental run waits for human approval, approve it:
 
 ```bash
 binaflow approve <run-id>
 ```
 
-Or reject it with feedback for another research iteration:
+Or reject it with feedback for another experimental research iteration:
 
 ```bash
 binaflow reject <run-id> --feedback "Verify the token refresh path"
 ```
+
+Approval, rejection, and the bounded research loop are specific to
+`research-plan-build`; they are not generic workflow-engine primitives.
 
 ## Update
 
@@ -269,8 +359,24 @@ optional and require a working Pi installation and credentials.
 - Pi is the only supported agent driver.
 - The preview release supports Linux x86_64/glibc only.
 - Execution is local and sequential.
+- The TUI is attached to the current terminal; detached execution and
+  reconnection are not supported.
 - Updates use HTTPS and SHA-256; signed manifests are reserved for a stable release.
 - There is no daemon, web UI, remote worker, or native web search provider.
+- `research-plan-build` and its approval flow are experimental; approval and
+  loop behavior are not generic workflow primitives yet.
+- TUI screens do not yet provide a scrollable viewport. Long content is clipped
+  to the terminal viewport while navigation and key hints remain available.
+- Artifact previews are bounded. JSON previews are limited to 4,000 bytes and
+  displayed artifact content to 8,000 characters; use the CLI `artifact`
+  command for unrestricted retrieval. TUI full view does not bypass terminal
+  display limits.
+- `NO_COLOR` disables SGR color sequences but does not disable the alternate
+  screen or cursor control required by the attached TUI.
+- Pi launchability is probed, but authentication and model availability are
+  not verified by Binaflow.
+- Superseded `run.input` files are retained until a future safe artifact
+  garbage-collection policy exists.
 - The API and persisted data format may change before the stable release.
 - The CLI subprocess protocol is versioned independently, but version 1 is
   still preview API and may change before the stable release.

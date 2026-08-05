@@ -19,9 +19,9 @@ The initial product is intentionally small: a sequential `plan -> build` workflo
 - Treat workflow definitions, agent profiles, and persisted runs as compatibility boundaries.
 - Make the simplest correct change. Do not add abstractions before there is a concrete second use.
 
-## Initial MVP Scope
+## Current Product Scope
 
-Implement only the following capabilities:
+The current product milestone includes the following capabilities:
 
 - A TypeScript-authored, serializable workflow definition.
 - Sequential agent steps with explicit dependencies and output references.
@@ -34,10 +34,15 @@ Implement only the following capabilities:
 - Pi RPC as the first `AgentDriver`.
 - CLI commands: `run`, `runs`, `show`, and `resume`.
 - Basic timeout, cancellation, error recording, and step reuse on resume.
+- A consumer-facing attached TUI for human users.
+- A stable human-oriented CLI for explicit command use.
+- Versioned JSON and JSONL CLI output for scripts and plugins.
+- Configuration setup and diagnosis through the CLI/TUI layer.
+- Experimental `research-plan-build` with its existing approval flow.
 
 ## Explicitly Out Of Scope
 
-Do not implement items listed in `WISHLIST.md` unless the user explicitly moves them into `TODO.md`. In particular, do not add parallel execution, generic plugins, RAG, memory, voice, scheduled tasks, dynamic workflows, worktrees, a daemon, a TUI, remote workers, or drivers other than Pi during the MVP.
+Do not implement items listed in `WISHLIST.md` unless the user explicitly moves them into `TODO.md`. In particular, do not add parallel execution, generic plugins, RAG, memory, voice, scheduled tasks, dynamic workflows, worktrees, a daemon, remote workers, detached execution, or drivers other than Pi during this milestone. The TUI is active scope, but it must remain attached to the current process and must not introduce a daemon or reconnection protocol.
 
 ## Workflow And Agent Boundaries
 
@@ -48,6 +53,14 @@ Do not implement items listed in `WISHLIST.md` unless the user explicitly moves 
 - The builder receives the original objective and validated plan artifact, not the planner's entire transcript.
 - The workflow engine consumes normalized driver events and results only. Driver-specific protocol details remain inside the driver.
 - Do not assume every harness has the same capabilities. Add capability checks only when an actual second driver requires them.
+- The TUI is a human presentation layer. It must reuse application operations and
+  must not read SQLite or implement engine state transitions directly.
+- The CLI is the external automation boundary. Preserve its versioned JSON and
+  JSONL protocol for scripts, plugins, and future consumers.
+- A plugin invoking Binaflow through the CLI is different from Binaflow invoking
+  a future OpenCode or Codex driver. Keep those integration directions separate.
+- `research-plan-build` is experimental product functionality, not evidence that
+  approval and loop primitives are generic workflow engine capabilities.
 
 ## Session Protocol
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCli } from '../src/cli/index.js';
 import { CliError, writeJsonlFailure } from '../src/cli/protocol.js';
-import type { StepRun, WorkflowRun } from '../src/core/run.js';
+import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import { listWorkflowContracts } from '../src/workflows/catalog.js';
 
@@ -44,6 +44,9 @@ describe('CLI protocol', () => {
     const contracts = listWorkflowContracts();
 
     expect(contracts.map((workflow) => workflow.id)).toEqual(['plan-build', 'research-plan-build']);
+    expect(contracts.find((workflow) => workflow.id === 'research-plan-build')?.experimental).toBe(
+      true,
+    );
     expect(contracts.find((workflow) => workflow.id === 'plan-build')?.steps).toEqual([
       expect.objectContaining({ id: 'plan', profile: 'planner' }),
       expect.objectContaining({ id: 'build', profile: 'builder' }),
@@ -90,7 +93,17 @@ describe('CLI protocol', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
-    await store.createRun(run);
+    const artifact: ArtifactReference = {
+      id: 'legacy-plan-artifact',
+      runId: run.id,
+      stepId: 'plan',
+      name: 'plan',
+      kind: 'json',
+      path: join(directory, 'missing-plan.json'),
+      mediaType: 'application/json',
+      sizeBytes: 2,
+    };
+    await store.createRun(run, [artifact]);
     const step: StepRun = {
       runId: run.id,
       stepId: 'plan',
@@ -110,6 +123,162 @@ describe('CLI protocol', () => {
 
     expect(output).toContain('Run inspection-run');
     expect(output).toContain('driver=-');
+    expect(output).toContain('Artifact plan.plan');
+    expect(output).toContain(`binaflow artifact ${run.id} plan`);
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it('lists semantic artifact references through the versioned JSON contract', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-artifacts-'));
+    const configDirectory = join(directory, '.binaflow');
+    await mkdir(configDirectory);
+    await writeFile(join(configDirectory, 'config.json'), JSON.stringify({ dataDir: '..' }));
+    const store = new SqliteRunStore(join(directory, 'runs.db'));
+    const run: WorkflowRun = {
+      id: 'artifact-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'List this artifact',
+      status: 'completed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const artifact: ArtifactReference = {
+      id: 'artifact-1',
+      runId: run.id,
+      stepId: 'plan',
+      name: 'plan',
+      kind: 'json',
+      path: 'artifacts/plan.plan.json',
+      mediaType: 'application/json',
+      sizeBytes: 2,
+    };
+    await store.createRun(run, [artifact]);
+    store.close();
+
+    let output = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      output += chunk.toString();
+      return true;
+    }) as typeof process.stdout.write);
+
+    await createCli().parseAsync([
+      'node',
+      'binaflow',
+      '--cwd',
+      directory,
+      '--json',
+      'artifacts',
+      run.id,
+    ]);
+
+    expect(JSON.parse(output)).toMatchObject({
+      protocol: 'binaflow-cli',
+      version: 1,
+      type: 'result',
+      command: 'artifacts',
+      data: { artifacts: [artifact] },
+    });
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('paginates run history and keeps default show output bounded', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-history-cli-'));
+    const configDirectory = join(directory, '.binaflow');
+    await mkdir(configDirectory);
+    await writeFile(join(configDirectory, 'config.json'), JSON.stringify({ dataDir: '..' }));
+    const store = new SqliteRunStore(join(directory, 'runs.db'));
+    const createdAt = '2026-01-01T00:00:00.000Z';
+    for (const id of ['run-a', 'run-b', 'run-c']) {
+      const run: WorkflowRun = {
+        id,
+        workflowId: 'plan-build',
+        workflowVersion: 1,
+        objective: id,
+        status: 'completed',
+        createdAt,
+        updatedAt: createdAt,
+      };
+      await store.createRun(run);
+    }
+    const step: StepRun = {
+      runId: 'run-c',
+      stepId: 'plan',
+      profile: 'planner',
+      status: 'pending',
+      attempt: 1,
+    };
+    await store.saveStepRun(step);
+    await store.saveStepRun({
+      ...step,
+      status: 'completed',
+      result: { text: 'x'.repeat(100_000) },
+      finishedAt: createdAt,
+    });
+    await store.saveEvent({
+      runId: 'run-c',
+      stepId: 'plan',
+      type: 'status',
+      message: 'completed',
+      occurredAt: createdAt,
+    });
+    store.close();
+
+    let output = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      output += chunk.toString();
+      return true;
+    }) as typeof process.stdout.write);
+    try {
+      await createCli().parseAsync([
+        'node',
+        'binaflow',
+        '--cwd',
+        directory,
+        '--json',
+        'runs',
+        '--limit',
+        '2',
+      ]);
+      const firstPage = JSON.parse(output) as {
+        data: { runs: WorkflowRun[]; nextCursor?: string };
+      };
+      expect(firstPage.data.runs.map((run) => run.id)).toEqual(['run-c', 'run-b']);
+      expect(firstPage.data.nextCursor).toEqual(expect.any(String));
+
+      output = '';
+      await createCli().parseAsync([
+        'node',
+        'binaflow',
+        '--cwd',
+        directory,
+        '--json',
+        'runs',
+        '--limit',
+        '2',
+        '--cursor',
+        firstPage.data.nextCursor!,
+      ]);
+      const secondPage = JSON.parse(output) as { data: { runs: WorkflowRun[] } };
+      expect(secondPage.data.runs.map((run) => run.id)).toEqual(['run-a']);
+
+      output = '';
+      await createCli().parseAsync([
+        'node',
+        'binaflow',
+        '--cwd',
+        directory,
+        '--json',
+        'show',
+        'run-c',
+      ]);
+      const inspection = JSON.parse(output) as {
+        data: { eventCount: number; steps: StepRun[] };
+      };
+      expect(inspection.data.eventCount).toBe(1);
+      expect(inspection.data.steps[0]?.result).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

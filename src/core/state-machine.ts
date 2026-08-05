@@ -5,9 +5,9 @@ const runTransitions: Record<RunStatus, readonly RunStatus[]> = {
   running: ['running', 'waiting', 'completed', 'failed', 'cancelled', 'interrupted'],
   waiting: ['waiting', 'running', 'failed', 'cancelled'],
   completed: ['completed'],
-  failed: ['failed', 'pending'],
+  failed: ['failed', 'pending', 'running'],
   cancelled: ['cancelled'],
-  interrupted: ['interrupted', 'pending'],
+  interrupted: ['interrupted', 'pending', 'running'],
 };
 
 const stepTransitions: Record<StepStatus, readonly StepStatus[]> = {
@@ -19,7 +19,7 @@ const stepTransitions: Record<StepStatus, readonly StepStatus[]> = {
   failed: ['failed', 'pending'],
   cancelled: ['cancelled'],
   interrupted: ['interrupted', 'pending'],
-  skipped: ['skipped'],
+  skipped: ['skipped', 'pending'],
 };
 
 export function assertRunTransition(from: RunStatus, to: RunStatus): void {

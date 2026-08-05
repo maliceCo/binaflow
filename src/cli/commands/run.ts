@@ -29,22 +29,28 @@ export function registerRunCommand(cli: Command): void {
       `\nAvailable workflows:\n${formatWorkflowList()}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow run --interactive\n`,
     )
     .action(async (workflowId: string | undefined, options: RunOptions, command: Command) => {
+      const outputMode = rootMachineMode(command);
+      if (options.interactive && outputMode) {
+        throw cliUsageError(
+          'INTERACTIVE_WITH_MACHINE_OUTPUT',
+          'The --interactive option cannot be combined with --json or --jsonl',
+        );
+      }
       const input = await readInputJson(options.inputJson);
       const inputObjective = typeof input.objective === 'string' ? input.objective : undefined;
       const inputs = options.interactive
-        ? await promptForMissingInputs(workflowId, options.objective ?? inputObjective)
+        ? await promptForMissingInputs(workflowId, options.objective ?? inputObjective, input)
         : requireRunInputs(workflowId, options.objective ?? inputObjective, input);
       const { randomUUID } = await import('node:crypto');
-      const { resolveWorkflow } = await import('../../workflows/catalog.js');
       const {
         installSignalHandlers,
         openContext,
         printRunSummary,
         printMachineRunResult,
+        printHumanProgress,
         rootOptions,
-        validateWorkflowProfiles,
       } = await import('./common.js');
-      const workflow = resolveWorkflow(inputs.workflowId);
+      const { runWorkflow } = await import('../../application/operations.js');
       const optionsAtRoot = rootOptions(command);
       const mode = machineMode(optionsAtRoot);
       const context = await openContext(optionsAtRoot);
@@ -53,36 +59,32 @@ export function registerRunCommand(cli: Command): void {
       const removeSignalHandlers = installSignalHandlers(controller, runId);
       let started = false;
       try {
-        validateWorkflowProfiles(workflow, context.config.profiles);
-        if (!mode) {
-          console.log(`Started run ${runId}  workflow=${workflow.id}`);
-        }
-        const run = await context.engine.execute(workflow, {
+        const run = await runWorkflow(context, {
+          workflowId: inputs.workflowId,
           objective: inputs.objective,
           input: inputs.input,
-          profiles: context.config.profiles,
           runId,
           signal: controller.signal,
-          ...(mode === 'jsonl'
-            ? {
-                onRunStarted: (startedRun: WorkflowRun) => {
-                  started = true;
-                  writeJsonl({
-                    protocol: 'binaflow-cli',
-                    version: 1,
-                    type: 'run.started',
-                    command: 'run',
-                    runId: startedRun.id,
-                    workflowId: startedRun.workflowId,
-                  });
-                },
-              }
-            : {}),
+          onRunStarted: (startedRun: WorkflowRun) => {
+            started = true;
+            if (mode === 'jsonl') {
+              writeJsonl({
+                protocol: 'binaflow-cli',
+                version: 1,
+                type: 'run.started',
+                command: 'run',
+                runId: startedRun.id,
+                workflowId: startedRun.workflowId,
+              });
+            } else if (!mode) {
+              printHumanProgress(`Started run ${startedRun.id}  workflow=${startedRun.workflowId}`);
+            }
+          },
         });
         if (mode) {
           await printMachineRunResult('run', run, context, mode);
         } else {
-          printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
+          printRunSummary(run, await context.store.getStepRuns(run.id));
         }
         if (run.status === 'failed' || run.status === 'cancelled') {
           process.exitCode = run.status === 'cancelled' ? 130 : 1;
@@ -102,7 +104,12 @@ export function registerRunCommand(cli: Command): void {
 }
 
 function formatWorkflowList(): string {
-  return workflowSummaries.map((item) => `  ${item.id.padEnd(22)} ${item.description}`).join('\n');
+  return workflowSummaries
+    .map(
+      (item) =>
+        `  ${item.id.padEnd(22)} ${item.experimental ? '[experimental] ' : ''}${item.description}`,
+    )
+    .join('\n');
 }
 
 function requireRunInputs(
@@ -140,6 +147,7 @@ function requireRunInputs(
 async function promptForMissingInputs(
   workflowId: string | undefined,
   objective: string | undefined,
+  input: Record<string, unknown>,
 ): Promise<{ workflowId: string; objective: string; input: Record<string, unknown> }> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw cliUsageError(
@@ -149,7 +157,11 @@ async function promptForMissingInputs(
   }
 
   if (workflowId && objective?.trim()) {
-    return { workflowId, objective: objective.trim(), input: { objective: objective.trim() } };
+    return {
+      workflowId,
+      objective: objective.trim(),
+      input: { ...input, objective: objective.trim() },
+    };
   }
 
   const { createInterface } = await import('node:readline/promises');
@@ -163,7 +175,7 @@ async function promptForMissingInputs(
         )
       ).trim();
     const selectedObjective = objective?.trim() ?? (await readline.question('Objective: ')).trim();
-    return requireRunInputs(selectedWorkflow, selectedObjective, {});
+    return requireRunInputs(selectedWorkflow, selectedObjective, input);
   } finally {
     readline.close();
   }
@@ -200,4 +212,13 @@ async function readStdin(): Promise<string> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function rootMachineMode(command: Command): 'json' | 'jsonl' | undefined {
+  let root = command;
+  while (root.parent) root = root.parent;
+  const options = root.opts<{ json?: boolean; jsonl?: boolean }>();
+  if (options.jsonl) return 'jsonl';
+  if (options.json) return 'json';
+  return undefined;
 }

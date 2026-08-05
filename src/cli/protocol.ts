@@ -134,7 +134,11 @@ export function writeJsonError(error: unknown, command?: string): void {
 
 export function exitCodeFor(error: unknown): number {
   if (error instanceof CliError) return error.exitCode;
-  if (isCodedError(error) && error.code.startsWith('commander.')) return 2;
+  if (isCodedError(error)) {
+    if (error.code === 'commander.help' || error.code === 'commander.helpDisplayed') return 0;
+    if (error.code === 'commander.version') return 0;
+    if (error.code.startsWith('commander.')) return 2;
+  }
   return 1;
 }
 

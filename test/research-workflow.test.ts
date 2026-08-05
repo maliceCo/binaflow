@@ -111,7 +111,19 @@ function createEnvironment(driver: AgentDriver) {
   temporaryDirectories.push(directory);
   const store = new SqliteRunStore(join(directory, 'run.db'));
   const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
-  return { store, engine: new WorkflowEngine(store, artifacts, driver) };
+  return { store, artifacts, engine: new WorkflowEngine(store, artifacts, driver) };
+}
+
+async function persistedInput(
+  store: SqliteRunStore,
+  artifacts: FileArtifactStore,
+  runId: string,
+): Promise<Record<string, unknown>> {
+  const inputArtifact = (await store.getArtifacts(runId)).find(
+    (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+  );
+  expect(inputArtifact).toBeDefined();
+  return JSON.parse(await artifacts.read(inputArtifact!)) as Record<string, unknown>;
 }
 
 describe('research-plan-build workflow', () => {
@@ -189,6 +201,29 @@ describe('research-plan-build workflow', () => {
     store.close();
   });
 
+  it('does not start research review after cancellation during research', async () => {
+    const controller = new AbortController();
+    const driver = new FakeDriver([reportResult()]);
+    const originalExecute = driver.execute.bind(driver);
+    driver.execute = async (...args) => {
+      const result = await originalExecute(...args);
+      controller.abort();
+      return result;
+    };
+    const { engine, store } = createEnvironment(driver);
+
+    const run = await engine.execute(researchPlanBuildWorkflow, {
+      runId: 'research-cancel-boundary',
+      objective: 'Stop between research steps',
+      profiles,
+      signal: controller.signal,
+    });
+
+    expect(run.status).toBe('cancelled');
+    expect(driver.calls.map((call) => call.stepId)).toEqual(['research']);
+    store.close();
+  });
+
   it('repeats research after a human rejection with feedback', async () => {
     const driver = new FakeDriver([
       reportResult(),
@@ -261,6 +296,91 @@ describe('research-plan-build workflow', () => {
       'research',
       'research-review',
     ]);
+    store.close();
+  });
+
+  it('restores automatic research feedback after an interrupted iteration', async () => {
+    const interruptedDriver = new FakeDriver([
+      reportResult(),
+      reviewResult('needs_more_research'),
+      new Error('research process interrupted'),
+    ]);
+    const { engine, store, artifacts } = createEnvironment(interruptedDriver);
+
+    const failed = await engine.execute(researchPlanBuildWorkflow, {
+      runId: 'automatic-feedback-resume',
+      objective: 'Investigate the workflow',
+      profiles,
+    });
+
+    expect(failed.status).toBe('failed');
+    expect(await persistedInput(store, artifacts, failed.id)).toMatchObject({
+      researchFeedback: 'How are artifacts persisted?',
+    });
+
+    const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
+    const resumed = await new WorkflowEngine(store, artifacts, resumedDriver).execute(
+      researchPlanBuildWorkflow,
+      {
+        runId: failed.id,
+        profiles,
+        resume: true,
+      },
+    );
+
+    expect(resumed.status).toBe('waiting');
+    expect(resumedDriver.calls[0]?.prompt).toContain('How are artifacts persisted?');
+    store.close();
+  });
+
+  it('restores human rejection feedback after an interrupted iteration', async () => {
+    const initialDriver = new FakeDriver([reportResult(), reviewResult('ready')]);
+    const { engine, store, artifacts } = createEnvironment(initialDriver);
+    const waiting = await engine.execute(researchPlanBuildWorkflow, {
+      runId: 'human-feedback-resume',
+      objective: 'Investigate the workflow',
+      profiles,
+    });
+    const approval = (await store.getStepRuns(waiting.id)).find(
+      (step) => step.stepId === 'research-approval',
+    )!;
+    await store.saveStepRun({
+      ...approval,
+      status: 'pending',
+      approval: {
+        decision: 'rejected',
+        feedback: 'Check the persistence migration too.',
+        decidedAt: new Date().toISOString(),
+      },
+    });
+
+    const interrupted = await new WorkflowEngine(
+      store,
+      artifacts,
+      new FakeDriver([new Error('research process interrupted')]),
+    ).execute(researchPlanBuildWorkflow, {
+      runId: waiting.id,
+      profiles,
+      resume: true,
+    });
+
+    expect(interrupted.status).toBe('failed');
+    expect(await persistedInput(store, artifacts, waiting.id)).toMatchObject({
+      researchFeedback: 'Check the persistence migration too.',
+    });
+
+    const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
+    const resumed = await new WorkflowEngine(store, artifacts, resumedDriver).execute(
+      researchPlanBuildWorkflow,
+      {
+        runId: waiting.id,
+        profiles,
+        resume: true,
+      },
+    );
+
+    expect(resumed.status).toBe('waiting');
+    expect(resumedDriver.calls[0]?.prompt).toContain('Check the persistence migration too.');
     store.close();
   });
 });

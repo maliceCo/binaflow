@@ -7,82 +7,60 @@ export function registerShowCommand(cli: Command): void {
     .description('Show a persisted workflow run')
     .argument('<run-id>', 'run ID')
     .option('--events', 'show the complete normalized event history')
-    .action(async (runId: string, options: { events?: boolean }, command: Command) => {
-      const { openStorageContext, printMachineResult, printRunSummary, rootOptions } =
-        await import('./common.js');
-      const optionsAtRoot = rootOptions(command);
-      const context = await openStorageContext(optionsAtRoot);
-      try {
-        const run = await context.store.getRun(runId);
-        if (!run) throw new Error(`Unknown run: ${runId}`);
-        const steps = await context.store.getStepRuns(runId);
-        const events = await context.store.getEvents(runId);
-        const artifacts = await context.store.getArtifacts(runId);
-        if (optionsAtRoot.json || optionsAtRoot.jsonl) {
-          if (optionsAtRoot.jsonl)
-            throw cliUsageError(
-              'UNSUPPORTED_OUTPUT_MODE',
-              'The show command supports --json, not --jsonl',
-            );
-          printMachineResult('show', {
-            run,
-            steps,
-            artifacts,
-            ...(options.events ? { events } : {}),
-          });
-          return;
-        }
-        let config:
-          { profiles: Record<string, import('../../config.js').AgentProfile> } | undefined;
+    .option('--full-output', 'include complete agent step results')
+    .action(
+      async (
+        runId: string,
+        options: { events?: boolean; fullOutput?: boolean },
+        command: Command,
+      ) => {
+        const { openStorageContext, printMachineResult, printRunSummary, rootOptions } =
+          await import('./common.js');
+        const { inspectRun } = await import('../../application/operations.js');
+        const optionsAtRoot = rootOptions(command);
+        const context = await openStorageContext(optionsAtRoot);
         try {
-          const loaded = await import('../../config.js').then(({ loadConfig }) =>
-            loadConfig(optionsAtRoot.config ?? '.binaflow/config.json', optionsAtRoot.cwd),
-          );
-          config = { profiles: loaded.profiles };
-        } catch {
-          // Inspection remains useful when the current execution config is unavailable.
-        }
-        printRunSummary(run, steps, config);
-        if (options.events && events.length > 0) {
-          console.log(`\nEvents (${events.length})`);
-          for (const event of events) {
-            console.log(`  ${event.occurredAt}  [${event.stepId}] ${event.type}: ${event.message}`);
+          const inspection = await inspectRun(context, runId, {
+            includeEvents: options.events === true,
+            includeStepResults: options.fullOutput === true,
+          });
+          const { run, steps, artifacts, eventCount, events } = inspection;
+          if (optionsAtRoot.json || optionsAtRoot.jsonl) {
+            if (optionsAtRoot.jsonl)
+              throw cliUsageError(
+                'UNSUPPORTED_OUTPUT_MODE',
+                'The show command supports --json, not --jsonl',
+              );
+            printMachineResult('show', {
+              run,
+              steps,
+              artifacts,
+              eventCount,
+              ...(options.events ? { events: events ?? [] } : {}),
+            });
+            return;
           }
-        } else if (events.length > 0) {
-          console.log(
-            `\nActivity: ${events.length} events (use show ${runId} --events for full history)`,
-          );
+          printRunSummary(run, steps);
+          if (options.events && events && events.length > 0) {
+            console.log(`\nEvents (${events.length})`);
+            for (const event of events) {
+              console.log(
+                `  ${event.occurredAt}  [${event.stepId}] ${event.type}: ${event.message}`,
+              );
+            }
+          } else if (eventCount > 0) {
+            console.log(
+              `\nActivity: ${eventCount} events (use show ${runId} --events for full history)`,
+            );
+          }
+          for (const artifact of artifacts) {
+            console.log(`\nArtifact ${artifact.stepId}.${artifact.name} (${artifact.mediaType})`);
+            console.log(`  size=${artifact.sizeBytes} bytes  path=${artifact.path}`);
+            console.log(`  use=binaflow artifact ${runId} ${artifact.stepId}.${artifact.name}`);
+          }
+        } finally {
+          context.close();
         }
-        for (const artifact of artifacts) {
-          const content = await context.artifacts.read(artifact);
-          console.log(`\nArtifact ${artifact.stepId}.${artifact.name} (${artifact.mediaType})`);
-          console.log(`  size=${artifact.sizeBytes} bytes  path=${artifact.path}`);
-          console.log(indent(safeArtifactContent(content, artifact.kind, artifact.path)));
-        }
-      } finally {
-        context.close();
-      }
-    });
-}
-
-function safeArtifactContent(content: string, kind: 'json' | 'text', path: string): string {
-  const displayed = kind === 'json' ? prettyJson(content) : content;
-  return displayed.length > 20_000
-    ? `${displayed.slice(0, 20_000)}\n[artifact truncated; read the full file at ${path}]`
-    : displayed;
-}
-
-function indent(content: string): string {
-  return content
-    .split(/\r?\n/)
-    .map((line) => `  ${line}`)
-    .join('\n');
-}
-
-function prettyJson(content: string): string {
-  try {
-    return JSON.stringify(JSON.parse(content), null, 2);
-  } catch {
-    return content;
-  }
+      },
+    );
 }

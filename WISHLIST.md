@@ -15,7 +15,9 @@ This document records future directions only. None of these items are in the act
 - Add `parallel`, `map`, `condition`, `loop`, `approval`, `tool`, and `subworkflow` primitives.
 - Extend the sequential engine into a DAG scheduler with bounded concurrency.
 - Add worktree or isolated-workspace management for parallel editing agents.
-- Add human approval between planning and implementation.
+- Add generic human approval between workflow steps. The current
+  `research-plan-build` approval flow remains workflow-specific and
+  experimental.
 - Add automated model routing by capability, latency, and budget.
 - Add per-run token, cost, agent-count, and execution-time budgets.
 - Add planner-generated workflows validated against the same serializable workflow schema.
@@ -36,7 +38,7 @@ This document records future directions only. None of these items are in the act
 ## Interfaces And Triggers
 
 - Add a long-running local daemon and make the CLI a client.
-- Add a TUI or web interface for run progress and artifact inspection.
+- Add a web interface for run progress and artifact inspection.
 - Add HTTP APIs and webhooks.
 - Add scheduled runs and event-based triggers.
 - Add voice input and speech output as channels that preserve the normal permission model.

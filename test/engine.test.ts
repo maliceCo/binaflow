@@ -9,6 +9,7 @@ import type { WorkflowDefinition } from '../src/core/workflow.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { planBuildWorkflow } from '../src/workflows/plan-build.js';
+import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 
 const temporaryDirectories: string[] = [];
@@ -110,6 +111,203 @@ function clarificationResult(): AgentStepResult {
 }
 
 describe('WorkflowEngine', () => {
+  it('rejects approval metadata on unsupported workflows', async () => {
+    const { engine, store } = createEnvironment(new FakeDriver([]));
+    const workflow = {
+      ...planBuildWorkflow,
+      approval: { id: 'approval', after: 'plan', message: 'Review first' },
+    };
+
+    await expect(
+      engine.execute(workflow, { objective: 'Reject unsupported approval', profiles }),
+    ).rejects.toThrow('approval is only supported');
+    store.close();
+  });
+
+  it('does not start the next step after cancellation', async () => {
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const driver: AgentDriver = {
+      async execute(request, emit, signal) {
+        void emit;
+        void signal;
+        calls.push(request.stepId);
+        controller.abort();
+        return plannerResult();
+      },
+    };
+    const { engine, store } = createEnvironment(driver);
+
+    const run = await engine.execute(planBuildWorkflow, {
+      objective: 'Stop before building',
+      profiles,
+      signal: controller.signal,
+    });
+
+    expect(run.status).toBe('cancelled');
+    expect(calls).toEqual(['plan']);
+    store.close();
+  });
+
+  it('records a missing profile as a failed step and run', async () => {
+    const driver = new FakeDriver([plannerResult()]);
+    const { engine, store } = createEnvironment(driver);
+
+    const run = await engine.execute(planBuildWorkflow, {
+      objective: 'Missing builder profile',
+      profiles: { planner: profiles.planner },
+    });
+
+    expect(run.status).toBe('failed');
+    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'build')).toMatchObject(
+      {
+        status: 'failed',
+      },
+    );
+    store.close();
+  });
+
+  it('keeps a terminal run when status event persistence fails', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-engine-event-failure-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    const engine = new WorkflowEngine(
+      store,
+      artifactStore,
+      new FakeDriver([plannerResult()]),
+      async (event) => {
+        if (event.type === 'status' && event.message.includes('started')) {
+          throw new Error('event persistence failed');
+        }
+      },
+    );
+
+    const run = await engine.execute(planBuildWorkflow, {
+      objective: 'Fail status persistence',
+      profiles,
+    });
+
+    expect(run.status).toBe('failed');
+    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'plan')).toMatchObject({
+      status: 'failed',
+    });
+    store.close();
+  });
+
+  it('persists a failed run when the start callback rejects', async () => {
+    const { engine, store } = createEnvironment(new FakeDriver([]));
+
+    await expect(
+      engine.execute(planBuildWorkflow, {
+        runId: 'start-callback-failure',
+        objective: 'Reject start',
+        profiles,
+        onRunStarted: () => {
+          throw new Error('start callback failed');
+        },
+      }),
+    ).rejects.toThrow('start callback failed');
+
+    expect((await store.getRun('start-callback-failure'))?.status).toBe('failed');
+    store.close();
+  });
+
+  it('preserves a completed step and artifacts when its completion event fails', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-post-commit-event-failure-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    const engine = new WorkflowEngine(
+      store,
+      artifactStore,
+      new FakeDriver([plannerResult()]),
+      async (event) => {
+        if (event.type === 'status' && event.message.includes('completed')) {
+          throw new Error('completion event failed');
+        }
+      },
+    );
+
+    const run = await engine.execute(planBuildWorkflow, {
+      runId: 'post-commit-event-failure',
+      objective: 'Preserve the committed step',
+      profiles,
+    });
+
+    expect(run.status).toBe('failed');
+    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'plan')).toMatchObject({
+      status: 'completed',
+    });
+    expect((await store.getArtifacts(run.id)).some((artifact) => artifact.stepId === 'plan')).toBe(
+      true,
+    );
+    store.close();
+  });
+
+  it('persists a failed research run when the start callback rejects', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-research-start-failure-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    const researchProfiles = {
+      researcher: { ...profiles.planner, model: 'researcher' },
+      'research-reviewer': { ...profiles.planner, model: 'reviewer' },
+      planner: profiles.planner,
+      builder: profiles.builder,
+    };
+
+    await expect(
+      new WorkflowEngine(store, artifactStore, new FakeDriver([])).execute(
+        researchPlanBuildWorkflow,
+        {
+          runId: 'research-start-callback-failure',
+          objective: 'Reject research start',
+          profiles: researchProfiles,
+          onRunStarted: () => {
+            throw new Error('research start callback failed');
+          },
+        },
+      ),
+    ).rejects.toThrow('research start callback failed');
+
+    expect((await store.getRun('research-start-callback-failure'))?.status).toBe('failed');
+    store.close();
+  });
+
+  it('notifies run start only after the run is persisted', async () => {
+    const driver = new FakeDriver([
+      plannerResult(),
+      { text: 'Build completed', sessionId: 'builder-session' },
+    ]);
+    const { engine, store, artifactStore } = createEnvironment(driver);
+    let persistedRun: WorkflowRun | undefined;
+
+    const run = await engine.execute(planBuildWorkflow, {
+      objective: 'Persist before announcing',
+      input: { objective: 'Persist before announcing', extra: 'preserve me' },
+      profiles,
+      onRunStarted: async (startedRun) => {
+        persistedRun = await store.getRun(startedRun.id);
+        const inputArtifact = (await store.getArtifacts(startedRun.id)).find(
+          (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+        );
+        expect(inputArtifact).toBeDefined();
+        expect(JSON.parse(await artifactStore.read(inputArtifact!))).toEqual({
+          objective: 'Persist before announcing',
+          extra: 'preserve me',
+        });
+      },
+    });
+
+    expect(persistedRun).toMatchObject({
+      id: run.id,
+      workflowId: 'plan-build',
+      status: 'running',
+    });
+    store.close();
+  });
+
   it('runs plan before build and gives the builder the validated artifact', async () => {
     const events: NormalizedEvent[] = [];
     const driver = new FakeDriver([
@@ -131,9 +329,16 @@ describe('WorkflowEngine', () => {
     expect(driver.calls[1]!.prompt).toContain('objective:\nAdd a useful change');
     expect(driver.calls[1]!.prompt).toContain('plan:\n{');
     expect(events.filter((event) => event.type === 'status').length).toBe(4);
-    expect((await store.getStepRuns('success')).every((step) => step.status === 'completed')).toBe(
-      true,
-    );
+    const savedSteps = await store.getStepRuns('success');
+    expect(savedSteps.every((step) => step.status === 'completed')).toBe(true);
+    expect(savedSteps[0]?.profileSnapshot).toMatchObject({
+      driver: 'fake',
+      model: 'planner-test',
+      tools: [],
+      workspaceMode: 'read-only',
+      timeoutMs: 1000,
+      retryLimit: 0,
+    });
     const inputArtifact = (await store.getArtifacts('success')).find(
       (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
     );
@@ -141,6 +346,47 @@ describe('WorkflowEngine', () => {
     expect(JSON.parse(await artifactStore.read(inputArtifact!))).toEqual({
       objective: 'Add a useful change',
     });
+    store.close();
+  });
+
+  it('serializes events from drivers that emit concurrently', async () => {
+    const events: string[] = [];
+    const driver: AgentDriver = {
+      async execute(request, emit) {
+        await Promise.all([
+          emit({
+            runId: request.runId,
+            stepId: request.stepId,
+            type: 'text',
+            message: 'first',
+            occurredAt: new Date().toISOString(),
+          }),
+          emit({
+            runId: request.runId,
+            stepId: request.stepId,
+            type: 'text',
+            message: 'second',
+            occurredAt: new Date().toISOString(),
+          }),
+        ]);
+        return request.stepId === 'plan' ? plannerResult() : { text: 'built' };
+      },
+    };
+    const { store, artifactStore } = createEnvironment(driver);
+    const orderedEngine = new WorkflowEngine(store, artifactStore, driver, async (event) => {
+      if (event.type !== 'text') return;
+      if (event.message === 'first') await new Promise((resolve) => setTimeout(resolve, 10));
+      events.push(event.message);
+    });
+
+    const run = await orderedEngine.execute(planBuildWorkflow, {
+      runId: 'concurrent-events',
+      objective: 'Preserve event order',
+      profiles,
+    });
+
+    expect(run.status).toBe('completed');
+    expect(events).toEqual(['first', 'second', 'first', 'second']);
     store.close();
   });
 
@@ -166,6 +412,30 @@ describe('WorkflowEngine', () => {
         resume: true,
       }),
     ).rejects.toThrow('workflow version 1; installed version is 2');
+    store.close();
+  });
+
+  it('rejects resume of a live running run without converting it to interrupted', async () => {
+    const { engine, store } = createEnvironment(new FakeDriver([]));
+    await store.createRun({
+      id: 'live-run',
+      workflowId: planBuildWorkflow.id,
+      workflowVersion: planBuildWorkflow.version,
+      objective: 'Keep this run live',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(
+      engine.execute(planBuildWorkflow, {
+        runId: 'live-run',
+        input: { objective: 'Keep this run live' },
+        profiles,
+        resume: true,
+      }),
+    ).rejects.toThrow('Run live-run is already running');
+    expect((await store.getRun('live-run'))?.status).toBe('running');
     store.close();
   });
 

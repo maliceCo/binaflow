@@ -8,4 +8,7 @@ export interface NormalizedEvent {
   occurredAt: string;
 }
 
-export type EventSink = (event: NormalizedEvent) => Promise<void> | void;
+export interface EventSink {
+  (event: NormalizedEvent): Promise<void> | void;
+  flush?: () => Promise<void>;
+}

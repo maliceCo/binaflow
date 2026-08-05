@@ -7,6 +7,7 @@ import type {
   AgentStepResult,
   StepDisposition,
   StepRun,
+  AgentProfileSnapshot,
   StepSkipReason,
   WorkflowRun,
 } from './run.js';
@@ -27,6 +28,7 @@ export interface ExecuteWorkflowRequest {
   profiles: Record<string, AgentProfile>;
   runId?: string;
   resume?: boolean;
+  runClaimed?: boolean;
   signal?: AbortSignal;
   onRunStarted?: (run: WorkflowRun) => Promise<void> | void;
 }
@@ -55,16 +57,21 @@ export class WorkflowEngine {
     request: ExecuteWorkflowRequest,
   ): Promise<WorkflowRun> {
     validateWorkflowDefinition(workflow);
+    if (workflow.approval && workflow.id !== researchPlanBuildWorkflow.id) {
+      throw new Error(
+        `Workflow approval is only supported by the experimental ${researchPlanBuildWorkflow.id} workflow`,
+      );
+    }
     const input = await this.resolveInput(request);
-    validateInput(workflow, input);
+    validateWorkflowInput(workflow, input);
 
     if (workflow.id === researchPlanBuildWorkflow.id) {
       return this.executeResearchPlanBuild(workflow, request, input);
     }
 
     let run = await this.prepareRun(workflow, request, input);
-    await request.onRunStarted?.(run);
     if (run.status === 'completed') return run;
+    await this.notifyRunStarted(run, request.onRunStarted);
 
     const stepRuns = new Map(
       (await this.runStore.getStepRuns(run.id)).map((step) => [step.stepId, step]),
@@ -76,60 +83,69 @@ export class WorkflowEngine {
     let failed = false;
     let cancelled = false;
 
-    for (const step of resolveStepOrder(workflow)) {
-      const existing = stepRuns.get(step.id);
-      if (existing?.status === 'completed') continue;
+    try {
+      for (const step of resolveStepOrder(workflow)) {
+        if (request.signal?.aborted) {
+          run = await this.saveRunStatus(run, 'cancelled');
+          return run;
+        }
+        const existing = stepRuns.get(step.id);
+        if (existing?.status === 'completed') continue;
 
-      const blockedDependency = step.dependsOn.find((dependency) =>
-        isBlocked(statuses.get(dependency)),
-      );
-      if (blockedDependency) {
-        const skipped = await this.skipStep(run.id, step, existing, {
-          code: 'UPSTREAM_STEP_BLOCKED',
-          message: `Dependency ${blockedDependency} did not complete successfully`,
-        });
-        stepRuns.set(step.id, skipped);
-        statuses.set(step.id, skipped.status);
-        continue;
-      }
+        const blockedDependency = step.dependsOn.find((dependency) =>
+          isBlocked(statuses.get(dependency)),
+        );
+        if (blockedDependency) {
+          const skipped = await this.skipStep(run.id, step, existing, {
+            code: 'UPSTREAM_STEP_BLOCKED',
+            message: `Dependency ${blockedDependency} did not complete successfully`,
+          });
+          stepRuns.set(step.id, skipped);
+          statuses.set(step.id, skipped.status);
+          continue;
+        }
 
-      const stoppingDependency = step.dependsOn.find(
-        (dependency) => stepRuns.get(dependency)?.disposition?.kind === 'stop',
-      );
-      if (stoppingDependency) {
-        const disposition = stepRuns.get(stoppingDependency)?.disposition;
-        const skipped = await this.skipStep(run.id, step, existing, {
-          code: disposition?.kind === 'stop' ? disposition.code : 'UPSTREAM_STEP_STOPPED',
-          message:
-            disposition?.kind === 'stop'
-              ? `Dependency ${stoppingDependency} stopped: ${disposition.message}`
-              : `Dependency ${stoppingDependency} stopped before this step`,
-        });
-        stepRuns.set(step.id, skipped);
-        statuses.set(step.id, skipped.status);
-        continue;
-      }
+        const stoppingDependency = step.dependsOn.find(
+          (dependency) => stepRuns.get(dependency)?.disposition?.kind === 'stop',
+        );
+        if (stoppingDependency) {
+          const disposition = stepRuns.get(stoppingDependency)?.disposition;
+          const skipped = await this.skipStep(run.id, step, existing, {
+            code: disposition?.kind === 'stop' ? disposition.code : 'UPSTREAM_STEP_STOPPED',
+            message:
+              disposition?.kind === 'stop'
+                ? `Dependency ${stoppingDependency} stopped: ${disposition.message}`
+                : `Dependency ${stoppingDependency} stopped before this step`,
+          });
+          stepRuns.set(step.id, skipped);
+          statuses.set(step.id, skipped.status);
+          continue;
+        }
 
-      if (existing && !canRetry(existing, request.resume === true)) {
-        failed = true;
-        statuses.set(step.id, existing.status);
-        await this.emitStatus(run.id, step.id, `Step ${step.id} is not retryable`);
-        continue;
-      }
+        if (existing && !canRetry(existing, request.resume === true)) {
+          failed = true;
+          statuses.set(step.id, existing.status);
+          await this.emitStatus(run.id, step.id, `Step ${step.id} is not retryable`);
+          continue;
+        }
 
-      try {
-        const result = await this.executeStep(run, step, existing, input, artifacts, request);
-        stepRuns.set(step.id, result.stepRun);
-        statuses.set(step.id, result.stepRun.status);
-        artifacts.push(...result.artifacts);
-      } catch (error) {
-        if (!(error instanceof StepExecutionFailure)) throw error;
-        const failure = error.stepRun;
-        cancelled ||= failure.status === 'cancelled';
-        failed ||= failure.status === 'failed';
-        stepRuns.set(step.id, failure);
-        statuses.set(step.id, failure.status);
+        try {
+          const result = await this.executeStep(run, step, existing, input, artifacts, request);
+          stepRuns.set(step.id, result.stepRun);
+          statuses.set(step.id, result.stepRun.status);
+          artifacts.push(...result.artifacts);
+        } catch (error) {
+          if (!(error instanceof StepExecutionFailure)) throw error;
+          const failure = error.stepRun;
+          cancelled ||= failure.status === 'cancelled';
+          failed ||= failure.status === 'failed';
+          stepRuns.set(step.id, failure);
+          statuses.set(step.id, failure.status);
+        }
       }
+    } catch {
+      run = await this.saveRunStatus(run, 'failed');
+      return run;
     }
 
     run = await this.saveRunStatus(run, cancelled ? 'cancelled' : failed ? 'failed' : 'completed');
@@ -142,8 +158,8 @@ export class WorkflowEngine {
     initialInput: Record<string, unknown>,
   ): Promise<WorkflowRun> {
     const run = await this.prepareRun(workflow, request, initialInput);
-    await request.onRunStarted?.(run);
     if (run.status === 'completed') return run;
+    await this.notifyRunStarted(run, request.onRunStarted);
 
     const stepRuns = new Map(
       (await this.runStore.getStepRuns(run.id)).map((step) => [step.stepId, step]),
@@ -164,6 +180,7 @@ export class WorkflowEngine {
 
     try {
       while (true) {
+        if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
         let research = stepRuns.get(researchStep.id);
         if (!research || research.status !== 'completed') {
           const result = await this.executeStep(
@@ -178,6 +195,8 @@ export class WorkflowEngine {
           stepRuns.set(researchStep.id, research);
           artifacts = replaceArtifacts(artifacts, result.artifacts);
         }
+
+        if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
 
         let review = stepRuns.get(reviewStep.id);
         if (!review || review.status !== 'completed') {
@@ -206,6 +225,7 @@ export class WorkflowEngine {
             ...input,
             researchFeedback: researchReview.nextResearchQuestions.join('\n'),
           };
+          artifacts = await this.persistResearchInput(run.id, input, artifacts);
           const resetResearch = await this.resetLoopStep(research);
           const resetReview = await this.resetLoopStep(review);
           stepRuns.set(researchStep.id, resetResearch);
@@ -235,6 +255,7 @@ export class WorkflowEngine {
             researchFeedback:
               approval.approval.feedback ?? 'The user requested another research iteration.',
           };
+          artifacts = await this.persistResearchInput(run.id, input, artifacts);
           const resetResearch = await this.resetLoopStep(research);
           const resetReview = await this.resetLoopStep(review);
           approval = {
@@ -274,6 +295,7 @@ export class WorkflowEngine {
       }
 
       let plan = stepRuns.get(planStep.id);
+      if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
       if (!plan || plan.status !== 'completed') {
         const result = await this.executeStep(run, planStep, plan, input, artifacts, request);
         plan = result.stepRun;
@@ -290,16 +312,22 @@ export class WorkflowEngine {
       }
 
       const build = stepRuns.get(buildStep.id);
+      if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
       if (!build || build.status !== 'completed') {
         const result = await this.executeStep(run, buildStep, build, input, artifacts, request);
         stepRuns.set(buildStep.id, result.stepRun);
       }
       return this.saveRunStatus(run, 'completed');
     } catch (error) {
-      if (!(error instanceof StepExecutionFailure)) throw error;
+      if (!(error instanceof StepExecutionFailure)) return this.saveRunStatus(run, 'failed');
       for (const step of workflow.steps) {
         const existing = stepRuns.get(step.id);
-        if (existing?.status === 'completed' || step.id === error.stepRun.stepId) continue;
+        if (
+          existing?.status === 'completed' ||
+          existing?.status === 'pending' ||
+          step.id === error.stepRun.stepId
+        )
+          continue;
         await this.skipStep(run.id, step, existing, {
           code: 'UPSTREAM_STEP_BLOCKED',
           message: `Dependency ${error.stepRun.stepId} failed`,
@@ -332,7 +360,10 @@ export class WorkflowEngine {
       if (existing.status === 'cancelled') throw new Error(`Run ${existing.id} was cancelled`);
 
       let run = existing;
-      if (run.status === 'running') run = await this.saveRunStatus(run, 'interrupted');
+      if (run.status === 'running') {
+        if (!request.runClaimed) throw new Error(`Run ${run.id} is already running`);
+        return run;
+      }
       if (run.status === 'failed' || run.status === 'interrupted') {
         run = await this.saveRunStatus(run, 'pending');
       }
@@ -349,7 +380,7 @@ export class WorkflowEngine {
       workflowId: workflow.id,
       workflowVersion: workflow.version,
       objective: request.objective,
-      status: 'pending',
+      status: 'running',
       createdAt: now,
       updatedAt: now,
     };
@@ -362,7 +393,19 @@ export class WorkflowEngine {
       'application/json',
     );
     await this.runStore.createRun(run, [inputArtifact]);
-    return this.saveRunStatus(run, 'running');
+    return run;
+  }
+
+  private async notifyRunStarted(
+    run: WorkflowRun,
+    callback: ExecuteWorkflowRequest['onRunStarted'],
+  ): Promise<void> {
+    try {
+      await callback?.(run);
+    } catch (error) {
+      await this.saveRunStatus(run, 'failed');
+      throw error;
+    }
   }
 
   private async resolveInput(request: ExecuteWorkflowRequest): Promise<Record<string, unknown>> {
@@ -401,6 +444,26 @@ export class WorkflowEngine {
     return reset;
   }
 
+  private async persistResearchInput(
+    runId: string,
+    input: Record<string, unknown>,
+    artifacts: ArtifactReference[],
+  ): Promise<ArtifactReference[]> {
+    const inputArtifact = findArtifact(artifacts, 'run', 'input');
+    if (!inputArtifact) throw new Error('Missing persisted run input artifact');
+    // Keep superseded files until a future artifact GC policy can remove them safely.
+    const updated = await this.artifactStore.write(
+      runId,
+      'run',
+      'input',
+      'json',
+      JSON.stringify(input),
+      'application/json',
+    );
+    await this.runStore.replaceArtifact(updated);
+    return replaceArtifacts(artifacts, [updated]);
+  }
+
   private async executeStep(
     run: WorkflowRun,
     step: AgentStep,
@@ -414,23 +477,44 @@ export class WorkflowEngine {
 
     while (true) {
       const startedAt = new Date().toISOString();
-      const running: StepRun = { ...pending, status: 'running', startedAt };
-      await this.runStore.saveStepRun(running);
-      await this.emitStatus(run.id, step.id, `Step ${step.id} started`);
+      let running: StepRun = {
+        ...pending,
+        status: 'running',
+        startedAt,
+      };
+      let completedPersisted = false;
 
       try {
-        const resolvedInputs = await resolveInputs(step, input, artifacts, this.artifactStore);
+        await this.runStore.saveStepRun(running);
         const profile = resolveProfile({ profiles: request.profiles }, step.profile);
-        const result = await this.driver.execute(
-          {
-            runId: run.id,
-            stepId: step.id,
-            profile,
-            prompt: renderPrompt(step.prompt, resolvedInputs, repairAttempted),
-          },
-          this.eventSink,
-          request.signal ?? new AbortController().signal,
-        );
+        running = { ...running, profileSnapshot: snapshotProfile(profile) };
+        await this.runStore.saveStepRun(running);
+        await this.emitStatus(run.id, step.id, `Step ${step.id} started`);
+        const resolvedInputs = await resolveInputs(step, input, artifacts, this.artifactStore);
+        const eventQueue = createSerializedEventSink(this.eventSink);
+        let result: AgentStepResult | undefined;
+        let executionError: unknown;
+        try {
+          result = await this.driver.execute(
+            {
+              runId: run.id,
+              stepId: step.id,
+              profile,
+              prompt: renderPrompt(step.prompt, resolvedInputs, repairAttempted),
+            },
+            eventQueue.emit,
+            request.signal ?? new AbortController().signal,
+          );
+        } catch (error) {
+          executionError = error;
+        }
+        try {
+          await eventQueue.flush();
+        } catch (error) {
+          executionError ??= error;
+        }
+        if (executionError) throw executionError;
+        if (!result) throw new Error('Agent driver returned no result');
         const stepOutput = createOutputContents(step, result);
         const savedArtifacts = await Promise.all(
           step.outputs.map((outputDefinition) =>
@@ -455,9 +539,11 @@ export class WorkflowEngine {
           ...(stepOutput.disposition ? { disposition: stepOutput.disposition } : {}),
         };
         await this.runStore.completeStep(completed, savedArtifacts);
+        completedPersisted = true;
         await this.emitStatus(run.id, step.id, `Step ${step.id} completed`);
         return { stepRun: completed, artifacts: savedArtifacts };
       } catch (error) {
+        if (completedPersisted) throw error;
         if (error instanceof PlannerSchemaError && !repairAttempted) {
           await this.recordAttemptFailure(run.id, step, running, error, true);
           pending = { ...running, status: 'pending', attempt: running.attempt + 1 };
@@ -687,7 +773,10 @@ function renderPrompt(
   return `${prompt}${repairText}\n\nInputs:\n${inputText}`;
 }
 
-function validateInput(workflow: WorkflowDefinition, input: Record<string, unknown>): void {
+export function validateWorkflowInput(
+  workflow: WorkflowDefinition,
+  input: Record<string, unknown>,
+): void {
   for (const required of workflow.input.required) {
     if (!(required in input)) throw new Error(`Missing workflow input: ${required}`);
   }
@@ -737,12 +826,58 @@ function toStepError(error: unknown, retryable: boolean): NonNullable<StepRun['e
   };
 }
 
+function snapshotProfile(profile: AgentProfile): AgentProfileSnapshot {
+  const snapshot: AgentProfileSnapshot = {
+    driver: profile.driver,
+    model: profile.model,
+    tools: [...profile.tools],
+    workspaceMode: profile.workspaceMode,
+    timeoutMs: profile.timeoutMs,
+    retryLimit: profile.retryLimit,
+  };
+  if (profile.provider !== undefined) snapshot.provider = profile.provider;
+  if (profile.thinking !== undefined) snapshot.thinking = profile.thinking;
+  if (profile.projectTrust !== undefined) snapshot.projectTrust = profile.projectTrust;
+  return snapshot;
+}
+
 class PlannerSchemaError extends Error {}
 
 class StepExecutionFailure extends Error {
   constructor(readonly stepRun: StepRun) {
     super(stepRun.error?.message ?? 'Step failed');
   }
+}
+
+function createSerializedEventSink(sink: EventSink): {
+  emit: EventSink;
+  flush(): Promise<void>;
+} {
+  let queue = Promise.resolve();
+  let failed = false;
+  let firstError: unknown;
+
+  const emit: EventSink = (event) => {
+    queue = queue.then(async () => {
+      if (failed) return;
+      try {
+        await sink(event);
+      } catch (error) {
+        failed = true;
+        firstError = error;
+      }
+    });
+    return queue;
+  };
+
+  return {
+    emit,
+    async flush(): Promise<void> {
+      await queue;
+      if (failed) throw firstError;
+      await sink.flush?.();
+    },
+  };
 }
 
 const MAX_RESEARCH_ITERATIONS = 3;

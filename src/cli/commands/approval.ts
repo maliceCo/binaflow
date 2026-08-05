@@ -4,7 +4,7 @@ import { exitCodeFor, machineMode, writeJsonl, writeJsonlFailure } from '../prot
 export function registerApprovalCommands(cli: Command): void {
   cli
     .command('approve')
-    .description('Approve a waiting workflow gate')
+    .description('Approve the experimental research-plan-build approval gate')
     .argument('<run-id>', 'run ID')
     .action(async (runId: string, _options: unknown, command: Command) => {
       await decide(command, runId, 'approved');
@@ -12,7 +12,7 @@ export function registerApprovalCommands(cli: Command): void {
 
   cli
     .command('reject')
-    .description('Reject a waiting workflow gate and provide research feedback')
+    .description('Reject the experimental research-plan-build gate with research feedback')
     .argument('<run-id>', 'run ID')
     .requiredOption('--feedback <text>', 'feedback for the next research iteration')
     .action(async (runId: string, options: { feedback: string }, command: Command) => {
@@ -26,51 +26,30 @@ async function decide(
   decision: 'approved' | 'rejected',
   feedback?: string,
 ): Promise<void> {
-  const { resolveWorkflow } = await import('../../workflows/catalog.js');
   const {
     installSignalHandlers,
     openContext,
     printMachineRunResult,
     printRunSummary,
     rootOptions,
-    validateWorkflowProfiles,
   } = await import('./common.js');
+  const { decideApproval } = await import('../../application/operations.js');
   const optionsAtRoot = rootOptions(command);
   const mode = machineMode(optionsAtRoot);
   const context = await openContext(optionsAtRoot);
   try {
-    const previous = await context.store.getRun(runId);
-    if (!previous) throw new Error(`Unknown run: ${runId}`);
-    const workflow = resolveWorkflow(previous.workflowId);
-    validateWorkflowProfiles(workflow, context.config.profiles);
-    if (!workflow.approval) throw new Error(`Workflow ${workflow.id} has no approval gate`);
-    const steps = await context.store.getStepRuns(runId);
-    const approval = steps.find((step) => step.stepId === workflow.approval?.id);
-    if (!approval || approval.status !== 'waiting') {
-      throw new Error(`Run ${runId} is not waiting for approval`);
-    }
-
-    await context.store.saveStepRun({
-      ...approval,
-      status: 'pending',
-      approval: {
-        decision,
-        ...(feedback ? { feedback } : {}),
-        decidedAt: new Date().toISOString(),
-      },
-    });
     const controller = new AbortController();
     const removeSignalHandlers = installSignalHandlers(controller, runId);
     let started = false;
     try {
-      const run = await context.engine.execute(workflow, {
+      const run = await decideApproval(context, {
         runId,
-        profiles: context.config.profiles,
-        resume: true,
+        decision,
+        ...(feedback ? { feedback } : {}),
         signal: controller.signal,
         ...(mode === 'jsonl'
           ? {
-              onRunStarted: (startedRun: typeof previous) => {
+              onRunStarted: (startedRun) => {
                 started = true;
                 writeJsonl({
                   protocol: 'binaflow-cli',
@@ -92,7 +71,7 @@ async function decide(
           mode,
         );
       } else {
-        printRunSummary(run, await context.store.getStepRuns(run.id), context.config);
+        printRunSummary(run, await context.store.getStepRuns(run.id));
       }
       if (run.status === 'failed' || run.status === 'cancelled') {
         process.exitCode = run.status === 'cancelled' ? 130 : 1;

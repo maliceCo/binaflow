@@ -60,6 +60,63 @@ describe('JSONL transport', () => {
     expect(await event).toEqual({ type: 'event', value: 'hello' });
     expect(client.stderr).toContain('fake stderr');
   });
+
+  it('does not wait for a second termination grace period after signal exit', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: ['-e', "setTimeout(() => process.kill(process.pid, 'SIGTERM'), 10)"],
+    });
+    children.push(client);
+
+    await expect(client.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
+      'JSONL process exited',
+    );
+    const startedAt = Date.now();
+    await client.terminate();
+
+    expect(Date.now() - startedAt).toBeLessThan(500);
+  });
+
+  it('turns a child that closes stdin into a request failure', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: ['-e', 'process.stdin.destroy(); setTimeout(() => {}, 500)'],
+    });
+    children.push(client);
+
+    await expect(
+      client.request({ type: 'write-after-close' }, { timeoutMs: 200 }),
+    ).rejects.toThrow();
+  });
+
+  it('turns message and stderr listener exceptions into transport failures', async () => {
+    const messageClient = new JsonlProcess({
+      command: process.execPath,
+      args: [
+        '-e',
+        'process.stdout.write(JSON.stringify({type:"event"}) + "\\n"); setTimeout(() => {}, 500)',
+      ],
+    });
+    children.push(messageClient);
+    messageClient.onMessage(() => {
+      throw new Error('message listener failed');
+    });
+    await expect(messageClient.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
+      'JSONL message listener failed',
+    );
+
+    const stderrClient = new JsonlProcess({
+      command: process.execPath,
+      args: ['-e', 'process.stderr.write("stderr event\\n"); setTimeout(() => {}, 500)'],
+    });
+    children.push(stderrClient);
+    stderrClient.onStderr(() => {
+      throw new Error('stderr listener failed');
+    });
+    await expect(stderrClient.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
+      'JSONL stderr listener failed',
+    );
+  });
 });
 
 describe('PiDriver', () => {
@@ -94,6 +151,41 @@ describe('PiDriver', () => {
     await expect(
       driver.execute(requestFor(), () => undefined, new AbortController().signal),
     ).rejects.toMatchObject({ code: 'PI_RPC_FAILED' });
+  });
+
+  it('serializes normalized events and propagates an event sink failure', async () => {
+    const events: string[] = [];
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/ordered-events-pi.mjs'],
+    });
+
+    const execution = driver.execute(
+      requestFor(),
+      async (event) => {
+        if (event.type !== 'text') return;
+        if (event.message === 'first') await new Promise((resolve) => setTimeout(resolve, 20));
+        events.push(event.message);
+        if (event.message === 'second') throw new Error('event sink failed');
+      },
+      new AbortController().signal,
+    );
+    await expect(execution).rejects.toMatchObject({
+      code: 'PI_RPC_FAILED',
+      message: 'Pi RPC failed: event sink failed',
+    });
+
+    expect(events).toEqual(['first', 'second']);
+  });
+
+  it('does not spawn Pi when execution is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const driver = new PiDriver({ command: 'binaflow-pi-does-not-exist' });
+
+    await expect(
+      driver.execute(requestFor(), () => undefined, controller.signal),
+    ).rejects.toMatchObject({ code: 'PI_CANCELLED' });
   });
 
   it('waits briefly for Pi to settle after cancellation before terminating it', async () => {

@@ -21,6 +21,9 @@ export class PiDriver implements AgentDriver {
     signal: AbortSignal,
   ): Promise<AgentStepResult> {
     validateProfile(request);
+    if (signal.aborted) {
+      throw new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED');
+    }
     const processOptions = {
       command: this.options.command ?? 'pi',
       args: [...(this.options.commandArgs ?? []), ...buildPiArgs(request, this.options.sessionDir)],
@@ -32,6 +35,8 @@ export class PiDriver implements AgentDriver {
     let finalText: string | undefined;
     let terminalError: string | undefined;
     let settle: (() => void) | undefined;
+    let eventError: unknown;
+    let eventProcessing = Promise.resolve();
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
     });
@@ -49,20 +54,30 @@ export class PiDriver implements AgentDriver {
       sendAbort();
     };
     const removeListener = process.onMessage((message) => {
-      void normalizePiEvent(message, request, emit, textParts).then((event) => {
-        if (event.text) finalText = event.text;
-        if (event.error) terminalError = event.error;
-        if (event.settled) settle?.();
-      });
+      eventProcessing = eventProcessing
+        .then(async () => {
+          if (eventError) return;
+          const event = await normalizePiEvent(message, request, emit, textParts);
+          if (event.text) finalText = event.text;
+          if (event.error) terminalError = event.error;
+          if (event.settled) settle?.();
+        })
+        .catch((error: unknown) => {
+          eventError = error;
+          settle?.();
+        });
     });
     signal.addEventListener('abort', abortListener, { once: true });
 
     try {
+      // Profile timeout applies independently to each RPC or settling phase.
       await process.request(
         { type: 'prompt', message: request.prompt },
         { timeoutMs: request.profile.timeoutMs, signal },
       );
       await waitForSettled(settled, request.profile.timeoutMs, sendAbort, signal);
+      await eventProcessing;
+      if (eventError) throw eventError;
       if (terminalError) throw new AgentDriverError(terminalError, 'PI_AGENT_ERROR', true);
 
       const state = await process.request(
@@ -139,7 +154,7 @@ function validateProfile(request: AgentRequest): void {
     request.profile.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')
   ) {
     throw new AgentDriverError(
-      'Read-only Pi profiles cannot enable write or edit tools',
+      'Read-only Pi profiles cannot enable write, edit, or bash tools',
       'PI_INVALID_PROFILE',
     );
   }

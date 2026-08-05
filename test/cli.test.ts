@@ -16,6 +16,7 @@ describe('Binaflow CLI', () => {
     expect(help).toContain('--jsonl');
     expect(help).toContain('workflows');
     expect(help).toContain('artifact');
+    expect(help).toContain('tui');
   });
 
   it('guides an incomplete run command without opening runtime dependencies', async () => {

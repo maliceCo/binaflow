@@ -2,8 +2,10 @@ import Database from 'better-sqlite3';
 import { copyFileSync, existsSync } from 'node:fs';
 import { initialMigration } from './001-initial.js';
 import { currentMigration } from './002-current.js';
+import { profileSnapshotMigration } from './003-profile-snapshot.js';
+import { runHistoryMigration } from './004-run-history.js';
 
-const currentSchemaVersion = 2;
+const currentSchemaVersion = 4;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   database.exec(`
@@ -41,6 +43,22 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     }
   }
 
+  if (version < 3) {
+    database.transaction(() => {
+      if (!columnExists(database, 'step_runs', 'profile_json')) {
+        database.exec(profileSnapshotMigration);
+      }
+      recordMigration(database, 3);
+    })();
+  }
+
+  if (version < 4) {
+    database.transaction(() => {
+      database.exec(runHistoryMigration);
+      recordMigration(database, 4);
+    })();
+  }
+
   const finalVersion = database
     .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
     .get() as { version: number } | undefined;
@@ -60,6 +78,11 @@ function tableExists(database: Database.Database, name: string): boolean {
     .prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(name) as { present: number } | undefined;
   return row?.present === 1;
+}
+
+function columnExists(database: Database.Database, table: string, column: string): boolean {
+  const columns = database.pragma(`table_info(${table})`) as Array<{ name: string }>;
+  return columns.some((candidate) => candidate.name === column);
 }
 
 function requiresLegacyRebuild(database: Database.Database): boolean {
