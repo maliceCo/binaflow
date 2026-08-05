@@ -365,8 +365,8 @@ optional and require a working Pi installation and credentials.
 - There is no daemon, web UI, remote worker, or native web search provider.
 - `research-plan-build` and its approval flow are experimental; approval and
   loop behavior are not generic workflow primitives yet.
-- TUI screens do not yet provide a scrollable viewport. Long content is clipped
-  to the terminal viewport while navigation and key hints remain available.
+- TUI screens provide bounded list and text viewports with keyboard scrolling;
+  execution remains attached to the current process.
 - Artifact previews are bounded. JSON previews are limited to 4,000 bytes and
   displayed artifact content to 8,000 characters; use the CLI `artifact`
   command for unrestricted retrieval. TUI full view does not bypass terminal

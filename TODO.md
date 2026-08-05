@@ -1002,71 +1002,71 @@ as handwritten implementation details and will not be ported as behavior.
 
 #### Tasks
 
-- [ ] Build small compositional components only for a screen frame, header,
+- [x] Build small compositional components only for a screen frame, header,
       persistent key-hint footer, status/error display, selection list, text
       prompt, confirmation, and minimum-size fallback.
-- [ ] Implement home, documentation, diagnosis refresh, and exit with
+- [x] Implement home, documentation, diagnosis refresh, and exit with
       application operations and lazy application-context creation.
-- [ ] Implement independent list and text viewports with selection visibility,
+- [x] Implement independent list and text viewports with selection visibility,
       `j`/`k`, arrows, PageUp/PageDown, and previous/next content indicators.
-- [ ] Support 56, 80, and 120 column layouts without manually clearing the
+- [x] Support 56, 80, and 120 column layouts without manually clearing the
       whole screen on every keypress.
-- [ ] Sanitize every dynamic text value before rendering.
-- [ ] Coalesce diagnosis refreshes and discard results after unmount.
+- [x] Sanitize every dynamic text value before rendering.
+- [x] Coalesce diagnosis refreshes and discard results after unmount.
 
 #### Verification
 
-- [ ] Add tests for navigation, scrolling, footer visibility, resize,
+- [x] Add tests for navigation, scrolling, footer visibility, resize,
       `NO_COLOR`, sanitization, refresh coalescing, and stale async results.
-- [ ] Confirm no Ink module imports storage or engine internals.
-- [ ] Run legacy tests and phase-wide static verification.
+- [x] Confirm no Ink module imports storage or engine internals.
+- [x] Run legacy tests and phase-wide static verification.
 
 #### Exit Criteria
 
-- [ ] Long list and text content are scrollable with a stable footer.
-- [ ] The Ink shell has no generic state framework or copied legacy renderer.
+- [x] Long list and text content are scrollable with a stable footer.
+- [x] The Ink shell has no generic state framework or copied legacy renderer.
 
 ### Phase 10.3: Setup And Workflow Launch
 
 #### Tasks
 
-- [ ] Implement missing-config choices, planner/builder setup prompts,
+- [x] Implement missing-config choices, planner/builder setup prompts,
       permission explanation, full configuration preview, explicit write
       confirmation, and existing-file refusal.
-- [ ] Implement workflow discovery, stable/experimental grouping, missing
+- [x] Implement workflow discovery, stable/experimental grouping, missing
       profile explanations, required and optional input collection, correction,
       objective editing, and profile/permission review.
-- [ ] Revalidate configuration and reviewed permissions immediately before
+- [x] Revalidate configuration and reviewed permissions immediately before
       launch using application operations.
-- [ ] Ensure cancellation before confirmation never creates a run.
+- [x] Ensure cancellation before confirmation never creates a run.
 
 #### Verification
 
-- [ ] Port all product and safety scenarios from `test/tui-phase6.test.ts` to
+- [x] Port all product and safety scenarios from `test/tui-phase6.test.ts` to
       Ink tests without reproducing raw-parser implementation details.
-- [ ] Verify configuration is never written without confirmation or overwritten
+- [x] Verify configuration is never written without confirmation or overwritten
       by the TUI.
-- [ ] Verify changed profiles require a renewed confirmation.
-- [ ] Run legacy tests and phase-wide static verification.
+- [x] Verify changed profiles require a renewed confirmation.
+- [x] Run legacy tests and phase-wide static verification.
 
 #### Exit Criteria
 
-- [ ] Ink reaches safe launch confirmation with no direct config or storage
+- [x] Ink reaches safe launch confirmation with no direct config or storage
       access outside application operations.
 
 ### Phase 10.4: Attached Execution And Completion
 
 #### Tasks
 
-- [ ] Implement attached launch and resume using application operations and
+- [x] Implement attached launch and resume using application operations and
       normalized event subscriptions.
-- [ ] Show run ID, workflow, status, elapsed time, usage, cost, step states,
+- [x] Show run ID, workflow, status, elapsed time, usage, cost, step states,
       agent activity, tool activity, errors, and summary/detail activity views.
-- [ ] Bound displayed activity by count and UTF-8 bytes, throttle rendering
+- [x] Bound displayed activity by count and UTF-8 bytes, throttle rendering
       independently from persistence, and retain all persisted events.
-- [ ] Use structured state where available; do not carry forward brittle status
+- [x] Use structured state where available; do not carry forward brittle status
       inference from event-message text without an explicit compatibility need.
-- [ ] Implement completed, failed, cancelled, interrupted, and waiting
+- [x] Implement completed, failed, cancelled, interrupted, and waiting
       completion views with semantic artifact actions.
 - [ ] Preserve first graceful and second forced cancellation, terminal
       restoration before force signalling, exit codes 130/143, and waiting for
@@ -1089,14 +1089,14 @@ as handwritten implementation details and will not be ported as behavior.
 
 #### Tasks
 
-- [ ] Implement bounded history, attention runs, status/workflow filters,
+- [x] Implement bounded history, attention runs, status/workflow filters,
       pagination, and run detail through inspection operations only.
-- [ ] Show persisted metadata, recovery explanations, completed-step reuse,
+- [x] Show persisted metadata, recovery explanations, completed-step reuse,
       explicit stale-running recovery confirmation, and clarification as a new
       revised-objective run.
-- [ ] Implement semantic artifact browsing with on-demand bounded reads,
+- [x] Implement semantic artifact browsing with on-demand bounded reads,
       scrolling, and safe missing/corrupt-artifact errors.
-- [ ] Implement research-specific approval, non-empty rejection feedback, and
+- [x] Implement research-specific approval, non-empty rejection feedback, and
       leave-waiting behavior without a generic approval abstraction.
 
 #### Verification
@@ -1145,13 +1145,13 @@ as handwritten implementation details and will not be ported as behavior.
 
 #### Tasks
 
-- [ ] Change only the two existing lazy public TUI entry points to load Ink:
+- [x] Change only the two existing lazy public TUI entry points to load Ink:
       `binaflow tui` and no-argument TTY invocation.
-- [ ] Keep non-TTY help, JSON/JSONL rejection, and all explicit CLI commands
+- [x] Keep non-TTY help, JSON/JSONL rejection, and all explicit CLI commands
       unchanged.
-- [ ] Leave legacy reachable only through an internal test/development path;
+- [x] Leave legacy reachable only through an internal test/development path;
       do not expose a public implementation selector.
-- [ ] Update README only for verified user-visible Ink behavior, including
+- [x] Update README only for verified user-visible Ink behavior, including
       scrolling and attached-execution limitations.
 
 #### Verification
@@ -1562,3 +1562,60 @@ BY` for both default and filtered history queries.
   Ink foundation dependencies, TSX configuration, internal foundation lifecycle,
   focused tests, and the internal runner; no public route or application
   operation changed.
+
+- Phase 10.2 adds the internal compositional Ink shell, reusable text/list
+  viewport state, dynamic-text sanitization, and focused shell, viewport, and
+  text safety tests. The public TUI route remains legacy until Phase 10.7.
+- Phase 10.2 focused verification passed 13 Ink foundation, shell, viewport, and
+  text tests. The shell tests cover navigation, scrolling, footer visibility,
+  resize fallback/redraw, `NO_COLOR`, refresh coalescing, and stale results.
+- Phase 10.2 static verification passed direct Prettier, ESLint, TypeScript
+  typecheck, and the full Vitest suite except for the same two Windows symlink
+  `EPERM` failures in `test/update.test.ts` (177 passed, 2 skipped).
+- Phase 10.2 diff review found no remediation items. Ink imports only the
+  configuration diagnosis application operation and does not access storage or
+  engine internals; no public route or CLI protocol changed.
+
+- Phase 10.3 adds the internal Ink setup and launch-review flow. It reuses
+  configuration generation, atomic writes, diagnosis, workflow discovery, and
+  `runWorkflow`; application context creation remains deferred until explicit
+  launch confirmation.
+- Phase 10.3 focused verification passed 5 setup and launch safety tests for
+  first-run confirmation, existing-file refusal, workflow grouping, missing
+  profiles, input correction, cancellation, write permissions, and profile
+  revalidation.
+- Phase 10.3 static verification passed repository Prettier, ESLint, and
+  TypeScript checks. Full Vitest verification passed 182 tests with 2 skipped;
+  the same two Windows symlink `EPERM` failures remain in `test/update.test.ts`.
+- Phase 10.3 diff review found no remediation items. The public TUI route and
+  CLI protocol remain unchanged; Phase 10.4 is the next active boundary for
+  attached execution and completion rendering.
+
+- Phase 10.4 is in progress. The internal Ink shell now has a bounded live
+  execution model, sanitized activity, persisted step snapshot refreshes,
+  usage/cost aggregation, completion views, attached cancellation, and signal
+  routing that avoids blindly unmounting an active run.
+- Phase 10.4 focused verification currently passes 2 execution-state tests and
+  an attached shell journey covering launch, activity, graceful cancellation,
+  and completion. Full verification passes 185 tests with 2 skipped; the same
+  two Windows symlink `EPERM` failures remain in `test/update.test.ts`.
+- Remaining Phase 10.4 work is resume integration, forced-cancellation cleanup
+  ordering, stream-error shutdown, and the complete lifecycle scenario port.
+  These remain unchecked until verified; Phase 10.5 owns history and recovery
+  presentation needed for a complete resume journey.
+
+- Phase 10.4 resume and Phase 10.5 inspection flows are now implemented in the
+  internal Ink shell: history filters/pagination, run detail, recovery actions,
+  bounded artifact previews, clarification reruns, and research-specific
+  approval/rejection/waiting actions use application operations only.
+- The two public TUI entry points now lazy-load `src/tui-ink/shell.tsx`; CLI
+  non-TTY, JSON/JSONL, and explicit command tests remain passing. README preview
+  text now documents the verified bounded Ink viewports.
+- Current full verification passes 186 tests with 2 skipped. The same two
+  Windows symlink `EPERM` failures remain in `test/update.test.ts`.
+- Phase 10.6 parity evidence, Linux bundle revalidation after the cutover, and
+  Phase 10.8 legacy deletion remain before the migration can be declared final.
+- Phase 10.6 static and focused parity checks pass, including TypeScript build,
+  CLI protocol tests, Ink foundation/shell/phase tests, and `git diff --check`.
+  The Linux bundle could not be rebuilt from this Windows session: native
+  execution rejects the host and WSL currently has no `pnpm` executable.

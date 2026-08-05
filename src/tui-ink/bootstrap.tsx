@@ -5,14 +5,23 @@ import type { ReactNode } from 'react';
 const MINIMUM_WIDTH = 56;
 const MINIMUM_HEIGHT = 12;
 
-export interface InkFoundationOptions {
+export interface InkApplicationOptions {
   input?: NodeJS.ReadStream;
   output?: NodeJS.WriteStream;
   errorOutput?: NodeJS.WriteStream;
   env?: NodeJS.ProcessEnv;
+  onSignal?: (signal: NodeJS.Signals) => boolean | void;
 }
 
-export async function runInkFoundation(options: InkFoundationOptions = {}): Promise<void> {
+export interface InkApplicationContext {
+  colors: boolean;
+  size: { columns: number; rows: number };
+}
+
+export async function runInkApplication(
+  options: InkApplicationOptions,
+  createRoot: (context: InkApplicationContext) => ReactNode,
+): Promise<void> {
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
   const errorOutput = options.errorOutput ?? process.stderr;
@@ -26,7 +35,7 @@ export async function runInkFoundation(options: InkFoundationOptions = {}): Prom
   let instance: ReturnType<typeof render> | undefined;
   let streamFailure: unknown;
   const onResize = () => {
-    if (instance) instance.rerender(<FoundationApp colors={colors} size={terminalSize(output)} />);
+    if (instance) instance.rerender(createRoot({ colors, size: terminalSize(output) }));
   };
 
   const onStreamError = (error: unknown) => {
@@ -38,7 +47,7 @@ export async function runInkFoundation(options: InkFoundationOptions = {}): Prom
   if (errorOutput !== output) errorOutput.on('error', onStreamError);
 
   try {
-    instance = render(<FoundationApp colors={colors} size={terminalSize(output)} />, {
+    instance = render(createRoot({ colors, size: terminalSize(output) }), {
       stdin: input,
       stdout: output,
       stderr: errorOutput,
@@ -52,6 +61,7 @@ export async function runInkFoundation(options: InkFoundationOptions = {}): Prom
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       const handler = () => {
         process.exitCode = signal === 'SIGINT' ? 130 : 143;
+        if (options.onSignal?.(signal)) return;
         instance?.unmount();
       };
       signalHandlers.set(signal, handler);
@@ -67,6 +77,12 @@ export async function runInkFoundation(options: InkFoundationOptions = {}): Prom
     output.off('resize', onResize);
     for (const [signal, handler] of signalHandlers) process.off(signal, handler);
   }
+}
+
+export async function runInkFoundation(options: InkApplicationOptions = {}): Promise<void> {
+  await runInkApplication(options, ({ colors, size }) => (
+    <FoundationApp colors={colors} size={size} />
+  ));
 }
 
 interface FoundationAppProps {
