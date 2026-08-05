@@ -965,36 +965,38 @@ as handwritten implementation details and will not be ported as behavior.
 
 #### Tasks
 
-- [ ] Add only the production dependencies required for Ink and React and the
+- [x] Add only the production dependencies required for Ink and React and the
       development types required for strict TypeScript.
-- [ ] Configure TypeScript TSX support without changing non-TUI module output.
-- [ ] Create a minimal `src/tui-ink/` bootstrap and an internal-only developer
+- [x] Configure TypeScript TSX support without changing non-TUI module output.
+- [x] Create a minimal `src/tui-ink/` bootstrap and an internal-only developer
       runner; do not add a public CLI command.
-- [ ] Prove TTY refusal, input, resize awareness, `NO_COLOR`, minimum-size
+- [x] Prove TTY refusal, input, resize awareness, `NO_COLOR`, minimum-size
       fallback, normal unmount, error cleanup, SIGINT, and SIGTERM handling.
-- [ ] Give Ink exclusive ownership of rendering and input. Do not wrap it in
+- [x] Give Ink exclusive ownership of rendering and input. Do not wrap it in
       the legacy terminal session or manual key parser.
-- [ ] Keep Binaflow responsible for attached-run cancellation policy, exit
+- [x] Keep Binaflow responsible for attached-run cancellation policy, exit
       codes, active-operation cleanup, event unsubscription, and owned
       application-context closure.
-- [ ] Verify Node 22 ESM and Linux x86_64 bundle compatibility for React, Ink,
+- [x] Verify Node 22 ESM and Linux x86_64 bundle compatibility for React, Ink,
       and Yoga.
 
 #### Verification
 
-- [ ] Add focused foundation tests using supported Ink test facilities or
+- [x] Add focused foundation tests using supported Ink test facilities or
       injected streams.
-- [ ] Run legacy TUI tests unchanged plus format, lint, typecheck, tests,
-      build, bundle build, and a Linux pseudo-terminal smoke test.
-- [ ] Measure explicit CLI startup and bundle size against Phase 10.0.
-- [ ] Confirm normal CLI help and explicit commands do not load the Ink module
+- [x] Run legacy TUI tests unchanged plus format, lint, typecheck, tests, build,
+      and bundle build.
+- [x] Run the Linux x86_64 bundle and internal Ink foundation under a
+      pseudo-terminal.
+- [x] Measure explicit CLI startup and bundle size against Phase 10.0.
+- [x] Confirm normal CLI help and explicit commands do not load the Ink module
       graph.
 
 #### Exit Criteria
 
-- [ ] The internal Ink shell starts and restores the terminal safely.
-- [ ] Dependency cost is measured and accepted in this file.
-- [ ] The production route remains legacy.
+- [x] The internal Ink shell starts and restores the terminal safely.
+- [x] Dependency cost is measured and accepted in this file.
+- [x] The production route remains legacy.
 
 ### Phase 10.2: Build The Ink Shell And Viewports
 
@@ -1533,3 +1535,30 @@ BY` for both default and filtered history queries.
 - Phase 10.0 diff review found no remediation items: the change is limited to
   parity planning, baseline evidence, and verified session notes; public routes,
   application boundaries, and CLI contracts remain unchanged.
+
+- Phase 10.1 adds Ink `7.1.1`, React `19.2.8`, and `@types/react` `19.2.2` as
+  the only new dependencies. The production CLI still has no import path to
+  `src/tui-ink`.
+- TypeScript now uses `react-jsx`; existing `.ts` output remains unchanged.
+- The internal `src/tui-ink/bootstrap.tsx` uses Ink rendering and input APIs,
+  owns only foundation terminal lifecycle, and is not reachable from a public
+  command. `scripts/run-tui-ink.mjs` is an internal developer runner.
+- Phase 10.1 focused verification passed 7 foundation tests covering TTY
+  refusal, input, minimum-size fallback, resize redraw, `NO_COLOR`, stream
+  errors, normal unmount, SIGINT, and SIGTERM.
+- Full verification passed 171 tests with 2 skipped tests. The same two update
+  tests remain blocked by Windows symlink `EPERM` at `test/update.test.ts`.
+- Direct Prettier, ESLint, TypeScript typecheck, TypeScript build, and
+  `git diff --check` passed. `better-sqlite3` required `corepack pnpm rebuild`
+  after the clean Windows dependency installation.
+- The Linux x86_64 bundle built with WSL Node `v22.23.2` and pnpm `11.18.0`.
+  Verified compressed bundle samples were approximately 50,018,382 bytes and
+  the extracted payload was 149,278,141 bytes; the launcher printed help.
+  A Python pty smoke launched the bundled Ink foundation, detected its screen,
+  sent `q`, and exited with code 0.
+- Compared with the Phase 10.0 baseline, warm built-CLI startup remained in
+  the same range: `--help` 61.2-69.5 ms and `--json workflows` 178.9-190.2 ms.
+- Phase 10.1 diff review found no remediation items. The changes are limited to
+  Ink foundation dependencies, TSX configuration, internal foundation lifecycle,
+  focused tests, and the internal runner; no public route or application
+  operation changed.
