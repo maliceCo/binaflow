@@ -1613,9 +1613,11 @@ BY` for both default and filtered history queries.
   text now documents the verified bounded Ink viewports.
 - Current full verification passes 186 tests with 2 skipped. The same two
   Windows symlink `EPERM` failures remain in `test/update.test.ts`.
-- Phase 10.6 parity evidence, Linux bundle revalidation after the cutover, and
-  Phase 10.8 legacy deletion remain before the migration can be declared final.
+- Phase 10.6 parity evidence and Phase 10.8 legacy deletion remain before the
+  migration can be declared final.
 - Phase 10.6 static and focused parity checks pass, including TypeScript build,
   CLI protocol tests, Ink foundation/shell/phase tests, and `git diff --check`.
-  The Linux bundle could not be rebuilt from this Windows session: native
-  execution rejects the host and WSL currently has no `pnpm` executable.
+- Docker Desktop Linux x64 rebuilt the bundle with Node 22 and pnpm 11.18.0.
+  The archive is `release/binaflow-linux-x64-0.1.0-preview.0.tar.gz`, SHA-256
+  `54C9504C983924CD50FED6D5DC98DD5567945499017E18303A3A8248AF9002F0`; its
+  extracted launcher passed `--help` smoke verification.
