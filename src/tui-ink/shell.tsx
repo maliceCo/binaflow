@@ -13,6 +13,7 @@ import {
   explainRunRecovery,
   inspectRun,
   listRuns,
+  loadResearchApprovalPreviews,
   markRunInterrupted,
   readArtifact,
   resumeWorkflow,
@@ -22,7 +23,7 @@ import {
   type RunInspection,
   type RunRecoveryExplanation,
 } from '../application/operations.js';
-import { Text, useApp, useInput } from 'ink';
+import { useApp, useInput } from 'ink';
 import { formatDurationMs, humanRunStatus, humanStepStatus } from '../core/presentation.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -33,6 +34,7 @@ import {
 } from './bootstrap.js';
 import {
   MinimumSizeFallback,
+  SafeText,
   ScreenFrame,
   SelectionList,
   StatusMessage,
@@ -59,11 +61,15 @@ import {
   type SetupValues,
 } from './launch.js';
 import {
-  appendLiveActivity,
   applyStepSnapshot,
+  createLiveActivityBuffer,
   createLiveState,
+  createLiveUiPublisher,
+  createSnapshotInspectionController,
   type CompletionState,
+  type LiveActivityBuffer,
   type LiveState,
+  type SnapshotInspectionController,
 } from './execution.js';
 import { createAttachedExecutionLifecycle, type AttachedExecutionLifecycle } from './lifecycle.js';
 
@@ -161,9 +167,11 @@ function InkShell({
   const [screen, setScreen] = useState<Screen>('home');
   const [diagnosis, setDiagnosis] = useState<ConfigurationDiagnosis>();
   const [homeSelected, setHomeSelected] = useState(1);
+  const [homeOffset, setHomeOffset] = useState(0);
   const [documentOffset, setDocumentOffset] = useState(0);
   const [diagnosisOffset, setDiagnosisOffset] = useState(0);
   const [selection, setSelection] = useState(0);
+  const [listOffset, setListOffset] = useState(0);
   const [setupField, setSetupField] = useState(0);
   const [setupValues, setSetupValues] = useState<SetupValues>({});
   const [generated, setGenerated] = useState<GeneratedConfiguration>();
@@ -180,6 +188,7 @@ function InkShell({
   const [liveOffset, setLiveOffset] = useState(0);
   const [historyRuns, setHistoryRuns] = useState<WorkflowRun[]>([]);
   const [historySelected, setHistorySelected] = useState(0);
+  const [historyOffset, setHistoryOffset] = useState(0);
   const [historyStatus, setHistoryStatus] = useState<RunStatus | undefined>(undefined);
   const [historyWorkflow, setHistoryWorkflow] = useState<string | undefined>(undefined);
   const [historyCursor, setHistoryCursor] = useState<string | undefined>(undefined);
@@ -188,18 +197,86 @@ function InkShell({
   const [detail, setDetail] = useState<RunInspection>();
   const [recovery, setRecovery] = useState<RunRecoveryExplanation>();
   const [clarifications, setClarifications] = useState<string[]>([]);
+  const [approvalMessage, setApprovalMessage] = useState<string>();
+  const [approvalPreviews, setApprovalPreviews] = useState<ArtifactContentView[]>([]);
+  const [approvalPreviewOffset, setApprovalPreviewOffset] = useState(0);
   const [artifactSelected, setArtifactSelected] = useState(0);
+  const [artifactOffset, setArtifactOffset] = useState(0);
   const [artifactContent, setArtifactContent] = useState<ArtifactContentView>();
+  const [artifactContentOffset, setArtifactContentOffset] = useState(0);
   const [detailPrompt, setDetailPrompt] = useState<'recovery' | 'rejection'>();
   const inputValueRef = useRef('');
   const active = useRef(true);
   const refreshPromise = useRef<Promise<void> | undefined>(undefined);
   const activeRunId = useRef<string | undefined>(undefined);
   const liveRef = useRef<LiveState | undefined>(undefined);
+  const activityBufferRef = useRef<LiveActivityBuffer | undefined>(undefined);
+  const uiPublisherRef = useRef<ReturnType<typeof createLiveUiPublisher> | undefined>(undefined);
+  const snapshotControllerRef = useRef<SnapshotInspectionController | undefined>(undefined);
+  const appliedSnapshotGeneration = useRef(0);
+  const belowMinimumSize = size.columns < MINIMUM_WIDTH || size.rows < MINIMUM_HEIGHT;
 
   const setLiveValue = (value: LiveState | undefined): void => {
     liveRef.current = value;
     setLive(value);
+  };
+
+  const disposeLiveControllers = (): void => {
+    uiPublisherRef.current?.dispose();
+    uiPublisherRef.current = undefined;
+    snapshotControllerRef.current?.dispose();
+    snapshotControllerRef.current = undefined;
+    activityBufferRef.current?.clear();
+    activityBufferRef.current = undefined;
+    appliedSnapshotGeneration.current = 0;
+  };
+
+  const publishLive = (value: LiveState): void => {
+    liveRef.current = value;
+    setLive(value);
+  };
+
+  const attachLiveControllers = (application: ApplicationContext): void => {
+    disposeLiveControllers();
+    const buffer = createLiveActivityBuffer();
+    activityBufferRef.current = buffer;
+    uiPublisherRef.current = createLiveUiPublisher({
+      getState: () => liveRef.current,
+      publish: publishLive,
+      buffer,
+    });
+    snapshotControllerRef.current = createSnapshotInspectionController({
+      inspect: async (runId) => {
+        const inspection = await inspectRun(application, runId, { includeStepResults: 'usage' });
+        return inspection.steps;
+      },
+      getRunId: () => activeRunId.current,
+      apply: (steps, generation) => {
+        const current = liveRef.current;
+        if (!current || current.run.id !== activeRunId.current) return;
+        const next = applyStepSnapshot(
+          current,
+          steps,
+          generation,
+          appliedSnapshotGeneration.current,
+        );
+        if (!next) return;
+        appliedSnapshotGeneration.current = generation;
+        publishLive({ ...next, activity: buffer.snapshot() });
+      },
+    });
+  };
+
+  const handleLiveEvent = (event: import('../core/events.js').NormalizedEvent): void => {
+    if (event.runId !== activeRunId.current) return;
+    if (!liveRef.current) return;
+    const buffer = activityBufferRef.current;
+    if (!buffer) return;
+    buffer.append(event);
+    if (event.type === 'status' || event.type === 'error') {
+      snapshotControllerRef.current?.request(event.type);
+    }
+    uiPublisherRef.current?.markDirty();
   };
 
   const refresh = (): void => {
@@ -227,6 +304,7 @@ function InkShell({
     refresh();
     return () => {
       active.current = false;
+      disposeLiveControllers();
     };
   }, [configPath, cwd]);
 
@@ -242,11 +320,19 @@ function InkShell({
     setInputValue(value);
   };
 
+  const resolveContextFactory = async (): Promise<
+    (configPath: string, cwd: string) => Promise<ApplicationContext & { close?(): void }>
+  > => openContext ?? (await import('../application/runtime.js')).openApplicationContext;
+
   const ensureContext = async (): Promise<ApplicationContext & { close?(): void }> => {
     if (lifecycle.context) return lifecycle.context;
-    const createContext =
-      openContext ?? (await import('../application/runtime.js')).openApplicationContext;
+    const createContext = await resolveContextFactory();
     return lifecycle.openContext(async () => createContext(configPath, cwd));
+  };
+
+  const openExecutionContext = async (): Promise<ApplicationContext & { close?(): void }> => {
+    const createContext = await resolveContextFactory();
+    return lifecycle.replaceOwnedContext(async () => createContext(configPath, cwd));
   };
 
   const loadHistory = async (
@@ -266,6 +352,7 @@ function InkShell({
       });
       setHistoryRuns(page.runs);
       setHistorySelected(0);
+      setHistoryOffset(0);
       setHistoryCursor(page.nextCursor);
       setHistoryHasNext(page.nextCursor !== undefined);
       setScreen('history');
@@ -279,15 +366,34 @@ function InkShell({
   const openDetail = async (run: WorkflowRun): Promise<void> => {
     try {
       const application = await ensureContext();
-      const inspection = await inspectRun(application, run.id, { includeStepResults: true });
+      const inspection = await inspectRun(application, run.id, { includeStepResults: false });
       const explanation = await explainRunRecovery(application, run.id);
       const questions = await clarificationQuestions(application, inspection);
+      const workflow = discoverWorkflows().find(
+        (candidate) => candidate.id === inspection.run.workflowId,
+      );
+      const approvalWaiting =
+        inspection.run.status === 'waiting' &&
+        workflow?.approval !== undefined &&
+        inspection.steps.some(
+          (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
+        );
       setDetail(inspection);
       setRecovery(explanation);
       setClarifications(questions);
+      if (approvalWaiting && workflow?.approval) {
+        setApprovalMessage(workflow.approval.message);
+        setApprovalPreviews(await loadResearchApprovalPreviews(application, inspection));
+      } else {
+        setApprovalMessage(undefined);
+        setApprovalPreviews([]);
+      }
+      setApprovalPreviewOffset(0);
       setArtifactContent(undefined);
       setArtifactSelected(0);
+      setArtifactOffset(0);
       setSelection(0);
+      setListOffset(0);
       setScreen('detail');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -325,11 +431,13 @@ function InkShell({
       if (!diagnosis?.configExists) {
         setScreen('setup-choice');
         setSelection(0);
+        setListOffset(0);
       } else if (!diagnosis.configValid)
         setError('Fix the invalid configuration before starting a workflow.');
       else {
         setWorkflows(orderedWorkflows(discoverWorkflows()));
         setSelection(0);
+        setListOffset(0);
         setScreen('workflows');
       }
     } else if (action === 'Read documentation') setScreen('documentation');
@@ -355,6 +463,7 @@ function InkShell({
         const answers = setupValuesToGeneration(next);
         setGenerated(generateConfiguration({ configPath, cwd, ...answers }));
         setSelection(0);
+        setListOffset(0);
         setScreen('setup-preview');
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : String(reason));
@@ -438,6 +547,7 @@ function InkShell({
     setLaunchInput(next);
     setError(undefined);
     setSelection(0);
+    setListOffset(0);
     setScreen('launch-confirmation');
   };
 
@@ -456,7 +566,7 @@ function InkShell({
     if (lifecycle.context) {
       try {
         const inspection = await inspectRun(lifecycle.context, run.id, {
-          includeStepResults: true,
+          includeStepResults: 'usage',
         });
         steps = inspection.steps;
         artifacts = inspection.artifacts.map((artifact) => `${artifact.stepId}.${artifact.name}`);
@@ -473,9 +583,11 @@ function InkShell({
       startedAt: current?.startedAt ?? run.createdAt,
       finishedAt,
     });
+    disposeLiveControllers();
     setLiveValue(undefined);
     setStatus(undefined);
     setSelection(0);
+    setListOffset(0);
     setScreen('completion');
   };
 
@@ -527,23 +639,10 @@ function InkShell({
             setScreen('launch-confirmation');
             return;
           }
-          const application = await ensureContext();
+          const application = await openExecutionContext();
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
-          lifecycle.subscribe(
-            application.subscribeEvents?.((event) => {
-              if (event.runId !== activeRunId.current) return;
-              const current = liveRef.current;
-              if (!current) return;
-              setLiveValue(appendLiveActivity(current, event));
-              void inspectRun(application, event.runId, { includeStepResults: false })
-                .then((inspection) => {
-                  const latest = liveRef.current;
-                  if (latest?.run.id === event.runId)
-                    setLiveValue(applyStepSnapshot(latest, inspection.steps));
-                })
-                .catch(() => undefined);
-            }),
-          );
+          attachLiveControllers(application);
+          lifecycle.subscribe(application.subscribeEvents?.((event) => handleLiveEvent(event)));
           const objective = launchInput.values.objective;
           if (!objective) throw new Error('Workflow objective must be a non-empty string');
           setStatus(`Starting ${launchInput.workflow.id}...`);
@@ -561,6 +660,8 @@ function InkShell({
               setScreen('live');
             },
           });
+          uiPublisherRef.current?.flush();
+          await snapshotControllerRef.current?.flush();
           await finishRun(run);
         } catch (reason) {
           const current = liveRef.current;
@@ -599,16 +700,10 @@ function InkShell({
     lifecycle.trackOperation(
       (async () => {
         try {
-          const application = await ensureContext();
+          const application = await openExecutionContext();
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
-          lifecycle.subscribe(
-            application.subscribeEvents?.((event) => {
-              if (event.runId !== activeRunId.current) return;
-              const current = liveRef.current;
-              if (!current) return;
-              setLiveValue(appendLiveActivity(current, event));
-            }),
-          );
+          attachLiveControllers(application);
+          lifecycle.subscribe(application.subscribeEvents?.((event) => handleLiveEvent(event)));
           const run = await operation(application, controller.signal, (startedRun) => {
             activeRunId.current = startedRun.id;
             setLiveValue(createLiveState(startedRun, workflow, detail.steps));
@@ -616,6 +711,8 @@ function InkShell({
             setLiveOffset(0);
             setScreen('live');
           });
+          uiPublisherRef.current?.flush();
+          await snapshotControllerRef.current?.flush();
           await finishRun(run);
         } catch (reason) {
           const current = liveRef.current;
@@ -673,6 +770,13 @@ function InkShell({
   };
 
   useInput((input, key) => {
+    if (belowMinimumSize) {
+      if (input === 'q' || key.escape || (input === 'c' && key.ctrl)) {
+        exit(input === 'c' ? 130 : undefined);
+      }
+      return;
+    }
+
     if (input === 'c' && key.ctrl) {
       if (liveRef.current) requestCancellation();
       else exit(130);
@@ -682,11 +786,20 @@ function InkShell({
     if (screen === 'live') {
       if (input === 'q' || key.escape) requestCancellation();
       else if (input === 'd') setLiveDetail((detail) => !detail);
-      else if (input === 'j' || key.downArrow)
+      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const lines = liveDetail
+          ? (live?.activity.length ?? 0)
+          : Math.min(8, live?.activity.length ?? 0);
+        const visibleRows = Math.max(1, size.rows - 13);
         setLiveOffset((offset) =>
-          Math.min(offset + 1, Math.max(0, (live?.activity.length ?? 1) - 1)),
+          scrollText(
+            offset,
+            input === 'j' || key.downArrow ? 1 : -1,
+            Math.max(1, lines),
+            visibleRows,
+          ),
         );
-      else if (input === 'k' || key.upArrow) setLiveOffset((offset) => Math.max(0, offset - 1));
+      }
       return;
     }
 
@@ -736,11 +849,17 @@ function InkShell({
       } else if (input === 'n' && historyHasNext) {
         void loadHistory(historyStatus, historyWorkflow, historyCursor);
       } else if (input === 'r') void loadHistory();
-      else if (input === 'j' || key.downArrow)
-        setHistorySelected((selected) => Math.min(historyRuns.length - 1, selected + 1));
-      else if (input === 'k' || key.upArrow)
-        setHistorySelected((selected) => Math.max(0, selected - 1));
-      else if ((input === '\r' || key.return) && historyRuns[historySelected])
+      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const visibleRows = Math.max(1, size.rows - 8);
+        const next = moveSelection(
+          { offset: historyOffset, selected: historySelected },
+          input === 'j' || key.downArrow ? 1 : -1,
+          historyRuns.length,
+          visibleRows,
+        );
+        setHistorySelected(next.selected);
+        setHistoryOffset(next.offset);
+      } else if ((input === '\r' || key.return) && historyRuns[historySelected])
         void openDetail(historyRuns[historySelected]!);
       return;
     }
@@ -748,10 +867,17 @@ function InkShell({
     if (screen === 'detail' && detail) {
       const actions = detailActions(detail, recovery, clarifications);
       if (input === 'q' || key.escape) setScreen('history');
-      else if (input === 'j' || key.downArrow)
-        setSelection((selected) => Math.min(actions.length - 1, selected + 1));
-      else if (input === 'k' || key.upArrow) setSelection((selected) => Math.max(0, selected - 1));
-      else if (input === '\r' || key.return) {
+      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const visibleRows = Math.max(1, size.rows - 16);
+        const next = moveSelection(
+          { offset: listOffset, selected: selection },
+          input === 'j' || key.downArrow ? 1 : -1,
+          actions.length,
+          visibleRows,
+        );
+        setSelection(next.selected);
+        setListOffset(next.offset);
+      } else if (input === '\r' || key.return) {
         const action = actions[selection];
         if (action === 'Resume retryable work') {
           void startContinuation(
@@ -807,11 +933,31 @@ function InkShell({
 
     if (screen === 'artifacts' && detail) {
       if (input === 'q' || key.escape) setScreen('detail');
-      else if (input === 'j' || key.downArrow)
-        setArtifactSelected((selected) => Math.min(detail.artifacts.length - 1, selected + 1));
-      else if (input === 'k' || key.upArrow)
-        setArtifactSelected((selected) => Math.max(0, selected - 1));
-      else if (input === '\r' || key.return) void loadArtifact();
+      else if (
+        artifactContent &&
+        (input === 'j' || key.downArrow || input === 'k' || key.upArrow)
+      ) {
+        const lines = artifactContent.error
+          ? [`ERROR: ${artifactContent.error}`]
+          : (artifactContent.content ?? 'No readable content.').split('\n');
+        const visibleRows = Math.max(1, size.rows - 12);
+        setArtifactContentOffset((offset) =>
+          scrollText(offset, input === 'j' || key.downArrow ? 1 : -1, lines.length, visibleRows),
+        );
+      } else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const visibleRows = Math.max(1, size.rows - 12);
+        const next = moveSelection(
+          { offset: artifactOffset, selected: artifactSelected },
+          input === 'j' || key.downArrow ? 1 : -1,
+          detail.artifacts.length,
+          visibleRows,
+        );
+        setArtifactSelected(next.selected);
+        setArtifactOffset(next.offset);
+      } else if (input === '\r' || key.return) {
+        setArtifactContentOffset(0);
+        void loadArtifact();
+      }
       return;
     }
 
@@ -829,14 +975,15 @@ function InkShell({
     if (screen === 'home') {
       if (input === 'q' || key.escape) {
         exit();
-      } else if (input === 'j' || key.downArrow) {
-        setHomeSelected(
-          (selected) => moveSelection({ offset: 0, selected }, 1, HOME_ACTIONS.length, 5).selected,
+      } else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const next = moveSelection(
+          { offset: homeOffset, selected: homeSelected },
+          input === 'j' || key.downArrow ? 1 : -1,
+          HOME_ACTIONS.length,
+          5,
         );
-      } else if (input === 'k' || key.upArrow) {
-        setHomeSelected(
-          (selected) => moveSelection({ offset: 0, selected }, -1, HOME_ACTIONS.length, 5).selected,
-        );
+        setHomeSelected(next.selected);
+        setHomeOffset(next.offset);
       } else if (input === 'r') refresh();
       else if (input === '\r' || key.return) selectHomeAction();
       return;
@@ -850,15 +997,16 @@ function InkShell({
     ) {
       const items = selectionItems(screen, workflows, generated, launchInput);
       if (input === 'q' || key.escape) returnHome('Cancelled.');
-      else if (input === 'j' || key.downArrow)
-        setSelection(
-          (selected) => moveSelection({ offset: 0, selected }, 1, items.length, 5).selected,
+      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const next = moveSelection(
+          { offset: listOffset, selected: selection },
+          input === 'j' || key.downArrow ? 1 : -1,
+          items.length,
+          Math.max(1, Math.min(5, items.length)),
         );
-      else if (input === 'k' || key.upArrow)
-        setSelection(
-          (selected) => moveSelection({ offset: 0, selected }, -1, items.length, 5).selected,
-        );
-      else if (input === '\r' || key.return) {
+        setSelection(next.selected);
+        setListOffset(next.offset);
+      } else if (input === '\r' || key.return) {
         if (screen === 'setup-choice') {
           if (selection === 0) startSetup();
           else if (selection === 1) setScreen('documentation');
@@ -948,7 +1096,7 @@ function InkShell({
         footer="Type a value | Enter submit | q cancel"
         colors={colors}
       >
-        <Text>{field.title}</Text>
+        <SafeText>{field.title}</SafeText>
         <TextPrompt
           prompt={
             field.key === 'builderWriteAccess'
@@ -958,7 +1106,7 @@ function InkShell({
           value={inputValue}
         />
         {field.key === 'builderWriteAccess' ? (
-          <Text>Choose no to keep the builder read-only.</Text>
+          <SafeText>Choose no to keep the builder read-only.</SafeText>
         ) : null}
       </ScreenFrame>
     );
@@ -977,11 +1125,11 @@ function InkShell({
           offset={0}
           visibleRows={Math.max(1, size.rows - 10)}
         />
-        <Text>Nothing has been written yet.</Text>
+        <SafeText>Nothing has been written yet.</SafeText>
         <SelectionList
           items={['Write configuration', 'Cancel']}
           selected={selection}
-          offset={0}
+          offset={listOffset}
           visibleRows={2}
         />
       </ScreenFrame>
@@ -996,11 +1144,11 @@ function InkShell({
         footer="j/k move | Enter select | q cancel"
         colors={colors}
       >
-        <Text>Stable workflows appear before experimental workflows.</Text>
+        <SafeText>Stable workflows appear before experimental workflows.</SafeText>
         <SelectionList
           items={workflowItems(workflows, diagnosis)}
           selected={selection}
-          offset={0}
+          offset={listOffset}
           visibleRows={Math.max(1, size.rows - 10)}
         />
       </ScreenFrame>
@@ -1016,10 +1164,10 @@ function InkShell({
         footer="Type a value | Enter submit | q cancel"
         colors={colors}
       >
-        <Text>
+        <SafeText>
           {field}
           {launchInput.workflow.input.required.includes(field) ? ' (required)' : ' (optional)'}
-        </Text>
+        </SafeText>
         <TextPrompt prompt="> " value={inputValue} />
       </ScreenFrame>
     );
@@ -1036,17 +1184,19 @@ function InkShell({
         footer="j/k move | Enter select | q cancel"
         colors={colors}
       >
-        <Text>Workflow: {launchInput.workflow.id}</Text>
-        <Text>Objective: {launchInput.values.objective ?? '(missing)'}</Text>
-        {launchInput.workflow.experimental ? <Text>Experimental workflow</Text> : null}
-        {writeWarning ? <Text>WARNING: this workflow can modify the workspace.</Text> : null}
+        <SafeText>Workflow: {launchInput.workflow.id}</SafeText>
+        <SafeText>Objective: {launchInput.values.objective ?? '(missing)'}</SafeText>
+        {launchInput.workflow.experimental ? <SafeText>Experimental workflow</SafeText> : null}
+        {writeWarning ? (
+          <SafeText>WARNING: this workflow can modify the workspace.</SafeText>
+        ) : null}
         {permissionLines.map((line) => (
-          <Text key={line}>{line}</Text>
+          <SafeText key={line}>{line}</SafeText>
         ))}
         <SelectionList
           items={['Confirm and launch', 'Edit objective', 'Cancel']}
           selected={selection}
-          offset={0}
+          offset={listOffset}
           visibleRows={3}
         />
       </ScreenFrame>
@@ -1071,21 +1221,23 @@ function InkShell({
         footer="q cancel | Ctrl-C cancel | d toggle activity detail | j/k scroll"
         colors={colors}
       >
-        <Text>Run: {live.run.id}</Text>
-        <Text>Workflow: {live.workflow.id}</Text>
-        <Text>Status: {humanRunStatus(live.run.status)}</Text>
-        <Text>
+        <SafeText>Run: {live.run.id}</SafeText>
+        <SafeText>Workflow: {live.workflow.id}</SafeText>
+        <SafeText>Status: {humanRunStatus(live.run.status)}</SafeText>
+        <SafeText>
           Elapsed: {formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))}
-        </Text>
-        <Text>Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`}</Text>
-        <Text>Cost: {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}</Text>
-        <Text>Steps:</Text>
+        </SafeText>
+        <SafeText>Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`}</SafeText>
+        <SafeText>
+          Cost: {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}
+        </SafeText>
+        <SafeText>Steps:</SafeText>
         {live.steps.map((step) => (
-          <Text
+          <SafeText
             key={step.id}
-          >{`  ${step.id}  ${humanStepStatus(step.status)}  profile=${step.profile}`}</Text>
+          >{`  ${step.id}  ${humanStepStatus(step.status)}  profile=${step.profile}`}</SafeText>
         ))}
-        <Text>Activity:</Text>
+        <SafeText>Activity:</SafeText>
         <TextViewport
           lines={
             displayedActivity.length > 0 ? displayedActivity : ['Waiting for agent activity...']
@@ -1117,19 +1269,19 @@ function InkShell({
         footer="Enter/q return home"
         colors={colors}
       >
-        <Text>Run: {completion.run.id}</Text>
-        <Text>Workflow: {completion.run.workflowId}</Text>
-        <Text>Status: {humanRunStatus(completion.run.status)}</Text>
-        <Text>Duration: {formatDurationMs(duration)}</Text>
-        <Text>Usage: {tokens > 0 ? `${tokens} tokens` : '-'}</Text>
-        <Text>Cost: {costs > 0 ? `$${costs.toFixed(4)}` : '-'}</Text>
-        <Text>Steps:</Text>
+        <SafeText>Run: {completion.run.id}</SafeText>
+        <SafeText>Workflow: {completion.run.workflowId}</SafeText>
+        <SafeText>Status: {humanRunStatus(completion.run.status)}</SafeText>
+        <SafeText>Duration: {formatDurationMs(duration)}</SafeText>
+        <SafeText>Usage: {tokens > 0 ? `${tokens} tokens` : '-'}</SafeText>
+        <SafeText>Cost: {costs > 0 ? `$${costs.toFixed(4)}` : '-'}</SafeText>
+        <SafeText>Steps:</SafeText>
         {completion.steps.map((step) => (
-          <Text key={`${step.runId}-${step.stepId}`}>
+          <SafeText key={`${step.runId}-${step.stepId}`}>
             {`  ${step.stepId}  ${humanStepStatus(step.status)}${step.error ? `  ${step.error.message}` : ''}`}
-          </Text>
+          </SafeText>
         ))}
-        <Text>Artifacts:</Text>
+        <SafeText>Artifacts:</SafeText>
         <TextViewport
           lines={
             completion.artifacts.length > 0 ? completion.artifacts : ['No artifacts recorded.']
@@ -1151,26 +1303,34 @@ function InkShell({
         footer="j/k move | s status | w workflow | n next page | Enter open | q back"
         colors={colors}
       >
-        <Text>
+        <SafeText>
           Filters: status={historyStatus ?? 'all'} workflow={historyWorkflow ?? 'all'}
-        </Text>
-        {historyHasNext ? <Text>More runs available. Press n for next page.</Text> : null}
+        </SafeText>
+        {historyHasNext ? <SafeText>More runs available. Press n for next page.</SafeText> : null}
         <SelectionList
           items={historyRuns.map(
             (run) =>
               `${humanRunStatus(run.status)}  ${run.workflowId}  ${run.id}  ${run.objective}`,
           )}
           selected={historySelected}
-          offset={0}
+          offset={historyOffset}
           visibleRows={Math.max(1, size.rows - 8)}
         />
-        {historyRuns.length === 0 ? <Text>No workflow runs found.</Text> : null}
+        {historyRuns.length === 0 ? <SafeText>No workflow runs found.</SafeText> : null}
       </ScreenFrame>
     );
   }
 
   if (screen === 'detail' && detail) {
     const actions = detailActions(detail, recovery, clarifications);
+    const previewLines = approvalPreviews.flatMap((preview) => {
+      const label = `${preview.artifact.stepId}.${preview.artifact.name}`;
+      if (preview.error) return [`${label}: ${preview.error}`];
+      const body = (preview.content ?? '').split('\n').slice(0, 12);
+      return [label, ...body.map((line) => `  ${line}`)];
+    });
+    const writeWarning =
+      detail.run.workflowId === 'research-plan-build' && detail.run.status === 'waiting';
     return (
       <ScreenFrame
         title="Run detail"
@@ -1179,27 +1339,40 @@ function InkShell({
         footer="j/k move | Enter select | q back"
         colors={colors}
       >
-        <Text>Status: {humanRunStatus(detail.run.status)}</Text>
-        <Text>
-          Workflow: {detail.run.workflowId} v{detail.run.workflowVersion}
-        </Text>
-        <Text>Objective: {detail.run.objective}</Text>
-        <Text>Run ID: {detail.run.id}</Text>
-        <Text>Events: {detail.eventCount} persisted events</Text>
-        <Text>Recovery: {recovery?.reason ?? 'Loading recovery explanation...'}</Text>
+        <SafeText>{`Status: ${humanRunStatus(detail.run.status)}`}</SafeText>
+        <SafeText>{`Workflow: ${detail.run.workflowId} v${detail.run.workflowVersion}`}</SafeText>
+        <SafeText>{`Objective: ${detail.run.objective}`}</SafeText>
+        <SafeText>{`Run ID: ${detail.run.id}`}</SafeText>
+        <SafeText>{`Events: ${detail.eventCount} persisted events`}</SafeText>
+        <SafeText>{`Recovery: ${recovery?.reason ?? 'Loading recovery explanation...'}`}</SafeText>
         {clarifications.length > 0 ? (
-          <Text>Clarification: {clarifications.join(' | ')}</Text>
+          <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
         ) : null}
-        <Text>Artifacts: {detail.artifacts.length} references</Text>
-        <Text>Steps:</Text>
+        {approvalMessage ? <SafeText>{`Approval: ${approvalMessage}`}</SafeText> : null}
+        {writeWarning ? (
+          <SafeText>
+            WARNING: approving continues the workflow and can modify the workspace.
+          </SafeText>
+        ) : null}
+        {previewLines.length > 0 ? (
+          <TextViewport
+            lines={previewLines}
+            offset={approvalPreviewOffset}
+            visibleRows={Math.max(1, Math.min(8, size.rows - 18))}
+          />
+        ) : null}
+        <SafeText>{`Artifacts: ${detail.artifacts.length} references`}</SafeText>
+        <SafeText>Steps:</SafeText>
         {detail.steps.map((step) => (
-          <Text key={step.stepId}>{`  ${step.stepId}  ${humanStepStatus(step.status)}`}</Text>
+          <SafeText
+            key={step.stepId}
+          >{`  ${step.stepId}  ${humanStepStatus(step.status)}`}</SafeText>
         ))}
         <SelectionList
           items={actions}
           selected={selection}
-          offset={0}
-          visibleRows={Math.max(1, size.rows - 14)}
+          offset={listOffset}
+          visibleRows={Math.max(1, size.rows - 16)}
         />
       </ScreenFrame>
     );
@@ -1219,7 +1392,7 @@ function InkShell({
         <SelectionList
           items={artifactLines}
           selected={artifactSelected}
-          offset={0}
+          offset={artifactOffset}
           visibleRows={Math.max(1, size.rows - 12)}
         />
         {artifactContent ? (
@@ -1229,11 +1402,11 @@ function InkShell({
                 ? [`ERROR: ${artifactContent.error}`]
                 : (artifactContent.content ?? 'No readable content.').split('\n')
             }
-            offset={0}
+            offset={artifactContentOffset}
             visibleRows={Math.max(1, size.rows - 12)}
           />
         ) : (
-          <Text>Press Enter to load the selected artifact.</Text>
+          <SafeText>Press Enter to load the selected artifact.</SafeText>
         )}
       </ScreenFrame>
     );
@@ -1247,7 +1420,9 @@ function InkShell({
         footer="Type a value | Enter submit | q cancel"
         colors={colors}
       >
-        <Text>{detailPrompt === 'recovery' ? 'Type YES to confirm recovery:' : 'Feedback:'}</Text>
+        <SafeText>
+          {detailPrompt === 'recovery' ? 'Type YES to confirm recovery:' : 'Feedback:'}
+        </SafeText>
         <TextPrompt prompt="> " value={inputValue} />
       </ScreenFrame>
     );
@@ -1282,7 +1457,12 @@ function InkShell({
       colors={colors}
     >
       <TextViewport lines={homeLines(diagnosis)} offset={0} visibleRows={3} />
-      <SelectionList items={HOME_ACTIONS} selected={homeSelected} offset={0} visibleRows={5} />
+      <SelectionList
+        items={HOME_ACTIONS}
+        selected={homeSelected}
+        offset={homeOffset}
+        visibleRows={5}
+      />
     </ScreenFrame>
   );
 }
@@ -1386,7 +1566,7 @@ function SelectionScreen({
 }): ReactNode {
   return (
     <ScreenFrame title={title} footer={footer} colors={colors}>
-      {description ? <Text>{description}</Text> : null}
+      {description ? <SafeText>{description}</SafeText> : null}
       <SelectionList items={items} selected={selected} offset={0} visibleRows={items.length} />
     </ScreenFrame>
   );

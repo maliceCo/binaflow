@@ -14,8 +14,11 @@ export interface RunListPage {
   nextCursor?: string;
 }
 
+export type StepResultInclude = boolean | 'usage';
+
 export interface StepRunQueryOptions {
-  includeResult?: boolean;
+  /** Default includes full results. false omits bodies; 'usage' keeps usage/cost only. */
+  includeResult?: StepResultInclude;
 }
 
 export interface RunStore {

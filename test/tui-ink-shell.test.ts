@@ -317,16 +317,45 @@ describe('Ink shell', () => {
     await running;
   });
 
+  it('blocks hidden actions below minimum terminal size and only allows quit', async () => {
+    const directory = await temporaryDirectory();
+    const terminal = createTerminal();
+    terminal.output.columns = 40;
+    terminal.output.rows = 8;
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+    });
+
+    await terminal.output.waitFor('Terminal too small');
+    await terminal.input.waitUntilReady();
+    terminal.input.push('j');
+    terminal.input.push('\r');
+    terminal.input.push('r');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(terminal.output.text()).toContain('Terminal too small');
+    expect(terminal.output.text()).not.toContain('> Refresh diagnosis');
+    terminal.input.push('q');
+    await running;
+  });
+
   it('opens bounded history and run detail through inspection operations', async () => {
     const directory = await temporaryDirectory();
     await writeConfig(directory);
     const historical = createRun('completed');
+    const getStepRuns = vi.fn(async (_runId: string, options?: { includeResult?: unknown }) => {
+      expect(options?.includeResult === true).toBe(false);
+      return [];
+    });
     const context: ApplicationContext = {
       config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
       store: {
         listRunsPage: async () => ({ runs: [historical] }),
         getRun: async () => historical,
-        getStepRuns: async () => [],
+        getStepRuns,
         getArtifacts: async () => [],
         countEvents: async () => 0,
       } as unknown as RunStore,
@@ -354,6 +383,7 @@ describe('Ink shell', () => {
     terminal.input.push('\r');
     await terminal.output.waitFor('Historical inspection');
     expect(terminal.output.text()).toContain('Persisted metadata only');
+    expect(getStepRuns).toHaveBeenCalled();
     terminal.input.push('q');
     await terminal.output.waitFor('Filters: status=all workflow=all');
     terminal.input.push('q');
@@ -361,6 +391,100 @@ describe('Ink shell', () => {
     terminal.input.push('q');
     await running;
   });
+
+  it('shows approval message, bounded previews, and workspace warning while waiting', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const waiting = {
+      ...createRun('waiting'),
+      id: 'run-wait-1',
+      workflowId: 'research-plan-build',
+      objective: 'Research objective',
+    };
+    const reportArtifact = {
+      id: 'art-1',
+      runId: waiting.id,
+      stepId: 'research',
+      name: 'report',
+      kind: 'text' as const,
+      path: 'report.txt',
+      mediaType: 'text/plain',
+      sizeBytes: 12,
+    };
+    const context: ApplicationContext = {
+      config: {
+        profiles: {
+          planner: profile('planner'),
+          builder: profile('builder'),
+          researcher: profile('researcher'),
+          'research-reviewer': profile('research-reviewer'),
+        },
+      },
+      store: {
+        listRunsPage: async () => ({ runs: [waiting] }),
+        getRun: async () => waiting,
+        getStepRuns: async () => [
+          {
+            runId: waiting.id,
+            stepId: 'research',
+            profile: 'researcher',
+            status: 'completed',
+            attempt: 1,
+          },
+          {
+            runId: waiting.id,
+            stepId: 'research-review',
+            profile: 'research-reviewer',
+            status: 'completed',
+            attempt: 1,
+          },
+          {
+            runId: waiting.id,
+            stepId: 'research-approval',
+            profile: 'research-reviewer',
+            status: 'waiting',
+            attempt: 1,
+          },
+        ],
+        getArtifacts: async () => [reportArtifact],
+        countEvents: async () => 0,
+      } as unknown as RunStore,
+      artifacts: {
+        readBounded: async () => ({ content: 'bounded research preview', truncated: false }),
+      } as unknown as ArtifactStore,
+      engine: {} as WorkflowEngine,
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+
+    await terminal.output.waitFor('New workflow');
+    await terminal.input.waitUntilReady();
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Refresh diagnosis');
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Run history');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Filters: status=all workflow=all');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Run detail');
+    await terminal.output.waitFor('Approve research and continue');
+    expect(terminal.output.text()).toContain('Review the research artifact');
+    expect(terminal.output.text()).toContain('bounded research preview');
+    expect(terminal.output.text()).toContain('can modify the workspace');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Filters: status=all workflow=all');
+    terminal.input.push('q');
+    await terminal.output.waitFor('New workflow');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
 });
 
 class FakeInput extends EventEmitter {
@@ -430,8 +554,8 @@ class FakeOutput extends EventEmitter {
     return this.chunks.join('');
   }
 
-  async waitFor(value: string): Promise<void> {
-    for (let attempt = 0; attempt < 100 && !this.text().includes(value); attempt += 1) {
+  async waitFor(value: string, attempts = 200): Promise<void> {
+    for (let attempt = 0; attempt < attempts && !this.text().includes(value); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     expect(this.text()).toContain(value);

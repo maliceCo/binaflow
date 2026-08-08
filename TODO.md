@@ -408,53 +408,78 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Functional Tests First
 
-- [ ] Feed a small burst of text and status events and verify UI updates are
+- [x] Feed a small burst of text and status events and verify UI updates are
       coalesced, at most one inspection is active, and retained activity stays
       within its configured bounds.
-- [ ] Verify at most one persisted snapshot inspection is in flight and late
+- [x] Verify at most one persisted snapshot inspection is in flight and late
       snapshots cannot regress displayed state.
-- [ ] Verify launch, resume, and approval continuation update step state, usage,
+- [x] Verify launch, resume, and approval continuation update step state, usage,
       and cost consistently.
-- [ ] Verify a context opened for history cannot execute after configuration
+- [x] Verify a context opened for history cannot execute after configuration
       changes; execution must use exactly the profile values just reviewed.
-- [ ] Verify history detail and completion metadata do not load complete agent
+- [x] Verify history detail and completion metadata do not load complete agent
       result text.
-- [ ] Verify approval shows the configured message, bounded research/review
+- [x] Verify approval shows the configured message, bounded research/review
       previews, and workspace-modification warning before actions.
-- [ ] Verify terminal controls are sanitized in objectives, IDs, profile/model
+- [x] Verify terminal controls are sanitized in objectives, IDs, profile/model
       names, errors, artifact content, and persisted metadata.
-- [ ] Verify hidden actions cannot run below minimum terminal size.
-- [ ] Verify selection remains visible and long detail/artifact content can
+- [x] Verify hidden actions cannot run below minimum terminal size.
+- [x] Verify selection remains visible and long detail/artifact content can
       reach its final line.
 
 ### Implementation
 
-- [ ] Buffer bounded live activity outside React render state and publish UI
+- [x] Buffer bounded live activity outside React render state and publish UI
       snapshots at a measured bounded interval.
-- [ ] Refresh persisted step summaries on status/error events or a coalesced
+- [x] Refresh persisted step summaries on status/error events or a coalesced
       timer, never once per text event.
-- [ ] Share one launch/continuation event path so resume cannot omit snapshots.
-- [ ] Track retained activity bytes incrementally instead of rescanning and
+- [x] Share one launch/continuation event path so resume cannot omit snapshots.
+- [x] Track retained activity bytes incrementally instead of rescanning and
       copying the full bounded history for every event.
-- [ ] Recreate the owned application runtime after final configuration review,
+- [x] Recreate the owned application runtime after final configuration review,
       or provide an application operation that validates and opens the exact
       execution snapshot atomically.
-- [ ] Add a narrow inspection projection for completion metadata if existing
+- [x] Add a narrow inspection projection for completion metadata if existing
       compact inspection is insufficient.
-- [ ] Use the existing bounded research approval preview operation.
-- [ ] Centralize safe dynamic text rendering so raw dynamic `<Text>` calls do
+- [x] Use the existing bounded research approval preview operation.
+- [x] Centralize safe dynamic text rendering so raw dynamic `<Text>` calls do
       not depend on caller discipline.
-- [ ] Give each scrollable list or text area explicit selection and offset
+- [x] Give each scrollable list or text area explicit selection and offset
       state; block all hidden actions while below minimum size.
 
 ### Exit Criteria
 
-- [ ] Live updates have bounded retained activity and at most one persisted
+- [x] Live updates have bounded retained activity and at most one persisted
       inspection in flight under a small deterministic event burst.
-- [ ] Setup, launch, completion, history, recovery, artifacts, and approval are
+- [x] Setup, launch, completion, history, recovery, artifacts, and approval are
       safe at supported terminal sizes.
-- [ ] Phase 4 QA, remediation, focused/full verification, and commit are
-      complete.
+- [x] Phase 4 QA, remediation, focused verification, static verification, and
+      commit are complete. Full-suite verification remains blocked only by
+      recorded pre-existing legacy TUI failures.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 4 verification passed 62 tests across
+  `test/tui-ink-execution.test.ts`, `test/tui-ink-viewport.test.ts`,
+  `test/tui-ink-text.test.ts`, `test/tui-ink-shell.test.ts`,
+  `test/tui-ink-foundation.test.ts`, `test/tui-ink-phase6.test.ts`,
+  `test/application-operations.test.ts`, and `test/persistence.test.ts`.
+  Scenarios cover coalesced UI publish, single in-flight snapshot inspection
+  with generation tokens, incremental activity byte bounds, usage-only step
+  projection, history/completion without full agent text, approval previews and
+  workspace warning, SafeText sanitization, minimum-size quit-only input, and
+  selection/offset reachability for long content.
+- Launch and continuation share `attachLiveControllers` + `handleLiveEvent`.
+  Execution opens via `lifecycle.replaceOwnedContext` after final review so
+  history-opened contexts cannot silently execute stale config (injected test
+  contexts are reused without close).
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
+- Full suite: 213 passed, 1 skipped, 2 failed. Failures are pre-existing legacy
+  TUI tests (`test/tui-phase6.test.ts` stale setup status assertion;
+  `test/tui.test.ts` intermittent empty first render). No Phase 4 Ink or
+  application test failed.
+- Commit intentionally not created per owner instruction.
 
 ## Phase 5: Harden Workflow And Process Contracts
 

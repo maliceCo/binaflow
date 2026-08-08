@@ -101,6 +101,12 @@ describe('local persistence', () => {
         'running',
       ),
     ).rejects.toThrow('Invalid run status transition');
+
+    const usageOnly = await reopenedStore.getStepRuns(run.id, { includeResult: 'usage' });
+    expect(usageOnly[0]?.result?.text).toBe('');
+    expect(usageOnly[0]?.result?.sessionId).toBe('session-1');
+    const omitted = await reopenedStore.getStepRuns(run.id, { includeResult: false });
+    expect(omitted[0]?.result).toBeUndefined();
     reopenedStore.close();
   });
 

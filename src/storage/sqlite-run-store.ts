@@ -246,7 +246,9 @@ export class SqliteRunStore implements RunStore {
   }
 
   async getStepRuns(runId: string, options: StepRunQueryOptions = {}): Promise<StepRun[]> {
-    const resultColumn = options.includeResult === false ? 'NULL AS result_json' : 'result_json';
+    // Default keeps full results for engine/resume paths; false omits, 'usage' projects.
+    const omitResult = options.includeResult === false;
+    const resultColumn = omitResult ? 'NULL AS result_json' : 'result_json';
     const rows = this.database
       .prepare(
         `SELECT run_id, step_id, profile, profile_json, status, attempt, started_at, finished_at,
@@ -254,7 +256,9 @@ export class SqliteRunStore implements RunStore {
          FROM step_runs WHERE run_id = ? ORDER BY rowid`,
       )
       .all(runId) as StepRunRow[];
-    return rows.map(fromStepRunRow);
+    return rows.map((row) =>
+      fromStepRunRow(row, options.includeResult === 'usage' ? 'usage' : undefined),
+    );
   }
 
   async getArtifacts(runId: string): Promise<ArtifactReference[]> {
@@ -559,7 +563,21 @@ function toStepRunRow(stepRun: StepRun): Record<string, unknown> {
   };
 }
 
-function fromStepRunRow(row: StepRunRow): StepRun {
+function fromStepRunRow(row: StepRunRow, resultMode?: 'usage'): StepRun {
+  let result: StepRun['result'];
+  if (row.result_json) {
+    const parsed = JSON.parse(row.result_json) as StepRun['result'];
+    if (resultMode === 'usage' && parsed) {
+      result = {
+        text: '',
+        ...(parsed.usage ? { usage: parsed.usage } : {}),
+        ...(parsed.costUsd !== undefined ? { costUsd: parsed.costUsd } : {}),
+        ...(parsed.sessionId ? { sessionId: parsed.sessionId } : {}),
+      };
+    } else {
+      result = parsed;
+    }
+  }
   return {
     runId: row.run_id,
     stepId: row.step_id,
@@ -569,7 +587,7 @@ function fromStepRunRow(row: StepRunRow): StepRun {
     ...(row.profile_json ? { profileSnapshot: JSON.parse(row.profile_json) } : {}),
     ...(row.started_at ? { startedAt: row.started_at } : {}),
     ...(row.finished_at ? { finishedAt: row.finished_at } : {}),
-    ...(row.result_json ? { result: JSON.parse(row.result_json) } : {}),
+    ...(result ? { result } : {}),
     ...(row.error_json ? { error: JSON.parse(row.error_json) } : {}),
     ...(row.disposition_json ? { disposition: JSON.parse(row.disposition_json) } : {}),
     ...(row.skip_reason_json ? { skipReason: JSON.parse(row.skip_reason_json) } : {}),

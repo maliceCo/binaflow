@@ -79,6 +79,21 @@ describe('application operations', () => {
     expect(getStepRuns).toHaveBeenCalledWith(run.id, { includeResult: true });
   });
 
+  it('can inspect step usage without loading complete agent result text', async () => {
+    const run = persistedRun();
+    const getStepRuns = vi.fn(async (): Promise<StepRun[]> => []);
+    const store = {
+      getRun: vi.fn(async () => run),
+      getStepRuns,
+      getArtifacts: vi.fn(async (): Promise<ArtifactReference[]> => []),
+      countEvents: vi.fn(async () => 0),
+    } as unknown as RunStore;
+
+    await inspectRun({ store }, run.id, { includeStepResults: 'usage' });
+
+    expect(getStepRuns).toHaveBeenCalledWith(run.id, { includeResult: 'usage' });
+  });
+
   it('resolves the workflow and passes application inputs to the engine', async () => {
     const execute = vi.fn(async () => persistedRun());
     const context = {

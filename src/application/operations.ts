@@ -394,7 +394,8 @@ export async function listRuns(
 
 export interface RunInspectionOptions {
   includeEvents?: boolean;
-  includeStepResults?: boolean;
+  /** true loads full agent result text; 'usage' keeps usage/cost only; false omits results. */
+  includeStepResults?: boolean | 'usage';
 }
 
 export async function inspectRun(
@@ -404,8 +405,14 @@ export async function inspectRun(
 ): Promise<RunInspection> {
   const run = await context.store.getRun(runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
+  const includeResult =
+    options.includeStepResults === true
+      ? true
+      : options.includeStepResults === 'usage'
+        ? 'usage'
+        : false;
   const [steps, artifacts, eventCount] = await Promise.all([
-    context.store.getStepRuns(runId, { includeResult: options.includeStepResults === true }),
+    context.store.getStepRuns(runId, { includeResult }),
     context.store.getArtifacts(runId),
     context.store.countEvents(runId),
   ]);
