@@ -145,11 +145,22 @@ async function promptForConfiguration(): Promise<InitPromptSession> {
 
 async function createLineReader(): Promise<PromptReader> {
   const { createInterface } = await import('node:readline');
+  // Piped stdout is block-buffered; keep prompts visible to incremental consumers.
+  if (process.stdout.isTTY !== true) {
+    const handle = (
+      process.stdout as NodeJS.WriteStream & {
+        _handle?: { setBlocking?: (value: boolean) => void };
+      }
+    )._handle;
+    handle?.setBlocking?.(true);
+  }
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   const lines = input[Symbol.asyncIterator]();
   return {
     async question(prompt: string): Promise<string> {
-      process.stdout.write(prompt);
+      await new Promise<void>((resolve, reject) => {
+        process.stdout.write(prompt, (error) => (error ? reject(error) : resolve()));
+      });
       const line = await lines.next();
       if (line.done) throw new Error('Configuration input cancelled');
       return line.value;

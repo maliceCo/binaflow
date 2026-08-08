@@ -100,7 +100,7 @@ the normal plan-build flow, CLI artifact inspection, and interruption/resume.
 - Missing Pi, Node, pnpm, provider, model, or credentials: blocked; do not mark the E2E complete.
 - A failed CLI, artifact assertion, or resume assertion: investigate the application and preserve the failure details.
 
-Do not use prior `TODO.md` text as proof that the current environment passed.
-Only the current command output is evidence for a live E2E result. Record the
-exact WSL environment, provider, model assignments, and command outcome in
-`TODO.md` when the verification is genuinely completed.
+Do not use prior session notes as proof that the current environment passed.
+Only the current command output is evidence for a live E2E result. When the
+verification is genuinely completed, record the exact WSL environment,
+provider, model assignments, and command outcome in the session report.

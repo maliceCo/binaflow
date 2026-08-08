@@ -2,109 +2,157 @@
 
 ## Product Goal
 
-Binaflow is a local workflow orchestrator for coding agents. A workflow defines the work; external agent harnesses execute individual agent steps. The system must not depend on a specific CLI, model provider, or coding agent.
+Binaflow is a local workflow orchestrator for coding agents. A workflow defines
+the work; external agent harnesses execute individual agent steps. The system
+must not depend on a specific CLI, model provider, or coding agent.
 
-The initial product is intentionally small: a sequential `plan -> build` workflow. A planner produces a validated implementation plan, then a builder implements it. The workflow refers to logical agent profiles, not concrete models or harnesses.
+The product is intentionally small: a sequential `plan -> build` workflow and an
+experimental `research-plan-build` workflow. Workflows refer to logical agent
+profiles, not concrete models or harnesses.
 
 ## Architecture Principles
 
 - Start as a modular monolith in TypeScript on Node.js.
-- Prefer small, explicit modules over frameworks, dependency injection containers, or plugin systems.
-- Keep the workflow engine independent from Pi, OpenCode, Codex, and future harnesses.
+- Prefer small, explicit modules over frameworks, dependency injection
+  containers, or plugin systems.
+- Prefer composition over inheritance. Use classes only for resources with
+  identity or lifecycle, such as SQLite and child processes. Use inheritance only
+  for idiomatic `Error` subclasses.
+- Keep the workflow engine independent from Pi, OpenCode, Codex, and future
+  harnesses.
 - Use a narrow `AgentDriver` contract to isolate each harness integration.
-- Resolve harness, provider, model, permissions, and limits through external agent profiles.
-- Persist workflow runs and step state in SQLite from the first implementation.
-- Store large outputs as filesystem artifacts and persist their references in SQLite.
-- Use versioned, serializable workflow definitions and structured intermediate outputs.
-- Treat workflow definitions, agent profiles, and persisted runs as compatibility boundaries.
-- Make the simplest correct change. Do not add abstractions before there is a concrete second use.
+- Resolve harness, provider, model, permissions, and limits through external
+  agent profiles.
+- Persist workflow runs and step state in SQLite.
+- Store large outputs as filesystem artifacts and persist their references in
+  SQLite.
+- Use versioned, serializable workflow definitions and structured intermediate
+  outputs.
+- Treat workflow definitions, agent profiles, and persisted runs as compatibility
+  boundaries.
+- Make the simplest correct change. Do not add abstractions before there is a
+  concrete second use.
+
+## Dependency Direction
+
+- `src/core` may depend on domain types and inward-facing ports only. It must not
+  import CLI, TUI, concrete storage, filesystem artifacts, Pi, or concrete
+  workflow modules.
+- `src/application` composes use cases and workflow-specific coordination behind
+  a narrow `ApplicationService` facade.
+- CLI and TUI are presentation adapters. They depend on application operations
+  and presentation helpers only. Neither may read SQLite, mutate engine state, or
+  read artifact files directly.
+- Storage, filesystem artifacts, and Pi remain replaceable adapters behind narrow
+  consumer-owned contracts.
+- Pi protocol details stay in the Pi driver and JSONL transport.
+- Experimental research orchestration stays outside the generic sequential engine
+  and must not be generalized into approval, loop, or DAG primitives.
+
+## Lifecycle Ownership
+
+- Every attached execution has one compositional lifecycle owner for the active
+  controller, operation promise, event subscription, context ownership, and
+  terminal exit.
+- User cancellation, OS signals, stream failures, render failures, and normal
+  completion share the same ordered shutdown path.
+- The first cancellation request aborts gracefully. The second awaits cleanup
+  before force signalling.
+- Unmount or process cleanup must never close SQLite while execution or event
+  persistence is active.
+- At most one local process may execute or recover a given run at a time.
+- Validation failures for resume and approval are non-mutating.
+- Run status writes compare-and-set against the expected previous status.
+- A completed step is reusable during resume only after its result and artifact
+  references are persisted transactionally.
+- Never silently rerun completed steps during resume.
 
 ## Current Product Scope
 
-The current product milestone includes the following capabilities:
-
-- A TypeScript-authored, serializable workflow definition.
+- TypeScript-authored, serializable workflow definitions.
 - Sequential agent steps with explicit dependencies and output references.
 - External profiles for `planner` and `builder`.
 - A `plan-build` workflow.
-- JSON-schema validation for the planner output.
-- SQLite-backed run and step persistence.
-- Filesystem-backed artifacts.
-- A JSONL process transport.
-- Pi RPC as the first `AgentDriver`.
-- CLI commands: `run`, `runs`, `show`, and `resume`.
-- Basic timeout, cancellation, error recording, and step reuse on resume.
-- A consumer-facing attached TUI for human users.
-- A stable human-oriented CLI for explicit command use.
+- JSON-schema validation for planner output.
+- SQLite-backed run and step persistence with filesystem artifacts.
+- JSONL process transport and Pi RPC as the first `AgentDriver`.
+- CLI commands including `run`, `runs`, `show`, `resume`, approval, artifacts,
+  configuration, and update.
 - Versioned JSON and JSONL CLI output for scripts and plugins.
-- Configuration setup and diagnosis through the CLI/TUI layer.
-- Experimental `research-plan-build` with its existing approval flow.
+- One attached Ink TUI under `src/tui` for human users.
+- Experimental `research-plan-build` with its workflow-specific approval flow.
 
 ## Explicitly Out Of Scope
 
-Do not implement items listed in `WISHLIST.md` unless the user explicitly moves them into `TODO.md`. In particular, do not add parallel execution, generic plugins, RAG, memory, voice, scheduled tasks, dynamic workflows, worktrees, a daemon, remote workers, detached execution, or drivers other than Pi during this milestone. The TUI is active scope, but it must remain attached to the current process and must not introduce a daemon or reconnection protocol.
+Do not implement items listed in `WISHLIST.md` unless the user explicitly promotes
+them into active work. In particular, do not add parallel execution, generic
+plugins, RAG, memory, voice, scheduled tasks, dynamic workflows, worktrees, a
+daemon, remote workers, detached execution, generic approval/loop/DAG primitives,
+or drivers other than Pi without an explicit decision.
+
+The TUI must remain attached to the current process and must not introduce a
+daemon or reconnection protocol.
 
 ## Workflow And Agent Boundaries
 
 - Workflows use logical profiles such as `planner` and `builder`.
-- Workflows must not hard-code a harness, provider, or model unless a future requirement explicitly calls for a non-portable override.
-- Profiles decide the driver, model, reasoning level, allowed tools, workspace mode, timeout, and retry policy.
+- Workflows must not hard-code a harness, provider, or model unless a future
+  requirement explicitly calls for a non-portable override.
+- Profiles decide the driver, model, reasoning level, allowed tools, workspace
+  mode, timeout, and retry policy.
 - The planner is read-only and returns a compact structured plan.
-- The builder receives the original objective and validated plan artifact, not the planner's entire transcript.
-- The workflow engine consumes normalized driver events and results only. Driver-specific protocol details remain inside the driver.
-- Do not assume every harness has the same capabilities. Add capability checks only when an actual second driver requires them.
-- The TUI is a human presentation layer. It must reuse application operations and
-  must not read SQLite or implement engine state transitions directly.
-- The CLI is the external automation boundary. Preserve its versioned JSON and
-  JSONL protocol for scripts, plugins, and future consumers.
+- The builder receives the original objective and validated plan artifact, not
+  the planner's entire transcript.
+- The workflow engine consumes normalized driver events and results only.
 - A plugin invoking Binaflow through the CLI is different from Binaflow invoking
   a future OpenCode or Codex driver. Keep those integration directions separate.
 - `research-plan-build` is experimental product functionality, not evidence that
   approval and loop primitives are generic workflow engine capabilities.
 
-## Session Protocol
-
-At the start of every implementation session:
-
-1. Read this file.
-2. Read `TODO.md` completely.
-3. Read `WISHLIST.md` for context only.
-4. Implement only the active scope in `TODO.md`.
-5. Update `TODO.md` as tasks are completed or newly discovered blockers arise.
-
-Before ending an implementation session:
-
-1. Run the relevant verification commands.
-2. Mark only verified tasks as completed in `TODO.md`.
-3. Record blockers, deviations, and follow-up tasks in `TODO.md`.
-4. Keep future ideas in `WISHLIST.md`, not in the active implementation scope.
-
 ## Engineering Rules
 
-- Use `AGENTS.md` as the project instruction file; Pi, OpenCode, Codex, and other coding agents can discover it.
+- Use `AGENTS.md` as the project instruction file; Pi, OpenCode, Codex, and other
+  coding agents can discover it.
 - Prefer `pnpm` over `npm` for package management and project commands.
-- Keep the code KISS: every module, abstraction, dependency, and line of code must have a concrete purpose in the active scope.
-- Prioritize the Single Responsibility Principle: each module and function should have one clear reason to change, without splitting cohesive behavior into artificial layers.
-- Introduce an architectural pattern only when its tradeoffs and current use justify it; do not build speculative abstractions.
-- Keep the test suite intentionally small. Prefer a few behavior-focused tests that document important contracts and failure modes over coverage-driven tests.
-- Every test must protect meaningful behavior or explain an important application flow. Do not add tests merely to cover lines, trivial accessors, implementation details, or equivalent permutations.
+- Keep the code KISS: every module, abstraction, dependency, and line of code must
+  have a concrete purpose.
+- Prioritize the Single Responsibility Principle without splitting cohesive
+  behavior into artificial layers.
+- Keep the test suite intentionally small. Prefer a few behavior-focused tests
+  that document important contracts and failure modes over coverage-driven tests.
+- Every test must protect meaningful behavior or explain an important application
+  flow. Do not add tests merely to cover lines, trivial accessors, implementation
+  details, or equivalent permutations.
 - Prefer ASCII in source and documentation unless Unicode has a clear purpose.
 - Use JSON Schema for cross-step data contracts.
-- Keep state transitions explicit: `pending`, `running`, `completed`, `failed`, `cancelled`, `interrupted`, or `skipped`.
-- A completed step is reusable during resume only after its result and artifact references are persisted transactionally.
-- A step interrupted by process termination is not completed and must be retried or explicitly handled by policy.
-- Never silently rerun completed steps during resume.
-- Avoid passing raw event logs or full agent transcripts into downstream prompts by default.
-- Do not execute model-generated JavaScript or TypeScript as workflow orchestration code.
-- Do not introduce distributed infrastructure, a remote plugin API, or a second implementation language without an explicit decision.
+- Keep state transitions explicit: `pending`, `running`, `completed`, `failed`,
+  `cancelled`, `interrupted`, `waiting`, or `skipped`.
+- Avoid passing raw event logs or full agent transcripts into downstream prompts
+  by default.
+- Do not execute model-generated JavaScript or TypeScript as workflow
+  orchestration code.
+- Do not introduce distributed infrastructure, a remote plugin API, or a second
+  implementation language without an explicit decision.
+- Preserve protocol-v1 JSON and JSONL envelopes, fields, ordering, stream
+  separation, and exit-code behavior.
+- Preserve persisted-run compatibility. Use additive migrations when storage
+  changes are required.
+- Keep future ideas in `WISHLIST.md` until explicitly promoted.
 
 ## Verification Expectations
 
-- Add only the minimum valuable tests for workflow validation, output references, state transitions, and storage behavior; combine related behavior into readable scenarios when practical.
-- Add focused driver contract tests using a fake JSONL process before relying on a local Pi installation.
-- Keep live Pi integration tests optional and skipped when Pi or credentials are unavailable.
+- Add only the minimum valuable tests for workflow validation, output references,
+  state transitions, storage behavior, lifecycle safety, CLI protocol contracts,
+  and security boundaries.
+- Add focused driver contract tests using a fake JSONL process before relying on
+  a local Pi installation.
+- Keep live Pi integration tests optional and skipped when Pi or credentials are
+  unavailable.
 - Do not use coverage targets or test counts as quality goals.
-- Run formatting, type checking, linting, and tests before declaring a TODO item complete.
+- Before declaring work complete, run `pnpm run format:check`, `pnpm run lint`,
+  `pnpm run typecheck`, `pnpm run test`, and `pnpm run build`.
+- Do not build, package, install, or smoke-test the Linux bundle unless the owner
+  explicitly requests it.
 
 ---
 

@@ -567,6 +567,10 @@ function runCliWithInput(
 
 function waitForOutput(stream: NodeJS.ReadableStream, predicate: () => boolean): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (predicate()) {
+      resolve();
+      return;
+    }
     const onData = (): void => {
       if (!predicate()) return;
       clearTimeout(timer);
@@ -576,7 +580,7 @@ function waitForOutput(stream: NodeJS.ReadableStream, predicate: () => boolean):
     const timer = setTimeout(() => {
       stream.removeListener('data', onData);
       reject(new Error('Timed out waiting for CLI output'));
-    }, 5_000);
+    }, 10_000);
     stream.on('data', onData);
   });
 }

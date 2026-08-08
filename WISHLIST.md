@@ -1,6 +1,8 @@
 # Wishlist
 
-This document records future directions only. None of these items are in the active MVP scope. Move an item to `TODO.md` only after an explicit product and architecture decision.
+This document records future directions only. None of these items are in the
+active product scope. Promote an item into active work only after an explicit
+product and architecture decision.
 
 ## Agent Harnesses
 
