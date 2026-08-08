@@ -1,18 +1,17 @@
-import { mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
-import { FileArtifactStore } from '../../artifacts/file-artifact-store.js';
-import { createRuntimeEventSink } from '../../application/runtime.js';
-import { loadConfig, loadDataDir, type BinaflowConfig } from '../../config.js';
-import { WorkflowEngine } from '../../core/engine.js';
+import {
+  openApplicationContext,
+  openApplicationStorage,
+  type ApplicationRuntimeContext,
+} from '../../application/runtime.js';
+import type { ApplicationService } from '../../application/service.js';
 import type { StepRun, WorkflowRun } from '../../core/run.js';
 import {
   formatDurationMs,
   formatTimestamp,
   humanRunStatus,
   humanStepStatus,
-} from '../../core/presentation.js';
-import { PiDriver } from '../../drivers/pi-rpc.js';
-import { SqliteRunStore } from '../../storage/sqlite-run-store.js';
+} from '../../presentation/format.js';
 import type { NormalizedEvent } from '../../core/events.js';
 import {
   machineMode,
@@ -21,7 +20,7 @@ import {
   writeJsonl,
   type MachineMode,
 } from '../protocol.js';
-import { workflowSummaries } from '../../workflows/catalog-info.js';
+import { workflowSummaries } from '../../workflows/catalog.js';
 
 export interface RootOptions {
   config?: string;
@@ -31,19 +30,8 @@ export interface RootOptions {
   jsonl?: boolean;
 }
 
-export interface CliContext {
-  config: BinaflowConfig;
-  store: SqliteRunStore;
-  artifacts: FileArtifactStore;
-  engine: WorkflowEngine;
-  close(): void;
-}
-
-export interface StorageContext {
-  store: SqliteRunStore;
-  artifacts: FileArtifactStore;
-  close(): void;
-}
+export type CliContext = ApplicationService;
+export type StorageContext = ApplicationService;
 
 export class CliEventPresenter {
   private textStep: string | undefined;
@@ -94,53 +82,41 @@ export class CliEventPresenter {
 }
 
 export async function openContext(rootOptions: RootOptions): Promise<CliContext> {
-  const cwd = rootOptions.cwd ?? process.cwd();
-  const config = await loadConfig(rootOptions.config ?? '.binaflow/config.json', cwd);
-  await mkdir(config.dataDir, { recursive: true });
-  const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
-  const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
   const mode = machineMode(rootOptions);
   const presenter = mode
     ? new CliEventPresenter(false, () => undefined)
     : new CliEventPresenter(rootOptions.verbose);
   let eventSequence = 0;
-  const eventSink = createRuntimeEventSink(store, (event) => {
-    presenter.present(event);
-    if (mode === 'jsonl') {
-      writeJsonl({
-        protocol: 'binaflow-cli',
-        version: 1,
-        type: 'event',
-        sequence: ++eventSequence,
-        event,
-      });
-    }
+  const application = await openApplicationContext({
+    configPath: rootOptions.config ?? '.binaflow/config.json',
+    cwd: rootOptions.cwd ?? process.cwd(),
+    onEvent: (event) => {
+      presenter.present(event);
+      if (mode === 'jsonl') {
+        writeJsonl({
+          protocol: 'binaflow-cli',
+          version: 1,
+          type: 'event',
+          sequence: ++eventSequence,
+          event,
+        });
+      }
+    },
   });
-  const engine = new WorkflowEngine(
-    store,
-    artifacts,
-    new PiDriver({ command: config.piCommand, cwd }),
-    eventSink,
-  );
   return {
-    config,
-    store,
-    artifacts,
-    engine,
+    ...application,
     close: () => {
       presenter.flush();
-      store.close();
+      application.close();
     },
   };
 }
 
 export async function openStorageContext(rootOptions: RootOptions): Promise<StorageContext> {
-  const cwd = rootOptions.cwd ?? process.cwd();
-  const dataDir = await loadDataDir(rootOptions.config ?? '.binaflow/config.json', cwd);
-  await mkdir(dataDir, { recursive: true });
-  const store = new SqliteRunStore(`${dataDir}/runs.db`);
-  const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
-  return { store, artifacts, close: () => store.close() };
+  return openApplicationStorage(
+    rootOptions.config ?? '.binaflow/config.json',
+    rootOptions.cwd ?? process.cwd(),
+  );
 }
 
 export function rootOptions(command: Command): RootOptions {
@@ -214,15 +190,18 @@ export function printRunSummary(run: WorkflowRun, steps: StepRun[]): void {
 export async function printMachineRunResult(
   command: string,
   run: WorkflowRun,
-  context: Pick<CliContext, 'store'> & Pick<CliContext, 'artifacts'>,
+  context: ApplicationRuntimeContext,
   mode: MachineMode,
 ): Promise<void> {
-  const steps = await context.store.getStepRuns(run.id);
-  const artifacts = await context.store.getArtifacts(run.id);
+  const inspection = await context.inspectRun(run.id, { includeStepResults: true });
   if (mode === 'json') {
-    writeJsonResult(command, { run, steps, artifacts });
+    writeJsonResult(command, {
+      run: inspection.run,
+      steps: inspection.steps,
+      artifacts: inspection.artifacts,
+    });
   } else {
-    writeJsonl(runFinishedRecord(command, run, steps, artifacts));
+    writeJsonl(runFinishedRecord(command, inspection.run, inspection.steps, inspection.artifacts));
   }
 }
 

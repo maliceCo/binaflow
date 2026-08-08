@@ -6,13 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as configOperations from '../src/application/config-operations.js';
 import { runInkShell } from '../src/tui-ink/shell.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
-import type { ApplicationContext } from '../src/application/operations.js';
+import type { ApplicationService } from '../src/application/service.js';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowEngine } from '../src/core/engine.js';
 import type { NormalizedEvent } from '../src/core/events.js';
 import type { WorkflowRun } from '../src/core/run.js';
-import type { ArtifactStore } from '../src/artifacts/artifact-store.js';
-import type { RunStore } from '../src/storage/run-store.js';
 
 describe('Ink shell', () => {
   const directories: string[] = [];
@@ -112,7 +110,7 @@ describe('Ink shell', () => {
         return result;
       },
     );
-    const context = createApplicationContext(execute, (listener) => {
+    const context = createApplicationService(execute, (listener) => {
       emitEvent = listener;
     });
     const running = runInkShell({
@@ -165,15 +163,15 @@ describe('Ink shell', () => {
       const directory = await temporaryDirectory();
       await writeConfig(directory);
       const terminal = createTerminal();
-      let releaseContext: ((context: ApplicationContext & { close(): void }) => void) | undefined;
+      let releaseContext: ((context: ApplicationService & { close(): void }) => void) | undefined;
       let contextRequested = false;
       let closed = false;
-      const context = createApplicationContext(
+      const context = createApplicationService(
         vi.fn(async () => createRun('completed')),
         () => undefined,
       );
       const ownedContext = { ...context, close: () => (closed = true) };
-      const opening = new Promise<ApplicationContext & { close(): void }>((resolve) => {
+      const opening = new Promise<ApplicationService & { close(): void }>((resolve) => {
         releaseContext = resolve;
       });
       const previousExitCode = process.exitCode;
@@ -215,7 +213,7 @@ describe('Ink shell', () => {
       const execution = new Promise<WorkflowRun>((resolve) => {
         resolveExecution = resolve;
       });
-      const context = createApplicationContext(
+      const context = createApplicationService(
         async (_workflow, request) => {
           request.onRunStarted?.(createRun('running'));
           request.signal?.addEventListener('abort', () => order.push('aborted'));
@@ -261,7 +259,7 @@ describe('Ink shell', () => {
     const execution = new Promise<WorkflowRun>((resolve) => {
       resolveExecution = resolve;
     });
-    const context = createApplicationContext(
+    const context = createApplicationService(
       async (_workflow, request) => {
         request.onRunStarted?.(createRun('running'));
         request.signal?.addEventListener('abort', () => undefined);
@@ -350,17 +348,26 @@ describe('Ink shell', () => {
       expect(options?.includeResult === true).toBe(false);
       return [];
     });
-    const context: ApplicationContext = {
-      config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-      store: {
-        listRunsPage: async () => ({ runs: [historical] }),
-        getRun: async () => historical,
-        getStepRuns,
-        getArtifacts: async () => [],
-        countEvents: async () => 0,
-      } as unknown as RunStore,
-      artifacts: {} as ArtifactStore,
-      engine: {} as WorkflowEngine,
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => historical,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [historical] }),
+      inspectRun: async () => {
+        await getStepRuns(historical.id, { includeResult: false });
+        return { run: historical, steps: [], artifacts: [], eventCount: 0 };
+      },
+      explainRunRecovery: async () => ({
+        eligible: false,
+        reason: 'completed',
+        completedStepIds: [],
+        retryableStepIds: [],
+        workflowVersionCompatible: true,
+        actions: [],
+      }),
+      clarificationQuestions: async () => [],
+      loadResearchApprovalPreviews: async () => [],
     };
     const terminal = createTerminal();
     const running = runInkShell({
@@ -411,48 +418,58 @@ describe('Ink shell', () => {
       mediaType: 'text/plain',
       sizeBytes: 12,
     };
-    const context: ApplicationContext = {
-      config: {
-        profiles: {
-          planner: profile('planner'),
-          builder: profile('builder'),
-          researcher: profile('researcher'),
-          'research-reviewer': profile('research-reviewer'),
-        },
+    const steps = [
+      {
+        runId: waiting.id,
+        stepId: 'research',
+        profile: 'researcher',
+        status: 'completed' as const,
+        attempt: 1,
       },
-      store: {
-        listRunsPage: async () => ({ runs: [waiting] }),
-        getRun: async () => waiting,
-        getStepRuns: async () => [
-          {
-            runId: waiting.id,
-            stepId: 'research',
-            profile: 'researcher',
-            status: 'completed',
-            attempt: 1,
-          },
-          {
-            runId: waiting.id,
-            stepId: 'research-review',
-            profile: 'research-reviewer',
-            status: 'completed',
-            attempt: 1,
-          },
-          {
-            runId: waiting.id,
-            stepId: 'research-approval',
-            profile: 'research-reviewer',
-            status: 'waiting',
-            attempt: 1,
-          },
-        ],
-        getArtifacts: async () => [reportArtifact],
-        countEvents: async () => 0,
-      } as unknown as RunStore,
-      artifacts: {
-        readBounded: async () => ({ content: 'bounded research preview', truncated: false }),
-      } as unknown as ArtifactStore,
-      engine: {} as WorkflowEngine,
+      {
+        runId: waiting.id,
+        stepId: 'research-review',
+        profile: 'research-reviewer',
+        status: 'completed' as const,
+        attempt: 1,
+      },
+      {
+        runId: waiting.id,
+        stepId: 'research-approval',
+        profile: 'research-reviewer',
+        status: 'waiting' as const,
+        attempt: 1,
+      },
+    ];
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => waiting,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [waiting] }),
+      inspectRun: async () => ({
+        run: waiting,
+        steps,
+        artifacts: [reportArtifact],
+        eventCount: 0,
+      }),
+      explainRunRecovery: async () => ({
+        eligible: false,
+        reason: 'waiting',
+        completedStepIds: ['research', 'research-review'],
+        retryableStepIds: [],
+        workflowVersionCompatible: true,
+        actions: [],
+      }),
+      clarificationQuestions: async () => [],
+      loadResearchApprovalPreviews: async () => [
+        {
+          artifact: reportArtifact,
+          content: 'bounded research preview',
+          truncated: false,
+          formatted: false,
+        },
+      ],
     };
     const terminal = createTerminal();
     const running = runInkShell({
@@ -622,19 +639,62 @@ function profile(model: string): AgentProfile {
   };
 }
 
-function createApplicationContext(
+function createApplicationService(
   execute: WorkflowEngine['execute'],
   subscribe: (listener: (event: NormalizedEvent) => void) => void,
-): ApplicationContext {
+): ApplicationService {
+  const profiles = { planner: profile('planner'), builder: profile('builder') };
   return {
-    config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-    store: {} as RunStore,
-    artifacts: {} as ArtifactStore,
-    engine: { execute } as unknown as WorkflowEngine,
-    subscribeEvents: (listener) => {
+    profiles,
+    close: () => undefined,
+    subscribeEvents: (listener: (event: NormalizedEvent) => void) => {
       subscribe(listener);
       return () => undefined;
     },
+    runWorkflow: async (request: {
+      workflowId: string;
+      objective: string;
+      input: Record<string, unknown>;
+      runId?: string;
+      signal?: AbortSignal;
+      onRunStarted?: (run: WorkflowRun) => void;
+    }) =>
+      execute(
+        { version: 1, id: request.workflowId, input: { required: [], properties: {} }, steps: [] },
+        {
+          objective: request.objective,
+          input: request.input,
+          profiles,
+          ...(request.runId ? { runId: request.runId } : {}),
+          ...(request.signal ? { signal: request.signal } : {}),
+          ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+        },
+      ),
+    resumeWorkflow: async () => ({ run: createRun('completed'), alreadyCompleted: false }),
+    decideApproval: async () => createRun('completed'),
+    inspectRun: async () => ({
+      run: createRun('completed'),
+      steps: [],
+      artifacts: [],
+      eventCount: 0,
+    }),
+    listRuns: async () => ({ runs: [] }),
+    readArtifact: async () => {
+      throw new Error('not implemented');
+    },
+    explainRunRecovery: async () => ({
+      eligible: false,
+      reason: 'not implemented',
+      completedStepIds: [],
+      retryableStepIds: [],
+      workflowVersionCompatible: true,
+      actions: [],
+    }),
+    markRunInterrupted: async () => createRun('interrupted'),
+    clarificationQuestions: async () => [],
+    loadResearchApprovalPreviews: async () => [],
+    discoverWorkflows: () => [],
+    diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }
 

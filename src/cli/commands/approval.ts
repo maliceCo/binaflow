@@ -33,7 +33,6 @@ async function decide(
     printRunSummary,
     rootOptions,
   } = await import('./common.js');
-  const { decideApproval } = await import('../../application/operations.js');
   const optionsAtRoot = rootOptions(command);
   const mode = machineMode(optionsAtRoot);
   const context = await openContext(optionsAtRoot);
@@ -42,7 +41,7 @@ async function decide(
     const removeSignalHandlers = installSignalHandlers(controller, runId);
     let started = false;
     try {
-      const run = await decideApproval(context, {
+      const run = await context.decideApproval({
         runId,
         decision,
         ...(feedback ? { feedback } : {}),
@@ -71,7 +70,8 @@ async function decide(
           mode,
         );
       } else {
-        printRunSummary(run, await context.store.getStepRuns(run.id));
+        const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+        printRunSummary(run, inspection.steps);
       }
       if (run.status === 'failed' || run.status === 'cancelled') {
         process.exitCode = run.status === 'cancelled' ? 130 : 1;

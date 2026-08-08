@@ -1,4 +1,4 @@
-import type { RunStatus, StepRun } from './run.js';
+import type { RunStatus, StepRun } from '../core/run.js';
 
 export function humanRunStatus(status: RunStatus): string {
   switch (status) {

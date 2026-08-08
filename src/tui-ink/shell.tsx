@@ -6,25 +6,15 @@ import {
   type GeneratedConfiguration,
   type ConfigurationDiagnosis,
 } from '../application/config-operations.js';
-import {
-  clarificationQuestions,
-  decideApproval,
-  discoverWorkflows,
-  explainRunRecovery,
-  inspectRun,
-  listRuns,
-  loadResearchApprovalPreviews,
-  markRunInterrupted,
-  readArtifact,
-  resumeWorkflow,
-  runWorkflow,
-  type ApplicationContext,
-  type ArtifactContentView,
-  type RunInspection,
-  type RunRecoveryExplanation,
+import type {
+  ArtifactContentView,
+  RunInspection,
+  RunRecoveryExplanation,
 } from '../application/operations.js';
+import { discoverWorkflows } from '../application/operations.js';
+import type { ApplicationService } from '../application/service.js';
 import { useApp, useInput } from 'ink';
-import { formatDurationMs, humanRunStatus, humanStepStatus } from '../core/presentation.js';
+import { formatDurationMs, humanRunStatus, humanStepStatus } from '../presentation/format.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -72,39 +62,14 @@ import {
   type SnapshotInspectionController,
 } from './execution.js';
 import { createAttachedExecutionLifecycle, type AttachedExecutionLifecycle } from './lifecycle.js';
-
-const HOME_ACTIONS = [
-  'New workflow',
-  'Read documentation',
-  'Refresh diagnosis',
-  'Run history',
-  'Exit',
-];
-const MINIMUM_WIDTH = 56;
-const MINIMUM_HEIGHT = 12;
-type Screen =
-  | 'home'
-  | 'documentation'
-  | 'diagnosis'
-  | 'setup-choice'
-  | 'setup-input'
-  | 'setup-preview'
-  | 'workflows'
-  | 'launch-input'
-  | 'launch-confirmation'
-  | 'live'
-  | 'completion'
-  | 'history'
-  | 'detail'
-  | 'artifacts'
-  | 'approval-feedback';
+import { HOME_ACTIONS, MINIMUM_HEIGHT, MINIMUM_WIDTH, type Screen } from './screens.js';
 
 export interface InkShellOptions extends InkApplicationOptions {
   cwd?: string;
   configPath?: string;
-  applicationContext?: (ApplicationContext & { close?(): void }) | undefined;
+  applicationContext?: (ApplicationService & { close?(): void }) | undefined;
   openApplicationContext?:
-    | ((configPath: string, cwd: string) => Promise<ApplicationContext & { close?(): void }>)
+    | ((configPath: string, cwd: string) => Promise<ApplicationService & { close?(): void }>)
     | undefined;
   forceExit?: (signal: NodeJS.Signals) => void;
 }
@@ -149,7 +114,7 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
 interface InkShellProps extends InkApplicationContext {
   cwd: string;
   configPath: string;
-  lifecycle: AttachedExecutionLifecycle<ApplicationContext & { close?(): void }>;
+  lifecycle: AttachedExecutionLifecycle<ApplicationService & { close?(): void }>;
   openApplicationContext?: InkShellOptions['openApplicationContext'] | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
 }
@@ -236,7 +201,7 @@ function InkShell({
     setLive(value);
   };
 
-  const attachLiveControllers = (application: ApplicationContext): void => {
+  const attachLiveControllers = (application: ApplicationService): void => {
     disposeLiveControllers();
     const buffer = createLiveActivityBuffer();
     activityBufferRef.current = buffer;
@@ -247,7 +212,7 @@ function InkShell({
     });
     snapshotControllerRef.current = createSnapshotInspectionController({
       inspect: async (runId) => {
-        const inspection = await inspectRun(application, runId, { includeStepResults: 'usage' });
+        const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
         return inspection.steps;
       },
       getRunId: () => activeRunId.current,
@@ -321,16 +286,16 @@ function InkShell({
   };
 
   const resolveContextFactory = async (): Promise<
-    (configPath: string, cwd: string) => Promise<ApplicationContext & { close?(): void }>
+    (configPath: string, cwd: string) => Promise<ApplicationService & { close?(): void }>
   > => openContext ?? (await import('../application/runtime.js')).openApplicationContext;
 
-  const ensureContext = async (): Promise<ApplicationContext & { close?(): void }> => {
+  const ensureContext = async (): Promise<ApplicationService & { close?(): void }> => {
     if (lifecycle.context) return lifecycle.context;
     const createContext = await resolveContextFactory();
     return lifecycle.openContext(async () => createContext(configPath, cwd));
   };
 
-  const openExecutionContext = async (): Promise<ApplicationContext & { close?(): void }> => {
+  const openExecutionContext = async (): Promise<ApplicationService & { close?(): void }> => {
     const createContext = await resolveContextFactory();
     return lifecycle.replaceOwnedContext(async () => createContext(configPath, cwd));
   };
@@ -344,7 +309,7 @@ function InkShell({
     setError(undefined);
     try {
       const application = await ensureContext();
-      const page = await listRuns(application, {
+      const page = await application.listRuns({
         limit: 50,
         ...(nextStatus ? { status: nextStatus } : {}),
         ...(nextWorkflow ? { workflowId: nextWorkflow } : {}),
@@ -366,9 +331,9 @@ function InkShell({
   const openDetail = async (run: WorkflowRun): Promise<void> => {
     try {
       const application = await ensureContext();
-      const inspection = await inspectRun(application, run.id, { includeStepResults: false });
-      const explanation = await explainRunRecovery(application, run.id);
-      const questions = await clarificationQuestions(application, inspection);
+      const inspection = await application.inspectRun(run.id, { includeStepResults: false });
+      const explanation = await application.explainRunRecovery(run.id);
+      const questions = await application.clarificationQuestions(inspection);
       const workflow = discoverWorkflows().find(
         (candidate) => candidate.id === inspection.run.workflowId,
       );
@@ -383,7 +348,7 @@ function InkShell({
       setClarifications(questions);
       if (approvalWaiting && workflow?.approval) {
         setApprovalMessage(workflow.approval.message);
-        setApprovalPreviews(await loadResearchApprovalPreviews(application, inspection));
+        setApprovalPreviews(await application.loadResearchApprovalPreviews(inspection));
       } else {
         setApprovalMessage(undefined);
         setApprovalPreviews([]);
@@ -405,7 +370,7 @@ function InkShell({
     if (!artifact || !lifecycle.context || !detail) return;
     try {
       setArtifactContent(
-        await readArtifact(lifecycle.context, detail.run.id, `${artifact.stepId}.${artifact.name}`),
+        await lifecycle.context.readArtifact(detail.run.id, `${artifact.stepId}.${artifact.name}`),
       );
     } catch (reason) {
       setArtifactContent({
@@ -565,7 +530,7 @@ function InkShell({
     let finishedAt = run.updatedAt;
     if (lifecycle.context) {
       try {
-        const inspection = await inspectRun(lifecycle.context, run.id, {
+        const inspection = await lifecycle.context.inspectRun(run.id, {
           includeStepResults: 'usage',
         });
         steps = inspection.steps;
@@ -642,11 +607,11 @@ function InkShell({
           const application = await openExecutionContext();
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
           attachLiveControllers(application);
-          lifecycle.subscribe(application.subscribeEvents?.((event) => handleLiveEvent(event)));
+          lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
           const objective = launchInput.values.objective;
           if (!objective) throw new Error('Workflow objective must be a non-empty string');
           setStatus(`Starting ${launchInput.workflow.id}...`);
-          const run = await runWorkflow(application, {
+          const run = await application.runWorkflow({
             workflowId: launchInput.workflow.id,
             objective,
             input: launchInput.values,
@@ -683,7 +648,7 @@ function InkShell({
 
   const startContinuation = (
     operation: (
-      application: ApplicationContext,
+      application: ApplicationService,
       signal: AbortSignal,
       onRunStarted: (run: WorkflowRun) => void,
     ) => Promise<WorkflowRun>,
@@ -703,7 +668,7 @@ function InkShell({
           const application = await openExecutionContext();
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
           attachLiveControllers(application);
-          lifecycle.subscribe(application.subscribeEvents?.((event) => handleLiveEvent(event)));
+          lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
           const run = await operation(application, controller.signal, (startedRun) => {
             activeRunId.current = startedRun.id;
             setLiveValue(createLiveState(startedRun, workflow, detail.steps));
@@ -741,7 +706,7 @@ function InkShell({
         return;
       }
       try {
-        await markRunInterrupted(lifecycle.context, detail.run.id);
+        await lifecycle.context.markRunInterrupted(detail.run.id);
         setDetailPrompt(undefined);
         setPromptValue('');
         await openDetail({ ...detail.run, status: 'interrupted' });
@@ -758,7 +723,7 @@ function InkShell({
     setPromptValue('');
     void startContinuation(
       (application, signal, onRunStarted) =>
-        decideApproval(application, {
+        application.decideApproval({
           runId: detail.run.id,
           decision: 'rejected',
           feedback: normalized,
@@ -882,9 +847,9 @@ function InkShell({
         if (action === 'Resume retryable work') {
           void startContinuation(
             (application, signal, onRunStarted) =>
-              resumeWorkflow(application, { runId: detail.run.id, signal, onRunStarted }).then(
-                (result) => result.run,
-              ),
+              application
+                .resumeWorkflow({ runId: detail.run.id, signal, onRunStarted })
+                .then((result) => result.run),
             detail.run.workflowId,
           );
         } else if (action === 'Mark interrupted and review recovery') {
@@ -895,7 +860,7 @@ function InkShell({
         } else if (action === 'Approve research and continue') {
           void startContinuation(
             (application, signal, onRunStarted) =>
-              decideApproval(application, {
+              application.decideApproval({
                 runId: detail.run.id,
                 decision: 'approved',
                 signal,

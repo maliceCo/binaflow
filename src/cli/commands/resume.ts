@@ -15,7 +15,6 @@ export function registerResumeCommand(cli: Command): void {
         printHumanProgress,
         rootOptions,
       } = await import('./common.js');
-      const { resumeWorkflow } = await import('../../application/operations.js');
       const optionsAtRoot = rootOptions(command);
       const mode = machineMode(optionsAtRoot);
       const context = await openContext(optionsAtRoot);
@@ -24,7 +23,7 @@ export function registerResumeCommand(cli: Command): void {
         const removeSignalHandlers = installSignalHandlers(controller, runId);
         let started = false;
         try {
-          const result = await resumeWorkflow(context, {
+          const result = await context.resumeWorkflow({
             runId,
             signal: controller.signal,
             onRunStarted: (startedRun) => {
@@ -59,7 +58,10 @@ export function registerResumeCommand(cli: Command): void {
             });
           }
           if (mode) await printMachineRunResult('resume', run, context, mode);
-          else printRunSummary(run, await context.store.getStepRuns(run.id));
+          else {
+            const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+            printRunSummary(run, inspection.steps);
+          }
           if (run.status === 'failed' || run.status === 'cancelled') {
             process.exitCode = run.status === 'cancelled' ? 130 : 1;
           }

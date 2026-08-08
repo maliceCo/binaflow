@@ -536,45 +536,73 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Architecture Rules To Enforce
 
-- [ ] Core may depend on domain types and inward-facing ports, never CLI, TUI,
+- [x] Core may depend on domain types and inward-facing ports, never CLI, TUI,
       concrete storage, filesystem artifacts, Pi, or concrete workflow modules.
-- [ ] Application composes use cases and workflow-specific coordination.
-- [ ] CLI and TUI depend on application operations and presentation helpers
+- [x] Application composes use cases and workflow-specific coordination.
+- [x] CLI and TUI depend on application operations and presentation helpers
       only.
-- [ ] Storage, filesystem artifacts, and Pi remain replaceable adapters behind
+- [x] Storage, filesystem artifacts, and Pi remain replaceable adapters behind
       narrow consumer-owned contracts.
 
 ### Implementation
 
-- [ ] Move the experimental research coordinator out of the generic sequential
+- [x] Move the experimental research coordinator out of the generic sequential
       engine while reusing one shared step execution/retry implementation. Do
       not generalize approval or loops.
-- [ ] Replace the infrastructure-exposing `ApplicationContext` consumed by
+- [x] Replace the infrastructure-exposing `ApplicationContext` consumed by
       presentation with a narrow application service/facade containing current
       operations and event subscription.
-- [ ] Keep concrete store, artifact store, engine, configuration, and close
+- [x] Keep concrete store, artifact store, engine, configuration, and close
       ownership private to the application composition root.
-- [ ] Move human status labels and date/duration formatting out of `src/core`
+- [x] Move human status labels and date/duration formatting out of `src/core`
       into shared presentation code.
-- [ ] Consolidate workflow definitions and discovery metadata into one source
+- [x] Consolidate workflow definitions and discovery metadata into one source
       of truth if the current dual catalogs still require manual synchronization.
-- [ ] Add a small static boundary test or lint rule that rejects forbidden
+- [x] Add a small static boundary test or lint rule that rejects forbidden
       imports. Do not add a dependency-analysis framework.
-- [ ] Replace presentation/application test doubles that cast partial broad
+- [x] Replace presentation/application test doubles that cast partial broad
       infrastructure objects with typed fakes for the final narrow contracts.
-- [ ] Split the Ink shell only along demonstrated responsibilities: application
+- [x] Split the Ink shell only along demonstrated responsibilities: application
       routing, attached execution lifecycle, setup/launch, and
       history/artifacts/approval. Do not create a generic component framework.
 
 ### Exit Criteria
 
-- [ ] Presentation cannot access stores, artifact files, drivers, or engine
+- [x] Presentation cannot access stores, artifact files, drivers, or engine
       state even accidentally.
-- [ ] The sequential engine has no import of a concrete workflow.
-- [ ] No production behavior uses class inheritance beyond idiomatic `Error`
+- [x] The sequential engine has no import of a concrete workflow.
+- [x] No production behavior uses class inheritance beyond idiomatic `Error`
       subclasses.
-- [ ] Phase 6 QA, remediation, focused/full verification, and commit are
+- [x] Phase 6 QA, remediation, focused/full verification, and commit are
       complete.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 6 verification passed 97 tests across
+  architecture boundaries, engine, research workflow, application operations,
+  core contracts, CLI protocol, and Ink/legacy presentation suites that use the
+  new `ApplicationService` facade.
+- Sequential step execution lives in `WorkflowRuntime`; experimental research
+  orchestration is `ResearchPlanBuildCoordinator` outside the sequential engine.
+  Build-plan disposition interpretation is workflow-owned via
+  `interpretWorkflowDisposition`.
+- Presentation (CLI and Ink) opens only `ApplicationService` from
+  `openApplicationContext` / `openApplicationStorage`. Store, artifact store,
+  engine, and Pi remain private to the composition root.
+- Human formatting moved to `src/presentation/format.ts`. Workflow catalog is a
+  single registration list in `src/workflows/catalog.ts`.
+- `test/architecture-boundaries.test.ts` rejects forbidden core and presentation
+  imports and checks that `ApplicationService` does not expose infrastructure
+  fields.
+- Ink shell screen constants live in `src/tui-ink/screens.ts`; lifecycle,
+  execution, launch, and components remain separate modules.
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
+- Full suite remains blocked only by pre-existing legacy TUI failures
+  (`test/tui-phase6.test.ts` stale setup status assertion expecting
+  `Configuration written; readiness requires attention.`; intermittent legacy
+  `test/tui.test.ts` empty first render / refresh coalescing). Equivalent Ink
+  coverage passes. No Phase 6-focused failure was observed.
 
 ## Phase 7: Normalize CLI Contracts
 

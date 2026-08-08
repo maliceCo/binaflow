@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import type { WorkflowRun } from '../../core/run.js';
-import { workflowSummaries } from '../../workflows/catalog-info.js';
+import { workflowSummaries } from '../../workflows/catalog.js';
 import {
   cliUsageError,
   exitCodeFor,
@@ -50,7 +50,6 @@ export function registerRunCommand(cli: Command): void {
         printHumanProgress,
         rootOptions,
       } = await import('./common.js');
-      const { runWorkflow } = await import('../../application/operations.js');
       const optionsAtRoot = rootOptions(command);
       const mode = machineMode(optionsAtRoot);
       const context = await openContext(optionsAtRoot);
@@ -59,7 +58,7 @@ export function registerRunCommand(cli: Command): void {
       const removeSignalHandlers = installSignalHandlers(controller, runId);
       let started = false;
       try {
-        const run = await runWorkflow(context, {
+        const run = await context.runWorkflow({
           workflowId: inputs.workflowId,
           objective: inputs.objective,
           input: inputs.input,
@@ -84,7 +83,8 @@ export function registerRunCommand(cli: Command): void {
         if (mode) {
           await printMachineRunResult('run', run, context, mode);
         } else {
-          printRunSummary(run, await context.store.getStepRuns(run.id));
+          const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+          printRunSummary(run, inspection.steps);
         }
         if (run.status === 'failed' || run.status === 'cancelled') {
           process.exitCode = run.status === 'cancelled' ? 130 : 1;

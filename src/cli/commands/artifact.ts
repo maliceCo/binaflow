@@ -11,9 +11,8 @@ export function registerArtifactCommands(cli: Command): void {
       const options = rootOptions(command);
       const context = await openStorageContext(options);
       try {
-        const run = await context.store.getRun(runId);
-        if (!run) throw new Error(`Unknown run: ${runId}`);
-        const artifacts = await context.store.getArtifacts(runId);
+        const inspection = await context.inspectRun(runId);
+        const artifacts = inspection.artifacts;
         if (options.json || options.jsonl) {
           if (options.jsonl)
             throw cliUsageError(
@@ -55,16 +54,10 @@ export function registerArtifactCommands(cli: Command): void {
         }
         const context = await openStorageContext(root);
         try {
-          const run = await context.store.getRun(runId);
-          if (!run) throw new Error(`Unknown run: ${runId}`);
-          const artifacts = await context.store.getArtifacts(runId);
-          const artifact = artifacts.find(
-            (candidate) =>
-              candidate.id === artifactKey ||
-              `${candidate.stepId}.${candidate.name}` === artifactKey,
-          );
-          if (!artifact) throw new Error(`Unknown artifact for run ${runId}: ${artifactKey}`);
-          const content = await context.artifacts.read(artifact);
+          const view = await context.readArtifact(runId, artifactKey, { mode: 'full' });
+          if (view.error && !view.content) throw new Error(view.error);
+          const artifact = view.artifact;
+          const content = view.content ?? '';
           if (options.raw) {
             process.stdout.write(content);
             return;

@@ -9,9 +9,11 @@ import type { AgentStepResult, StepRun, WorkflowRun } from '../src/core/run.js';
 import type { WorkflowDefinition } from '../src/core/workflow.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
+import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
 import { AgentDriverError } from '../src/drivers/contract.js';
 import { planBuildWorkflow } from '../src/workflows/plan-build.js';
 import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
+import { interpretWorkflowDisposition } from '../src/workflows/dispositions.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 
 const temporaryDirectories: string[] = [];
@@ -71,10 +73,17 @@ function createEnvironment(driver: AgentDriver, events: NormalizedEvent[] = []) 
   temporaryDirectories.push(directory);
   const store = new SqliteRunStore(join(directory, 'run.db'));
   const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
-  const engine = new WorkflowEngine(store, artifactStore, driver, (event) => {
-    events.push(event);
-  });
-  return { engine, store, artifactStore };
+  const engine = new WorkflowEngine(
+    store,
+    artifactStore,
+    driver,
+    (event) => {
+      events.push(event);
+    },
+    { interpretDisposition: interpretWorkflowDisposition },
+  );
+  const research = new ResearchPlanBuildCoordinator(engine.runtime);
+  return { engine, research, store, artifactStore };
 }
 
 function plannerResult(): AgentStepResult {
@@ -122,7 +131,7 @@ describe('WorkflowEngine', () => {
 
     await expect(
       engine.execute(workflow, { objective: 'Reject unsupported approval', profiles }),
-    ).rejects.toThrow('approval is only supported');
+    ).rejects.toThrow('approval is not supported by the sequential engine');
     store.close();
   });
 
@@ -183,6 +192,7 @@ describe('WorkflowEngine', () => {
           throw new Error('event persistence failed');
         }
       },
+      { interpretDisposition: interpretWorkflowDisposition },
     );
 
     const run = await engine.execute(planBuildWorkflow, {
@@ -229,6 +239,7 @@ describe('WorkflowEngine', () => {
           throw new Error('completion event failed');
         }
       },
+      { interpretDisposition: interpretWorkflowDisposition },
     );
 
     const run = await engine.execute(planBuildWorkflow, {
@@ -259,18 +270,18 @@ describe('WorkflowEngine', () => {
       builder: profiles.builder,
     };
 
+    const sequential = new WorkflowEngine(store, artifactStore, new FakeDriver([]), undefined, {
+      interpretDisposition: interpretWorkflowDisposition,
+    });
     await expect(
-      new WorkflowEngine(store, artifactStore, new FakeDriver([])).execute(
-        researchPlanBuildWorkflow,
-        {
-          runId: 'research-start-callback-failure',
-          objective: 'Reject research start',
-          profiles: researchProfiles,
-          onRunStarted: () => {
-            throw new Error('research start callback failed');
-          },
+      new ResearchPlanBuildCoordinator(sequential.runtime).execute(researchPlanBuildWorkflow, {
+        runId: 'research-start-callback-failure',
+        objective: 'Reject research start',
+        profiles: researchProfiles,
+        onRunStarted: () => {
+          throw new Error('research start callback failed');
         },
-      ),
+      }),
     ).rejects.toThrow('research start callback failed');
 
     expect((await store.getRun('research-start-callback-failure'))?.status).toBe('failed');
@@ -375,11 +386,17 @@ describe('WorkflowEngine', () => {
       },
     };
     const { store, artifactStore } = createEnvironment(driver);
-    const orderedEngine = new WorkflowEngine(store, artifactStore, driver, async (event) => {
-      if (event.type !== 'text') return;
-      if (event.message === 'first') await new Promise((resolve) => setTimeout(resolve, 10));
-      events.push(event.message);
-    });
+    const orderedEngine = new WorkflowEngine(
+      store,
+      artifactStore,
+      driver,
+      async (event) => {
+        if (event.type !== 'text') return;
+        if (event.message === 'first') await new Promise((resolve) => setTimeout(resolve, 10));
+        events.push(event.message);
+      },
+      { interpretDisposition: interpretWorkflowDisposition },
+    );
 
     const run = await orderedEngine.execute(planBuildWorkflow, {
       runId: 'concurrent-events',
@@ -652,7 +669,9 @@ describe('WorkflowEngine', () => {
         return { text: 'fresh build result' };
       },
     };
-    const engine = new WorkflowEngine(store, artifactStore, driver);
+    const engine = new WorkflowEngine(store, artifactStore, driver, undefined, {
+      interpretDisposition: interpretWorkflowDisposition,
+    });
 
     const failed = await engine.execute(planBuildWorkflow, {
       runId: 'retry-state',

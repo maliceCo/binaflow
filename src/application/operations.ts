@@ -12,22 +12,29 @@ import {
   type StepRun,
   type WorkflowRun,
 } from '../core/run.js';
-import type { NormalizedEvent } from '../core/events.js';
 import type { RunListPage, RunListQuery, RunStore } from '../storage/run-store.js';
 import {
   listWorkflowContracts,
   resolveWorkflow,
   type WorkflowContract,
 } from '../workflows/catalog.js';
+import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
+import type { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 
-export interface ApplicationContext {
+/** Internal composition surface. Presentation must use ApplicationService. */
+export interface ApplicationInternals {
   config: Pick<BinaflowConfig, 'profiles'>;
   store: RunStore;
   artifacts: ArtifactStore;
   engine: WorkflowEngine;
-  subscribeEvents?(listener: (event: NormalizedEvent) => void): () => void;
+  researchCoordinator: ResearchPlanBuildCoordinator;
 }
+
+/** @deprecated Prefer ApplicationService. Kept for gradual test migration. */
+export type ApplicationContext = ApplicationInternals;
+
+export type { WorkflowContract };
 
 export interface RunWorkflowRequest {
   workflowId: string;
@@ -39,11 +46,11 @@ export interface RunWorkflowRequest {
 }
 
 export async function runWorkflow(
-  context: ApplicationContext,
+  context: ApplicationInternals,
   request: RunWorkflowRequest,
 ): Promise<WorkflowRun> {
   const workflow = resolveAndValidateWorkflow(context, request.workflowId);
-  return context.engine.execute(workflow, {
+  return executeWorkflow(context, workflow, {
     objective: request.objective,
     input: { ...request.input, objective: request.objective },
     profiles: context.config.profiles,
@@ -65,7 +72,7 @@ export interface ResumeWorkflowResult {
 }
 
 export async function resumeWorkflow(
-  context: ApplicationContext,
+  context: ApplicationInternals,
   request: ResumeWorkflowRequest,
 ): Promise<ResumeWorkflowResult> {
   const previous = await context.store.getRun(request.runId);
@@ -114,7 +121,7 @@ export interface RunRecoveryAction {
 }
 
 export async function explainRunRecovery(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   runId: string,
 ): Promise<RunRecoveryExplanation> {
   const run = await context.store.getRun(runId);
@@ -223,7 +230,7 @@ export async function explainRunRecovery(
 }
 
 export async function markRunInterrupted(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   runId: string,
 ): Promise<WorkflowRun> {
   const current = await context.store.getRun(runId);
@@ -255,7 +262,7 @@ const MAX_ARTIFACT_PREVIEW_BYTES = 64_000;
 const MAX_CLARIFICATION_PLAN_BYTES = 64_000;
 
 export async function readArtifact(
-  context: Pick<ApplicationContext, 'store' | 'artifacts'>,
+  context: Pick<ApplicationInternals, 'store' | 'artifacts'>,
   runId: string,
   artifactKey: string,
   options: ReadArtifactOptions = {},
@@ -322,7 +329,7 @@ function formatArtifactContent(
 }
 
 export async function loadResearchApprovalPreviews(
-  context: Pick<ApplicationContext, 'store' | 'artifacts'>,
+  context: Pick<ApplicationInternals, 'store' | 'artifacts'>,
   inspection: RunInspection,
 ): Promise<ArtifactContentView[]> {
   const selected = inspection.artifacts.filter(
@@ -351,7 +358,7 @@ export async function loadResearchApprovalPreviews(
 }
 
 export async function clarificationQuestions(
-  context: Pick<ApplicationContext, 'store' | 'artifacts'>,
+  context: Pick<ApplicationInternals, 'store' | 'artifacts'>,
   inspection: RunInspection,
 ): Promise<string[]> {
   const disposition = inspection.steps.find(
@@ -386,7 +393,7 @@ export async function clarificationQuestions(
 }
 
 export async function listRuns(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   query: RunListQuery = {},
 ): Promise<RunListPage> {
   return context.store.listRunsPage(query);
@@ -399,7 +406,7 @@ export interface RunInspectionOptions {
 }
 
 export async function inspectRun(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   runId: string,
   options: RunInspectionOptions = {},
 ): Promise<RunInspection> {
@@ -435,7 +442,7 @@ export interface ApprovalDecisionRequest {
 }
 
 export async function decideApproval(
-  context: ApplicationContext,
+  context: ApplicationInternals,
   request: ApprovalDecisionRequest,
 ): Promise<WorkflowRun> {
   const previous = await context.store.getRun(request.runId);
@@ -486,7 +493,7 @@ export async function decideApproval(
 }
 
 async function claimRunForExecution(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   runId: string,
   eligibleStatuses: readonly WorkflowRun['status'][],
 ): Promise<WorkflowRun> {
@@ -530,7 +537,7 @@ export function diagnoseConfiguration(
 }
 
 function resolveAndValidateWorkflow(
-  context: Pick<ApplicationContext, 'config'>,
+  context: Pick<ApplicationInternals, 'config'>,
   workflowId: string,
 ): WorkflowDefinition {
   const workflow = resolveWorkflow(workflowId);
@@ -549,7 +556,7 @@ function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowD
 }
 
 async function validateResumeEligibility(
-  context: Pick<ApplicationContext, 'store'>,
+  context: Pick<ApplicationInternals, 'store'>,
   run: WorkflowRun,
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
@@ -561,7 +568,7 @@ async function validateResumeEligibility(
 }
 
 async function preflightPersistedInput(
-  context: Pick<ApplicationContext, 'artifacts' | 'store'>,
+  context: Pick<ApplicationInternals, 'artifacts' | 'store'>,
   run: WorkflowRun,
   workflow: WorkflowDefinition,
 ): Promise<void> {
@@ -586,12 +593,12 @@ async function preflightPersistedInput(
 }
 
 async function executeClaimedWorkflow(
-  context: ApplicationContext,
+  context: ApplicationInternals,
   workflow: WorkflowDefinition,
   request: ExecuteWorkflowRequest,
 ): Promise<WorkflowRun> {
   try {
-    return await context.engine.execute(workflow, request);
+    return await executeWorkflow(context, workflow, request);
   } catch (error) {
     // The engine has stopped owning the run. Release its local marker before the
     // explicit recovery transition, leaving the store to perform the CAS.
@@ -600,6 +607,17 @@ async function executeClaimedWorkflow(
     await context.store.markRunInterrupted(request.runId);
     throw error;
   }
+}
+
+async function executeWorkflow(
+  context: ApplicationInternals,
+  workflow: WorkflowDefinition,
+  request: ExecuteWorkflowRequest,
+): Promise<WorkflowRun> {
+  if (workflow.id === researchPlanBuildWorkflow.id) {
+    return context.researchCoordinator.execute(workflow, request);
+  }
+  return context.engine.execute(workflow, request);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

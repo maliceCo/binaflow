@@ -1,27 +1,39 @@
 import { mkdir } from 'node:fs/promises';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, loadDataDir } from '../config.js';
 import { WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { RunStore } from '../storage/run-store.js';
-import type { ApplicationContext } from './operations.js';
+import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
+import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
+import { createApplicationService, type ApplicationService } from './service.js';
 
-export interface ApplicationRuntimeContext extends ApplicationContext {
-  close(): void;
-  subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
+export type ApplicationRuntimeContext = ApplicationService;
+
+export interface OpenApplicationOptions {
+  configPath?: string;
+  cwd?: string;
+  onEvent?: (event: NormalizedEvent) => void;
 }
 
 export async function openApplicationContext(
-  configPath: string,
-  cwd = process.cwd(),
+  configPathOrOptions: string | OpenApplicationOptions = '.binaflow/config.json',
+  cwdArg = process.cwd(),
 ): Promise<ApplicationRuntimeContext> {
+  const options: OpenApplicationOptions =
+    typeof configPathOrOptions === 'string'
+      ? { configPath: configPathOrOptions, cwd: cwdArg }
+      : configPathOrOptions;
+  const cwd = options.cwd ?? process.cwd();
+  const configPath = options.configPath ?? '.binaflow/config.json';
   const config = await loadConfig(configPath, cwd);
   await mkdir(config.dataDir, { recursive: true });
   const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
   const eventListeners = new Set<(event: NormalizedEvent) => void>();
+  if (options.onEvent) eventListeners.add(options.onEvent);
   const eventSink = createRuntimeEventSink(store, (event) => {
     for (const listener of eventListeners) {
       try {
@@ -36,18 +48,56 @@ export async function openApplicationContext(
     artifacts,
     new PiDriver({ command: config.piCommand, cwd }),
     eventSink,
+    { interpretDisposition: interpretWorkflowDisposition },
   );
-  return {
+  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime);
+  return createApplicationService({
     config,
     store,
     artifacts,
     engine,
+    researchCoordinator,
     subscribeEvents: (listener) => {
       eventListeners.add(listener);
-      return () => eventListeners.delete(listener);
+      return () => {
+        eventListeners.delete(listener);
+      };
     },
     close: () => store.close(),
-  };
+  });
+}
+
+/** Storage-only open for read commands that do not execute workflows. */
+export async function openApplicationStorage(
+  configPath = '.binaflow/config.json',
+  cwd = process.cwd(),
+): Promise<ApplicationRuntimeContext> {
+  const dataDir = await loadDataDir(configPath, cwd);
+  await mkdir(dataDir, { recursive: true });
+  const store = new SqliteRunStore(`${dataDir}/runs.db`);
+  const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
+  const config = { profiles: {} };
+  const engine = new WorkflowEngine(
+    store,
+    artifacts,
+    {
+      async execute() {
+        throw new Error('Execution is unavailable in storage-only application context');
+      },
+    },
+    () => undefined,
+    { interpretDisposition: interpretWorkflowDisposition },
+  );
+  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime);
+  return createApplicationService({
+    config,
+    store,
+    artifacts,
+    engine,
+    researchCoordinator,
+    subscribeEvents: () => () => undefined,
+    close: () => store.close(),
+  });
 }
 
 export function createRuntimeEventSink(

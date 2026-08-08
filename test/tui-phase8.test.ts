@@ -1,12 +1,10 @@
+import type { ApplicationService } from '../src/application/service.js';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import type { ArtifactStore } from '../src/artifacts/artifact-store.js';
 import type { AgentProfile } from '../src/config.js';
-import type { ApplicationContext, ArtifactContentView } from '../src/application/operations.js';
-import type { WorkflowEngine } from '../src/core/engine.js';
+import type { ArtifactContentView } from '../src/application/operations.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { runTui, type TuiInput, type TuiOutput } from '../src/tui/app.js';
-import type { RunListQuery, RunStore } from '../src/storage/run-store.js';
 import {
   renderArtifacts,
   renderHistory,
@@ -224,36 +222,37 @@ describe('Phase 8 attached history and inspection UI', () => {
       resolveExecution = resolve;
     });
     const failedRun = run('failed', 'plan-build');
-    const context: ApplicationContext = {
-      config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-      store: {
-        listRunsPage: async () => ({ runs: [failedRun] }),
-        getRun: async () => failedRun,
-        getStepRuns: async () => [
+    const context: ApplicationService = {
+      ...applicationContext(failedRun),
+      listRuns: async () => ({ runs: [failedRun] }),
+      inspectRun: async () => ({
+        run: failedRun,
+        steps: [
           step('plan', 'completed'),
           {
             ...step('build', 'failed'),
             error: { message: 'temporary failure', retryable: true },
           },
         ],
-        getArtifacts: async () => [],
-        countEvents: async () => 0,
-        claimRun: async () => ({ ...failedRun, status: 'running' as const }),
-        claimApproval: async () => undefined,
-        markRunInterrupted: async () => undefined,
-        releaseExecution: async () => undefined,
-      } as unknown as RunStore,
-      artifacts: {} as ArtifactStore,
-      engine: {
-        execute: async (_workflow, request) => {
-          await request.onRunStarted?.(run('running', 'plan-build'));
-          request.signal?.addEventListener('abort', () => {
-            aborted = true;
-            resolveExecution?.(run('cancelled', 'plan-build'));
-          });
-          return execution;
-        },
-      } as WorkflowEngine,
+        artifacts: [],
+        eventCount: 0,
+      }),
+      explainRunRecovery: async () => ({
+        eligible: true,
+        reason: 'retryable',
+        completedStepIds: ['plan'],
+        retryableStepIds: ['build'],
+        workflowVersionCompatible: true,
+        actions: [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }],
+      }),
+      resumeWorkflow: async (request) => {
+        await request.onRunStarted?.(run('running', 'plan-build'));
+        request.signal?.addEventListener('abort', () => {
+          aborted = true;
+          resolveExecution?.(run('cancelled', 'plan-build'));
+        });
+        return { run: await execution, alreadyCompleted: false };
+      },
     };
     const running = runTui({
       input: terminal.input,
@@ -286,20 +285,38 @@ describe('Phase 8 attached history and inspection UI', () => {
     const terminal = createTerminal();
     let current = run('running', 'plan-build');
     let interruptions = 0;
-    const base = applicationContext(current);
-    const context: ApplicationContext = {
-      ...base,
-      store: {
-        ...base.store,
-        listRunsPage: async () => ({ runs: [current] }),
-        getRun: async () => current,
-        markRunInterrupted: async (runId: string) => {
-          expect(runId).toBe(current.id);
-          interruptions += 1;
-          current = { ...current, status: 'interrupted' };
-          return current;
-        },
-      } as unknown as RunStore,
+    const context: ApplicationService = {
+      ...applicationContext(current),
+      listRuns: async () => ({ runs: [current] }),
+      inspectRun: async () => ({
+        run: current,
+        steps: [],
+        artifacts: [],
+        eventCount: 0,
+      }),
+      markRunInterrupted: async (runId: string) => {
+        expect(runId).toBe(current.id);
+        interruptions += 1;
+        current = { ...current, status: 'interrupted' };
+        return current;
+      },
+      explainRunRecovery: async () => ({
+        eligible: current.status === 'interrupted',
+        reason: 'recovery',
+        completedStepIds: [],
+        retryableStepIds: current.status === 'interrupted' ? ['build'] : [],
+        workflowVersionCompatible: true,
+        actions:
+          current.status === 'running'
+            ? [
+                {
+                  kind: 'mark-interrupted',
+                  label: 'Mark interrupted and review recovery',
+                  requiresConfirmation: true,
+                },
+              ]
+            : [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }],
+      }),
     };
     const running = runTui({
       input: terminal.input,
@@ -376,41 +393,79 @@ function applicationContext(
   runValue: WorkflowRun,
   waitingApproval = false,
   approvalArtifacts: ArtifactReference[] = [],
-): ApplicationContext {
+): ApplicationService {
+  const steps = waitingApproval
+    ? [
+        {
+          runId: runValue.id,
+          stepId: 'research-approval',
+          profile: 'human',
+          status: 'waiting' as const,
+          attempt: 1,
+        },
+      ]
+    : [step('plan', 'completed')];
   return {
-    config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-    store: {
-      listRunsPage: async (query: RunListQuery = {}) => ({
-        runs: query.status && query.status !== runValue.status ? [] : [runValue],
-        ...(query.cursor ? {} : { nextCursor: 'cursor' }),
-      }),
-      getRun: async () => runValue,
-      getStepRuns: async () =>
-        waitingApproval
+    profiles: { planner: profile('planner'), builder: profile('builder') },
+    close: () => undefined,
+    subscribeEvents: () => () => undefined,
+    runWorkflow: async () => runValue,
+    resumeWorkflow: async () => ({ run: runValue, alreadyCompleted: false }),
+    decideApproval: async () => runValue,
+    inspectRun: async () => ({
+      run: runValue,
+      steps,
+      artifacts: approvalArtifacts,
+      eventCount: 2,
+    }),
+    listRuns: async (query = {}) => ({
+      runs: query.status && query.status !== runValue.status ? [] : [runValue],
+      ...(query.cursor ? {} : { nextCursor: 'cursor' }),
+    }),
+    readArtifact: async () => {
+      throw new Error('not implemented');
+    },
+    explainRunRecovery: async () => ({
+      eligible: runValue.status === 'failed' || runValue.status === 'interrupted',
+      reason: 'recovery',
+      completedStepIds: ['plan'],
+      retryableStepIds:
+        runValue.status === 'failed' || runValue.status === 'interrupted' ? ['build'] : [],
+      workflowVersionCompatible: true,
+      actions:
+        runValue.status === 'running'
           ? [
               {
-                runId: runValue.id,
-                stepId: 'research-approval',
-                profile: 'human',
-                status: 'waiting',
-                attempt: 1,
+                kind: 'mark-interrupted',
+                label: 'Mark interrupted and review recovery',
+                requiresConfirmation: true,
               },
             ]
-          : [step('plan', 'completed')],
-      getArtifacts: async () => approvalArtifacts,
-      countEvents: async () => 2,
-      claimRun: async () => ({ ...runValue, status: 'running' as const }),
-      claimApproval: async () => undefined,
-      markRunInterrupted: async () => undefined,
-      releaseExecution: async () => undefined,
-    } as unknown as RunStore,
-    artifacts: {
-      readBounded: async (candidate: ArtifactReference) => {
-        if (candidate.name === 'review') throw new Error('review file is corrupt');
-        return { content: '{"summary":"bounded evidence"}', truncated: false };
-      },
-    } as unknown as ArtifactStore,
-    engine: {} as WorkflowEngine,
+          : runValue.status === 'failed' || runValue.status === 'interrupted'
+            ? [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }]
+            : [],
+    }),
+    markRunInterrupted: async () => ({ ...runValue, status: 'interrupted' }),
+    clarificationQuestions: async () => [],
+    loadResearchApprovalPreviews: async () =>
+      approvalArtifacts.map((artifactRef) => {
+        if (artifactRef.name === 'review') {
+          return {
+            artifact: artifactRef,
+            truncated: false,
+            formatted: false,
+            error: 'review file is corrupt',
+          };
+        }
+        return {
+          artifact: artifactRef,
+          content: '{"summary":"bounded evidence"}',
+          truncated: false,
+          formatted: false,
+        };
+      }),
+    discoverWorkflows: () => [],
+    diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }
 

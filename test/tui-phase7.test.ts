@@ -1,3 +1,4 @@
+import type { ApplicationService } from '../src/application/service.js';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,10 +8,7 @@ import type { AgentProfile } from '../src/config.js';
 import type { NormalizedEvent } from '../src/core/events.js';
 import type { WorkflowEngine } from '../src/core/engine.js';
 import type { StepRun, WorkflowRun } from '../src/core/run.js';
-import type { ApplicationContext } from '../src/application/operations.js';
 import type { ApplicationRuntimeContext } from '../src/application/runtime.js';
-import type { RunStore } from '../src/storage/run-store.js';
-import type { ArtifactStore } from '../src/artifacts/artifact-store.js';
 import { runTui, type TuiInput, type TuiOutput } from '../src/tui/app.js';
 import {
   renderCompletion,
@@ -426,20 +424,64 @@ async function writeConfig(directory: string): Promise<void> {
 function executionContext(
   execute: WorkflowEngine['execute'],
   setListener?: (listener: (event: NormalizedEvent) => void) => void,
-): ApplicationContext {
+): ApplicationService {
+  const profiles = { planner: profile('planner'), builder: profile('builder') };
   return {
-    config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-    store: {
-      getStepRuns: async () => [],
-      getArtifacts: async () => [],
-      countEvents: async () => 0,
-    } as unknown as RunStore,
-    artifacts: {} as ArtifactStore,
-    engine: { execute } as WorkflowEngine,
-    subscribeEvents: (listener) => {
+    profiles,
+    close: () => undefined,
+    subscribeEvents: (listener: (event: NormalizedEvent) => void) => {
       setListener?.(listener);
       return () => undefined;
     },
+    runWorkflow: async (request) =>
+      execute(
+        { version: 1, id: request.workflowId, input: { required: [], properties: {} }, steps: [] },
+        {
+          objective: request.objective,
+          input: request.input,
+          profiles,
+          ...(request.runId ? { runId: request.runId } : {}),
+          ...(request.signal ? { signal: request.signal } : {}),
+          ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+        },
+      ),
+    resumeWorkflow: async (request) => ({
+      run: await execute(
+        { version: 1, id: 'plan-build', input: { required: [], properties: {} }, steps: [] },
+        {
+          profiles,
+          runId: request.runId,
+          resume: true,
+          ...(request.signal ? { signal: request.signal } : {}),
+          ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+        },
+      ),
+      alreadyCompleted: false,
+    }),
+    decideApproval: async () => run('completed'),
+    inspectRun: async () => ({
+      run: run('completed'),
+      steps: [],
+      artifacts: [],
+      eventCount: 0,
+    }),
+    listRuns: async () => ({ runs: [] }),
+    readArtifact: async () => {
+      throw new Error('not implemented');
+    },
+    explainRunRecovery: async () => ({
+      eligible: false,
+      reason: 'n/a',
+      completedStepIds: [],
+      retryableStepIds: [],
+      workflowVersionCompatible: true,
+      actions: [],
+    }),
+    markRunInterrupted: async () => run('interrupted'),
+    clarificationQuestions: async () => [],
+    loadResearchApprovalPreviews: async () => [],
+    discoverWorkflows: () => [],
+    diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }
 

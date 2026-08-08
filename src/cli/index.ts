@@ -12,7 +12,7 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerConfigurationCommands } from './commands/configuration.js';
 import { VERSION } from '../version.js';
-import { workflowSummaries } from '../workflows/catalog-info.js';
+import { workflowSummaries } from '../workflows/catalog.js';
 import {
   exitCodeFor,
   cliUsageError,

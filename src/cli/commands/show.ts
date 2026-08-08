@@ -16,11 +16,10 @@ export function registerShowCommand(cli: Command): void {
       ) => {
         const { openStorageContext, printMachineResult, printRunSummary, rootOptions } =
           await import('./common.js');
-        const { inspectRun } = await import('../../application/operations.js');
         const optionsAtRoot = rootOptions(command);
         const context = await openStorageContext(optionsAtRoot);
         try {
-          const inspection = await inspectRun(context, runId, {
+          const inspection = await context.inspectRun(runId, {
             includeEvents: options.events === true,
             includeStepResults: options.fullOutput === true,
           });

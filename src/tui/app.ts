@@ -8,22 +8,12 @@ import {
 } from '../application/config-operations.js';
 import { openApplicationContext, type ApplicationRuntimeContext } from '../application/runtime.js';
 import {
-  clarificationQuestions,
-  decideApproval,
-  explainRunRecovery,
   discoverWorkflows,
-  inspectRun,
-  listRuns,
-  loadResearchApprovalPreviews,
-  markRunInterrupted,
-  readArtifact,
-  resumeWorkflow,
-  runWorkflow,
-  type ApplicationContext,
   type ArtifactContentView,
   type RunInspection,
   type RunRecoveryExplanation,
 } from '../application/operations.js';
+import type { ApplicationService } from '../application/service.js';
 import { StringDecoder } from 'node:string_decoder';
 import type { NormalizedEvent } from '../core/events.js';
 import type { RunStatus, StepRun, WorkflowRun } from '../core/run.js';
@@ -83,7 +73,7 @@ export interface TuiOptions {
   output?: TuiOutput;
   env?: NodeJS.ProcessEnv;
   initialInput?: Record<string, unknown>;
-  applicationContext?: ApplicationContext & { close?(): void };
+  applicationContext?: ApplicationService & { close?(): void };
   openApplicationContext?: (configPath: string, cwd: string) => Promise<ApplicationRuntimeContext>;
   forceExit?: (signal: NodeJS.Signals) => void;
 }
@@ -152,7 +142,7 @@ interface LiveState {
 interface CompletionState {
   run: WorkflowRun;
   steps: StepRun[];
-  artifacts: Awaited<ReturnType<typeof inspectRun>>['artifacts'];
+  artifacts: RunInspection['artifacts'];
   startedAt: string;
   finishedAt: string;
   selected: number;
@@ -187,7 +177,7 @@ interface DetailState {
 
 interface ArtifactState {
   runId: string;
-  artifacts: Awaited<ReturnType<typeof inspectRun>>['artifacts'];
+  artifacts: RunInspection['artifacts'];
   selected: number;
   returnTo: 'detail' | 'completion';
   content?: ArtifactContentView;
@@ -238,9 +228,9 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
   let starting = false;
   let activeRunController: AbortController | undefined;
   let unsubscribeEvents: (() => void) | undefined;
-  let applicationContext: (ApplicationContext & { close?(): void }) | undefined =
+  let applicationContext: (ApplicationService & { close?(): void }) | undefined =
     options.applicationContext;
-  let ownsApplicationContext = false;
+  let ownsApplicationService = false;
   let activeOperation: Promise<void> | undefined;
   let redrawTimer: NodeJS.Timeout | undefined;
   let elapsedTimer: NodeJS.Timeout | undefined;
@@ -319,13 +309,13 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       redraw();
     };
 
-    const ensureContext = async (): Promise<ApplicationContext & { close?(): void }> => {
+    const ensureContext = async (): Promise<ApplicationService & { close?(): void }> => {
       if (applicationContext) return applicationContext;
       applicationContext = await (options.openApplicationContext ?? openApplicationContext)(
         configPath,
         cwd,
       );
-      ownsApplicationContext = true;
+      ownsApplicationService = true;
       return applicationContext;
     };
 
@@ -343,7 +333,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
           history.statusFilter !== undefined && !ATTENTION_STATUSES.has(history.statusFilter);
         const page = history.attentionOnly
           ? undefined
-          : await listRuns(context, {
+          : await context.listRuns({
               ...commonQuery,
               ...(history.statusFilter ? { status: history.statusFilter } : {}),
               ...(history.cursor ? { cursor: history.cursor } : {}),
@@ -358,7 +348,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         }
         const attentionPage = filteredAttention
           ? { runs: [] }
-          : await listRuns(context, {
+          : await context.listRuns({
               ...commonQuery,
               ...(history.statusFilter && ATTENTION_STATUSES.has(history.statusFilter)
                 ? { status: history.statusFilter }
@@ -408,15 +398,15 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
     const openDetail = async (run: WorkflowRun): Promise<void> => {
       try {
         const context = await ensureContext();
-        const inspection = await inspectRun(context, run.id, { includeStepResults: true });
-        const recovery = await explainRunRecovery(context, run.id);
-        const questions = await clarificationQuestions(context, inspection);
+        const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+        const recovery = await context.explainRunRecovery(run.id);
+        const questions = await context.clarificationQuestions(inspection);
         const workflow = discoverWorkflows().find((candidate) => candidate.id === run.workflowId);
         const approvalWaiting = inspection.steps.some(
           (step) => step.stepId === workflow?.approval?.id && step.status === 'waiting',
         );
         const approvalPreviews = approvalWaiting
-          ? await loadResearchApprovalPreviews(context, inspection)
+          ? await context.loadResearchApprovalPreviews(inspection)
           : [];
         model.detail = {
           inspection,
@@ -704,7 +694,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       activeRunController = new AbortController();
       const launch = model.launch;
       let returnedForReview = false;
-      let context: (ApplicationContext & { close?(): void }) | undefined;
+      let context: (ApplicationService & { close?(): void }) | undefined;
       try {
         const refreshed = await diagnoseConfigurationFile(configPath, cwd);
         const currentProfiles = profileReview(launch.workflow, refreshed);
@@ -728,7 +718,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         model.screen = 'home';
         redraw();
         context = await ensureContext();
-        unsubscribeEvents = context.subscribeEvents?.((event) => {
+        unsubscribeEvents = context.subscribeEvents((event) => {
           applyLiveEvent(event);
           if (event.type === 'status' && event.message.endsWith(' completed')) {
             void refreshLiveUsage(context!, event.runId, () => model.live);
@@ -737,7 +727,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         const objective = launch.values.objective;
         if (typeof objective !== 'string')
           throw new Error('Workflow objective must be a non-empty string');
-        const run = await runWorkflow(context, {
+        const run = await context.runWorkflow({
           workflowId: launch.workflow.id,
           objective,
           input: { ...launch.values, objective },
@@ -766,7 +756,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
           if (context) {
             try {
               terminalRun = (
-                await inspectRun(context, model.live.run.id, { includeStepResults: true })
+                await context.inspectRun(model.live.run.id, { includeStepResults: true })
               ).run;
             } catch {
               // Preserve the in-memory terminal fallback when inspection is unavailable.
@@ -789,7 +779,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
 
     const showCompletion = async (
       run: WorkflowRun,
-      context: (ApplicationContext & { close?(): void }) | undefined,
+      context: (ApplicationService & { close?(): void }) | undefined,
       returnTo?: 'detail',
     ): Promise<void> => {
       const live = model.live;
@@ -799,7 +789,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       let artifacts: CompletionState['artifacts'] = [];
       if (context) {
         try {
-          const inspection = await inspectRun(context, run.id, { includeStepResults: true });
+          const inspection = await context.inspectRun(run.id, { includeStepResults: true });
           persistedUpdatedAt = inspection.run.updatedAt;
           steps = inspection.steps;
           artifacts = inspection.artifacts;
@@ -837,13 +827,13 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       if (!detail) return;
       try {
         const context = await ensureContext();
-        const inspection = await inspectRun(context, detail.inspection.run.id, {
+        const inspection = await context.inspectRun(detail.inspection.run.id, {
           includeStepResults: true,
         });
-        const recovery = await explainRunRecovery(context, inspection.run.id);
+        const recovery = await context.explainRunRecovery(inspection.run.id);
         detail.inspection = inspection;
         detail.recovery = recovery;
-        detail.clarificationQuestions = await clarificationQuestions(context, inspection);
+        detail.clarificationQuestions = await context.clarificationQuestions(inspection);
         const workflow = discoverWorkflows().find(
           (candidate) => candidate.id === inspection.run.workflowId,
         );
@@ -852,7 +842,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         );
         if (approvalWaiting && workflow?.approval) {
           detail.approvalMessage = workflow.approval.message;
-          detail.approvalPreviews = await loadResearchApprovalPreviews(context, inspection);
+          detail.approvalPreviews = await context.loadResearchApprovalPreviews(inspection);
         } else {
           delete detail.approvalMessage;
           delete detail.approvalPreviews;
@@ -868,7 +858,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
 
     const startAttachedContinuation = async (
       operation: (
-        context: ApplicationContext,
+        context: ApplicationService,
         signal: AbortSignal,
         onRunStarted: (run: WorkflowRun) => void,
       ) => Promise<WorkflowRun>,
@@ -878,7 +868,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       if (!detail || starting) return;
       starting = true;
       activeRunController = new AbortController();
-      let context: (ApplicationContext & { close?(): void }) | undefined;
+      let context: (ApplicationService & { close?(): void }) | undefined;
       try {
         context = await ensureContext();
         const workflow = discoverWorkflows().find(
@@ -886,7 +876,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         );
         if (!workflow)
           throw new Error(`Workflow ${detail.inspection.run.workflowId} is unavailable.`);
-        unsubscribeEvents = context.subscribeEvents?.((event) => {
+        unsubscribeEvents = context.subscribeEvents((event) => {
           applyLiveEvent(event);
           if (event.type === 'status' && event.message.endsWith(' completed')) {
             void refreshLiveUsage(context!, event.runId, () => model.live);
@@ -913,7 +903,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
           if (context) {
             try {
               terminalRun = (
-                await inspectRun(context, model.live.run.id, { includeStepResults: true })
+                await context.inspectRun(model.live.run.id, { includeStepResults: true })
               ).run;
             } catch {
               // Preserve the in-memory terminal fallback when inspection is unavailable.
@@ -1005,7 +995,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
           startAttachedContinuation(
             async (context, signal, onRunStarted) =>
               (
-                await resumeWorkflow(context, {
+                await context.resumeWorkflow({
                   runId: detail.inspection.run.id,
                   signal,
                   onRunStarted,
@@ -1018,7 +1008,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         trackActiveOperation(
           startAttachedContinuation(
             (context, signal, onRunStarted) =>
-              decideApproval(context, {
+              context.decideApproval({
                 runId: detail.inspection.run.id,
                 decision: 'approved',
                 signal,
@@ -1047,7 +1037,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       const selectedKey = `${selectedArtifact.stepId}.${selectedArtifact.name}`;
       try {
         const context = await ensureContext();
-        const content = await readArtifact(context, artifacts.runId, selectedKey, {
+        const content = await context.readArtifact(artifacts.runId, selectedKey, {
           mode: full ? 'full' : 'preview',
         });
         if (
@@ -1095,7 +1085,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       if (prompt.kind === 'recovery') {
         try {
           const context = await ensureContext();
-          await markRunInterrupted(context, detail.inspection.run.id);
+          await context.markRunInterrupted(detail.inspection.run.id);
           delete model.prompt;
           model.screen = 'detail';
           await refreshDetail('Run marked interrupted. Review recovery before resuming.');
@@ -1107,7 +1097,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
         trackActiveOperation(
           startAttachedContinuation(
             (context, signal, onRunStarted) =>
-              decideApproval(context, {
+              context.decideApproval({
                 runId: detail.inspection.run.id,
                 decision: 'rejected',
                 feedback: value.trim(),
@@ -1426,7 +1416,7 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
       safely(() => unsubscribeEvents?.());
       unsubscribeEvents = undefined;
       safely(() => {
-        if (ownsApplicationContext) applicationContext?.close?.();
+        if (ownsApplicationService) applicationContext?.close?.();
         applicationContext = undefined;
       });
       safely(() => {
@@ -1483,12 +1473,12 @@ export async function runTui(options: TuiOptions = {}): Promise<void> {
 }
 
 async function refreshLiveUsage(
-  context: ApplicationContext,
+  context: ApplicationService,
   runId: string,
   getLive: () => LiveState | undefined,
 ): Promise<void> {
   try {
-    const inspection = await inspectRun(context, runId, { includeStepResults: true });
+    const inspection = await context.inspectRun(runId, { includeStepResults: true });
     const tokens = sumStepTokens(inspection.steps);
     const costUsd = sumStepCosts(inspection.steps);
     // The run may have moved to completion while the inspection was in flight.

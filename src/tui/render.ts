@@ -5,7 +5,7 @@ import {
   formatTimestamp,
   humanRunStatus,
   humanStepStatus,
-} from '../core/presentation.js';
+} from '../presentation/format.js';
 import type {
   ArtifactContentView,
   RunInspection,

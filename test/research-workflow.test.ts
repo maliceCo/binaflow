@@ -7,6 +7,8 @@ import type { EventSink } from '../src/core/events.js';
 import type { AgentStepResult } from '../src/core/run.js';
 import type { AgentProfile } from '../src/config.js';
 import { WorkflowEngine } from '../src/core/engine.js';
+import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
+import { interpretWorkflowDisposition } from '../src/workflows/dispositions.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { AgentDriverError } from '../src/drivers/contract.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
@@ -112,7 +114,15 @@ function createEnvironment(driver: AgentDriver) {
   temporaryDirectories.push(directory);
   const store = new SqliteRunStore(join(directory, 'run.db'));
   const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
-  return { store, artifacts, engine: new WorkflowEngine(store, artifacts, driver) };
+  return {
+    store,
+    artifacts,
+    engine: new ResearchPlanBuildCoordinator(
+      new WorkflowEngine(store, artifacts, driver, undefined, {
+        interpretDisposition: interpretWorkflowDisposition,
+      }).runtime,
+    ),
+  };
 }
 
 async function persistedInput(
@@ -324,14 +334,15 @@ describe('research-plan-build workflow', () => {
     });
 
     const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
-    const resumed = await new WorkflowEngine(store, artifacts, resumedDriver).execute(
-      researchPlanBuildWorkflow,
-      {
-        runId: failed.id,
-        profiles: retryProfiles,
-        resume: true,
-      },
-    );
+    const resumed = await new ResearchPlanBuildCoordinator(
+      new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
+        interpretDisposition: interpretWorkflowDisposition,
+      }).runtime,
+    ).execute(researchPlanBuildWorkflow, {
+      runId: failed.id,
+      profiles: retryProfiles,
+      resume: true,
+    });
 
     expect(resumed.status).toBe('waiting');
     expect(resumedDriver.calls[0]?.prompt).toContain('How are artifacts persisted?');
@@ -363,10 +374,14 @@ describe('research-plan-build workflow', () => {
       },
     });
 
-    const interrupted = await new WorkflowEngine(
-      store,
-      artifacts,
-      new FakeDriver([new Error('research process interrupted')]),
+    const interrupted = await new ResearchPlanBuildCoordinator(
+      new WorkflowEngine(
+        store,
+        artifacts,
+        new FakeDriver([new Error('research process interrupted')]),
+        undefined,
+        { interpretDisposition: interpretWorkflowDisposition },
+      ).runtime,
     ).execute(researchPlanBuildWorkflow, {
       runId: waiting.id,
       profiles: retryProfiles,
@@ -386,14 +401,15 @@ describe('research-plan-build workflow', () => {
     });
 
     const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
-    const resumed = await new WorkflowEngine(store, artifacts, resumedDriver).execute(
-      researchPlanBuildWorkflow,
-      {
-        runId: waiting.id,
-        profiles: retryProfiles,
-        resume: true,
-      },
-    );
+    const resumed = await new ResearchPlanBuildCoordinator(
+      new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
+        interpretDisposition: interpretWorkflowDisposition,
+      }).runtime,
+    ).execute(researchPlanBuildWorkflow, {
+      runId: waiting.id,
+      profiles: retryProfiles,
+      resume: true,
+    });
 
     expect(resumed.status).toBe('waiting');
     expect(resumedDriver.calls[0]?.prompt).toContain('Check the persistence migration too.');
@@ -442,10 +458,11 @@ describe('research-plan-build workflow', () => {
 
       if (failedStep === 'build') {
         await expect(
-          new WorkflowEngine(store, artifacts, new FakeDriver([])).execute(
-            researchPlanBuildWorkflow,
-            { runId: run.id, profiles, resume: true },
-          ),
+          new ResearchPlanBuildCoordinator(
+            new WorkflowEngine(store, artifacts, new FakeDriver([]), undefined, {
+              interpretDisposition: interpretWorkflowDisposition,
+            }).runtime,
+          ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true }),
         ).rejects.toThrow('no retryable failed');
         expect(initialDriver.calls.filter((call) => call.stepId === 'build')).toHaveLength(1);
         store.close();
@@ -453,10 +470,11 @@ describe('research-plan-build workflow', () => {
       }
 
       const retryDriver = new FakeDriver([]);
-      const resumed = await new WorkflowEngine(store, artifacts, retryDriver).execute(
-        researchPlanBuildWorkflow,
-        { runId: run.id, profiles, resume: true },
-      );
+      const resumed = await new ResearchPlanBuildCoordinator(
+        new WorkflowEngine(store, artifacts, retryDriver, undefined, {
+          interpretDisposition: interpretWorkflowDisposition,
+        }).runtime,
+      ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true });
 
       expect(resumed.status).toBe('failed');
       expect(retryDriver.calls).toHaveLength(0);

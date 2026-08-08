@@ -1,12 +1,40 @@
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { planBuildWorkflow } from './plan-build.js';
 import { researchPlanBuildWorkflow } from './research-plan-build.js';
-import { workflowSummaries } from './catalog-info.js';
 
-const workflows: Record<string, WorkflowDefinition> = {
-  [planBuildWorkflow.id]: planBuildWorkflow,
-  [researchPlanBuildWorkflow.id]: researchPlanBuildWorkflow,
-};
+export interface WorkflowSummary {
+  id: string;
+  description: string;
+  experimental?: boolean;
+}
+
+export interface WorkflowRegistration {
+  definition: WorkflowDefinition;
+  description: string;
+  experimental?: boolean;
+}
+
+const registrations: readonly WorkflowRegistration[] = [
+  {
+    definition: planBuildWorkflow,
+    description: 'Plan the work, then implement the validated plan',
+  },
+  {
+    definition: researchPlanBuildWorkflow,
+    description: 'Research the repository, review findings, then build',
+    experimental: true,
+  },
+];
+
+const workflows: Record<string, WorkflowDefinition> = Object.fromEntries(
+  registrations.map((entry) => [entry.definition.id, entry.definition]),
+);
+
+export const workflowSummaries: readonly WorkflowSummary[] = registrations.map((entry) => ({
+  id: entry.definition.id,
+  description: entry.description,
+  ...(entry.experimental ? { experimental: true as const } : {}),
+}));
 
 export function resolveWorkflow(workflowId: string): WorkflowDefinition {
   const workflow = workflows[workflowId];
@@ -35,13 +63,13 @@ export interface WorkflowContract {
 }
 
 export function listWorkflowContracts(): WorkflowContract[] {
-  return workflowSummaries.map((summary) => {
-    const workflow = workflows[summary.id]!;
+  return registrations.map((entry) => {
+    const workflow = entry.definition;
     return {
       id: workflow.id,
       version: workflow.version,
-      description: summary.description,
-      ...(summary.experimental ? { experimental: true } : {}),
+      description: entry.description,
+      ...(entry.experimental ? { experimental: true } : {}),
       input: workflow.input,
       requiredProfiles: [...new Set(workflow.steps.map((step) => step.profile))],
       steps: workflow.steps.map((step) => ({

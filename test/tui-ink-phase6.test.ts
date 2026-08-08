@@ -1,14 +1,11 @@
+import type { ApplicationService } from '../src/application/service.js';
 import { EventEmitter } from 'node:events';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ArtifactStore } from '../src/artifacts/artifact-store.js';
 import type { AgentProfile } from '../src/config.js';
-import type { WorkflowEngine } from '../src/core/engine.js';
 import type { WorkflowRun } from '../src/core/run.js';
-import type { RunStore } from '../src/storage/run-store.js';
-import type { ApplicationContext } from '../src/application/operations.js';
 import { runInkShell } from '../src/tui-ink/shell.js';
 
 const testDirectories: string[] = [];
@@ -335,12 +332,56 @@ function profile(name: string, write = false): AgentProfile {
   };
 }
 
-function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationContext {
+function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationService {
+  const profiles = { planner: profile('planner'), builder: profile('builder', true) };
   return {
-    config: { profiles: { planner: profile('planner'), builder: profile('builder', true) } },
-    store: {} as RunStore,
-    artifacts: {} as ArtifactStore,
-    engine: { execute } as unknown as WorkflowEngine,
+    profiles,
+    close: () => undefined,
+    subscribeEvents: () => () => undefined,
+    runWorkflow: async (request: {
+      workflowId: string;
+      objective: string;
+      input: Record<string, unknown>;
+      runId?: string;
+      signal?: AbortSignal;
+      onRunStarted?: (run: WorkflowRun) => void;
+    }) =>
+      execute(
+        { version: 1, id: request.workflowId, input: { required: [], properties: {} }, steps: [] },
+        {
+          objective: request.objective,
+          input: request.input,
+          profiles,
+          ...(request.runId ? { runId: request.runId } : {}),
+          ...(request.signal ? { signal: request.signal } : {}),
+          ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+        },
+      ),
+    resumeWorkflow: async () => ({ run: completedRun(), alreadyCompleted: false }),
+    decideApproval: async () => completedRun(),
+    inspectRun: async () => ({
+      run: completedRun(),
+      steps: [],
+      artifacts: [],
+      eventCount: 0,
+    }),
+    listRuns: async () => ({ runs: [] }),
+    readArtifact: async () => {
+      throw new Error('not implemented');
+    },
+    explainRunRecovery: async () => ({
+      eligible: false,
+      reason: 'not implemented',
+      completedStepIds: [],
+      retryableStepIds: [],
+      workflowVersionCompatible: true,
+      actions: [],
+    }),
+    markRunInterrupted: async () => completedRun(),
+    clarificationQuestions: async () => [],
+    loadResearchApprovalPreviews: async () => [],
+    discoverWorkflows: () => [],
+    diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }
 

@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { cliUsageError } from '../protocol.js';
 import type { RunStatus } from '../../core/run.js';
-import { formatTimestamp, humanRunStatus } from '../../core/presentation.js';
+import { formatTimestamp, humanRunStatus } from '../../presentation/format.js';
 
 interface RunsOptions {
   limit?: string;
@@ -21,12 +21,11 @@ export function registerRunsCommand(cli: Command): void {
     .action(async (options: RunsOptions, command: Command) => {
       const { openStorageContext, printMachineResult, rootOptions, workflowDisplayLabel } =
         await import('./common.js');
-      const { listRuns } = await import('../../application/operations.js');
       const optionsAtRoot = rootOptions(command);
       const context = await openStorageContext(optionsAtRoot);
       try {
         const status = parseStatus(options.status);
-        const page = await listRuns(context, {
+        const page = await context.listRuns({
           ...(options.limit !== undefined ? { limit: parseLimit(options.limit) } : {}),
           ...(status ? { status } : {}),
           ...(options.workflow !== undefined ? { workflowId: options.workflow } : {}),

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ArtifactStore } from '../src/artifacts/artifact-store.js';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowEngine } from '../src/core/engine.js';
+import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
 import type { NormalizedEvent } from '../src/core/events.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import {
@@ -11,7 +12,7 @@ import {
   markRunInterrupted,
   resumeWorkflow,
   runWorkflow,
-  type ApplicationContext,
+  type ApplicationInternals,
 } from '../src/application/operations.js';
 import type { RunStore } from '../src/storage/run-store.js';
 import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
@@ -101,7 +102,8 @@ describe('application operations', () => {
       store: {} as RunStore,
       artifacts: {} as ArtifactStore,
       engine: { execute } as unknown as WorkflowEngine,
-    } satisfies ApplicationContext;
+      researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
+    } satisfies ApplicationInternals;
 
     await runWorkflow(context, {
       workflowId: 'plan-build',
@@ -204,7 +206,8 @@ describe('application operations', () => {
       store,
       artifacts: {} as ArtifactStore,
       engine: { execute } as unknown as WorkflowEngine,
-    } satisfies ApplicationContext;
+      researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
+    } satisfies ApplicationInternals;
 
     const results = await Promise.allSettled([
       resumeWorkflow(context, { runId: previous.id }),
@@ -523,7 +526,8 @@ describe('application operations', () => {
       store,
       artifacts: {} as ArtifactStore,
       engine: { execute } as unknown as WorkflowEngine,
-    } satisfies ApplicationContext;
+      researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
+    } satisfies ApplicationInternals;
 
     const results = await Promise.allSettled([
       decideApproval(context, { runId: previous.id, decision: 'approved' }),
@@ -608,7 +612,7 @@ function applicationContext(
   profiles: Record<string, AgentProfile>,
   execute: ReturnType<typeof vi.fn>,
   storeOverrides: Partial<RunStore> = {},
-): ApplicationContext {
+): ApplicationInternals {
   const getRun = storeOverrides.getRun ?? (async () => undefined);
   const getStepRuns =
     storeOverrides.getStepRuns ??
@@ -648,7 +652,8 @@ function applicationContext(
     store,
     artifacts: {} as ArtifactStore,
     engine: { execute } as unknown as WorkflowEngine,
-  } satisfies ApplicationContext;
+    researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
+  } satisfies ApplicationInternals;
 }
 
 function approvalStep(runId: string): StepRun {
