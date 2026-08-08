@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentRequest } from '../../src/core/agent.js';
 import type { NormalizedEvent } from '../../src/core/events.js';
 import { PiDriver } from '../../src/drivers/pi-rpc.js';
-import { JsonlProcess } from '../../src/process/jsonl-process.js';
+import { JsonlProcess, MAX_JSONL_RECORD_BYTES } from '../../src/process/jsonl-process.js';
 
 const children: JsonlProcess[] = [];
 
@@ -87,6 +87,21 @@ describe('JSONL transport', () => {
     await expect(
       client.request({ type: 'write-after-close' }, { timeoutMs: 200 }),
     ).rejects.toThrow();
+  });
+
+  it('fails when an unterminated JSONL record exceeds the UTF-8 byte bound', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: [
+        '-e',
+        `process.stdout.write("{" + "a".repeat(${MAX_JSONL_RECORD_BYTES + 8})); setTimeout(() => {}, 500)`,
+      ],
+    });
+    children.push(client);
+
+    await expect(client.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
+      'JSONL record exceeded maximum size',
+    );
   });
 
   it('turns message and stderr listener exceptions into transport failures', async () => {
@@ -176,6 +191,41 @@ describe('PiDriver', () => {
     });
 
     expect(events).toEqual(['first', 'second']);
+  });
+
+  it('fails immediately when Pi exits after prompt without agent_settled', async () => {
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: [
+        '-e',
+        String.raw`
+let buffer = '';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk.toString();
+  let index = buffer.indexOf('\n');
+  while (index >= 0) {
+    const line = buffer.slice(0, index);
+    buffer = buffer.slice(index + 1);
+    const command = JSON.parse(line);
+    if (command.type === 'prompt') {
+      process.stdout.write(JSON.stringify({ id: command.id, type: 'response', success: true }) + '\n');
+      process.exit(0);
+    }
+    index = buffer.indexOf('\n');
+  }
+});`,
+      ],
+    });
+
+    const startedAt = Date.now();
+    await expect(
+      driver.execute(
+        requestFor({ timeoutMs: 5_000 }),
+        () => undefined,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: 'PI_RPC_FAILED' });
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
   it('does not spawn Pi when execution is already aborted', async () => {

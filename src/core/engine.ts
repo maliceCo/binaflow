@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Ajv } from 'ajv';
+import { Ajv, type ValidateFunction } from 'ajv';
 import type { AgentDriver } from './agent.js';
 import type { EventSink, NormalizedEvent } from './events.js';
 import type {
@@ -22,6 +22,9 @@ import {
 } from '../workflows/research-plan-build.js';
 import { resolveStepOrder } from './references.js';
 import { validateWorkflowDefinition, type AgentStep, type WorkflowDefinition } from './workflow.js';
+
+const schemaValidators = new WeakMap<object, ValidateFunction>();
+const ajv = new Ajv({ allErrors: true });
 
 export interface ExecuteWorkflowRequest {
   objective?: string;
@@ -781,7 +784,7 @@ function createOutputContents(
       try {
         const value = JSON.parse(result.text) as unknown;
         if (output.schema) validateJsonOutput(value, output.schema);
-        if (output.name === 'plan') {
+        if (output.disposition === 'build-plan') {
           const plan = parseBuildPlan(value);
           contents.set(output.name, JSON.stringify(plan, null, 2));
           disposition =
@@ -808,7 +811,11 @@ function createOutputContents(
 }
 
 function validateJsonOutput(value: unknown, schema: Record<string, unknown>): void {
-  const validate = new Ajv({ allErrors: true }).compile(schema);
+  let validate = schemaValidators.get(schema);
+  if (!validate) {
+    validate = ajv.compile(schema);
+    schemaValidators.set(schema, validate);
+  }
   if (!validate(value)) {
     const details = validate.errors?.map((error) => error.message).join(', ');
     throw new PlannerSchemaError(

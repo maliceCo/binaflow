@@ -492,6 +492,76 @@ describe('WorkflowEngine', () => {
     store.close();
   });
 
+  it('validates a non-BuildPlan JSON output named plan only by its declared schema', async () => {
+    const driver = new FakeDriver([
+      { text: JSON.stringify({ summary: 'not a build plan' }) },
+      { text: 'built from plain plan' },
+    ]);
+    const { engine, store, artifactStore } = createEnvironment(driver);
+    const workflow: WorkflowDefinition = {
+      version: 1,
+      id: 'plain-plan-output',
+      input: {
+        required: ['objective'],
+        properties: { objective: { type: 'string', minLength: 1 } },
+      },
+      steps: [
+        {
+          kind: 'agent',
+          id: 'plan',
+          profile: 'planner',
+          prompt: 'Return plain JSON',
+          dependsOn: [],
+          inputReferences: [
+            { name: 'objective', source: { kind: 'workflow-input', key: 'objective' } },
+          ],
+          outputs: [
+            {
+              name: 'plan',
+              kind: 'artifact',
+              format: 'json',
+              schema: {
+                type: 'object',
+                required: ['summary'],
+                properties: { summary: { type: 'string' } },
+                additionalProperties: false,
+              },
+            },
+          ],
+        },
+        {
+          kind: 'agent',
+          id: 'build',
+          profile: 'builder',
+          prompt: 'Build',
+          dependsOn: ['plan'],
+          inputReferences: [
+            { name: 'plan', source: { kind: 'step-output', stepId: 'plan', output: 'plan' } },
+          ],
+          outputs: [{ name: 'result', kind: 'artifact', format: 'text' }],
+        },
+      ],
+    };
+
+    const run = await engine.execute(workflow, {
+      runId: 'plain-plan',
+      objective: 'Use a plain plan contract',
+      profiles,
+    });
+    const steps = await store.getStepRuns('plain-plan', { includeResult: true });
+    const planArtifact = (await store.getArtifacts('plain-plan')).find(
+      (artifact) => artifact.stepId === 'plan' && artifact.name === 'plan',
+    );
+
+    expect(run.status).toBe('completed');
+    expect(steps.find((step) => step.stepId === 'plan')?.disposition).toBeUndefined();
+    expect(planArtifact).toBeDefined();
+    expect(JSON.parse(await artifactStore.read(planArtifact!))).toEqual({
+      summary: 'not a build plan',
+    });
+    store.close();
+  });
+
   it('attempts one planner schema repair and fails without starting the builder', async () => {
     const driver = new FakeDriver([{ text: '{invalid' }, { text: '{still invalid' }]);
     const { engine, store } = createEnvironment(driver);

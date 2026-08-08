@@ -75,7 +75,13 @@ export class PiDriver implements AgentDriver {
         { type: 'prompt', message: request.prompt },
         { timeoutMs: request.profile.timeoutMs, signal },
       );
-      await waitForSettled(settled, request.profile.timeoutMs, sendAbort, signal);
+      await waitForSettled(
+        settled,
+        request.profile.timeoutMs,
+        sendAbort,
+        signal,
+        process.waitForExit(),
+      );
       await eventProcessing;
       if (eventError) throw eventError;
       if (terminalError) throw new AgentDriverError(terminalError, 'PI_AGENT_ERROR', true);
@@ -260,9 +266,11 @@ async function waitForSettled(
   timeoutMs: number,
   sendAbort: () => void,
   signal?: AbortSignal,
+  exit?: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
 ): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   let removeAbortListener: (() => void) | undefined;
+  let finished = false;
   try {
     const aborted = signal
       ? new Promise<never>((_, reject) => {
@@ -275,6 +283,20 @@ async function waitForSettled(
           }
         })
       : new Promise<never>(() => undefined);
+    const processExit = exit
+      ? new Promise<never>((_, reject) => {
+          void exit.then(({ code, signal: exitSignal }) => {
+            if (finished) return;
+            reject(
+              new AgentDriverError(
+                `Pi process exited before agent settled (${code ?? 'unknown'}, ${exitSignal ?? 'no signal'})`,
+                'PI_RPC_FAILED',
+                true,
+              ),
+            );
+          });
+        })
+      : new Promise<never>(() => undefined);
     await Promise.race([
       settled,
       new Promise<never>((_, reject) => {
@@ -284,8 +306,10 @@ async function waitForSettled(
         }, timeoutMs);
       }),
       aborted,
+      processExit,
     ]);
   } finally {
+    finished = true;
     if (timer) clearTimeout(timer);
     removeAbortListener?.();
   }

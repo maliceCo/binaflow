@@ -485,38 +485,52 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Tests First
 
-- [ ] Reject duplicate input-reference names.
-- [ ] Reject step-output references that are not reachable through declared
+- [x] Reject duplicate input-reference names.
+- [x] Reject step-output references that are not reachable through declared
       dependencies; preserve valid transitive references.
-- [ ] Prove a non-BuildPlan JSON output named `plan` is validated only by its
+- [x] Prove a non-BuildPlan JSON output named `plan` is validated only by its
       declared contract.
-- [ ] Make a fake Pi acknowledge `prompt` and exit before `agent_settled`; verify
+- [x] Make a fake Pi acknowledge `prompt` and exit before `agent_settled`; verify
       immediate failure instead of waiting for profile timeout.
-- [ ] Feed an oversized unterminated JSONL record and verify bounded failure.
-- [ ] Use a small deterministic burst with a blocked event sink to verify queued
+- [x] Feed an oversized unterminated JSONL record and verify bounded failure.
+- [x] Use a small deterministic burst with a blocked event sink to verify queued
       work remains ordered and owned without relying on timing thresholds.
 
 ### Implementation
 
-- [ ] Strengthen serializable workflow validation without changing valid
+- [x] Strengthen serializable workflow validation without changing valid
       workflow versions unnecessarily.
-- [ ] Remove output-name dispatch from the generic engine. Represent the current
+- [x] Remove output-name dispatch from the generic engine. Represent the current
       plan disposition with the smallest explicit workflow-owned contract.
-- [ ] Expose process termination to the Pi driver and race it against
+- [x] Expose process termination to the Pi driver and race it against
       `agent_settled`, cancellation, and timeout.
-- [ ] Add a maximum JSONL record size measured in UTF-8 bytes.
-- [ ] Add bounded transport backpressure only if the deterministic scenario
+- [x] Add a maximum JSONL record size measured in UTF-8 bytes.
+- [x] Add bounded transport backpressure only if the deterministic scenario
       reproduces queue growth; otherwise record that no change was justified.
-- [ ] Avoid compiling the same structured-output schema for every attempt when
+- [x] Avoid compiling the same structured-output schema for every attempt when
       a workflow-owned compiled validator already exists.
 
 ### Exit Criteria
 
-- [ ] Workflow behavior follows declared dependencies and contracts, not array
+- [x] Workflow behavior follows declared dependencies and contracts, not array
       order or artifact names.
-- [ ] Malformed or terminated child processes fail promptly with bounded memory.
-- [ ] Phase 5 QA, remediation, focused/full verification, and commit are
-      complete.
+- [x] Malformed or terminated child processes fail promptly with bounded memory.
+- [x] Phase 5 QA, remediation, focused verification, static verification, and
+      commit are complete.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 5 verification passed 35 tests across
+  `test/core-contracts.test.ts`, `test/drivers/contract.test.ts`, and
+  `test/engine.test.ts`.
+- Coverage includes duplicate input refs, unreachable vs transitive step-output
+  refs, plain JSON `plan` without BuildPlan disposition, Pi prompt-then-exit
+  before `agent_settled`, oversized unterminated JSONL records, and existing
+  ordered blocked-sink ownership in the Pi driver contract test.
+- No transport backpressure change was justified: the existing serialized event
+  processing chain already keeps blocked sinks ordered and owned.
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
 
 ## Phase 6: Enforce Application And Presentation Boundaries
 

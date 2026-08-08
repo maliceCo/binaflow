@@ -55,6 +55,7 @@ export interface StepOutputDefinition {
   kind: 'artifact';
   format: 'json' | 'text';
   schema?: Record<string, unknown>;
+  disposition?: 'build-plan';
 }
 
 export function validateWorkflowDefinition(
@@ -96,6 +97,12 @@ export function validateWorkflowDefinition(
     if (new Set(step.outputs.map((output) => output.name)).size !== step.outputs.length) {
       errors.push(`step ${step.id} has duplicate output names`);
     }
+    if (
+      new Set(step.inputReferences.map((reference) => reference.name)).size !==
+      step.inputReferences.length
+    ) {
+      errors.push(`step ${step.id} has duplicate input reference names`);
+    }
   }
 
   for (const step of stepsById.values()) {
@@ -104,6 +111,7 @@ export function validateWorkflowDefinition(
         errors.push(`step ${step.id} depends on unknown step ${dependency}`);
     }
 
+    const reachable = reachableDependencies(step.id, stepsById);
     for (const reference of step.inputReferences) {
       const source = reference.source;
       if (source.kind === 'workflow-input') {
@@ -116,6 +124,10 @@ export function validateWorkflowDefinition(
           errors.push(`step ${step.id} references unknown source step ${source.stepId}`);
         } else if (!sourceStep.outputs.some((output) => output.name === source.output)) {
           errors.push(`step ${step.id} references unknown output ${source.output}`);
+        } else if (!reachable.has(source.stepId)) {
+          errors.push(
+            `step ${step.id} references output from ${source.stepId} which is not reachable through dependsOn`,
+          );
         }
       }
     }
@@ -165,6 +177,19 @@ function hasDependencyCycle(stepsById: Map<string, AgentStep>): boolean {
   return [...stepsById.keys()].some(visit);
 }
 
+function reachableDependencies(stepId: string, stepsById: Map<string, AgentStep>): Set<string> {
+  const reachable = new Set<string>();
+  const stack = [...(stepsById.get(stepId)?.dependsOn ?? [])];
+  while (stack.length > 0) {
+    const dependency = stack.pop();
+    if (!dependency || reachable.has(dependency)) continue;
+    reachable.add(dependency);
+    const step = stepsById.get(dependency);
+    if (step) stack.push(...step.dependsOn);
+  }
+  return reachable;
+}
+
 function isAgentStep(value: unknown): value is AgentStep {
   if (!isRecord(value)) return false;
   if (
@@ -199,7 +224,8 @@ function isStepOutputDefinition(value: unknown): value is StepOutputDefinition {
     isRecord(value) &&
     isNonEmptyString(value.name) &&
     value.kind === 'artifact' &&
-    (value.format === 'json' || value.format === 'text')
+    (value.format === 'json' || value.format === 'text') &&
+    (value.disposition === undefined || value.disposition === 'build-plan')
   );
 }
 

@@ -131,6 +131,7 @@ export const planBuildWorkflow: WorkflowDefinition = {
           kind: 'artifact',
           format: 'json',
           schema: buildPlanSchema as unknown as Record<string, unknown>,
+          disposition: 'build-plan',
         },
       ],
     },

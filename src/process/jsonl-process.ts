@@ -2,6 +2,10 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 
+export const MAX_JSONL_RECORD_BYTES = 1024 * 1024;
+const MAX_STDERR_BYTES = 64 * 1024;
+const PROCESS_TERMINATION_GRACE_MS = 1_000;
+
 export type JsonObject = Record<string, unknown>;
 
 export interface JsonlProcessOptions {
@@ -35,8 +39,11 @@ export class JsonlProcess {
   private readonly exitPromise: Promise<void>;
   private resolveExit!: () => void;
   private stdoutBuffer = '';
+  private stdoutBufferBytes = 0;
   private stderrText = '';
   private closed = false;
+  private exitCode: number | null = null;
+  private exitSignal: NodeJS.Signals | null = null;
 
   constructor(options: JsonlProcessOptions) {
     this.exitPromise = new Promise<void>((resolve) => {
@@ -68,6 +75,8 @@ export class JsonlProcess {
       this.resolveExit();
     });
     this.child.on('exit', (code, signal) => {
+      this.exitCode = code;
+      this.exitSignal = signal;
       this.resolveExit();
       if (!this.closed) {
         this.fail(
@@ -75,6 +84,13 @@ export class JsonlProcess {
         );
       }
     });
+  }
+
+  waitForExit(): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+    return this.exitPromise.then(() => ({
+      code: this.exitCode ?? this.child.exitCode,
+      signal: this.exitSignal ?? this.child.signalCode,
+    }));
   }
 
   get stderr(): string {
@@ -148,11 +164,23 @@ export class JsonlProcess {
   }
 
   private readStdout(chunk: string, final = false): void {
-    this.stdoutBuffer += chunk;
+    if (chunk.length > 0) {
+      this.stdoutBuffer += chunk;
+      this.stdoutBufferBytes += Buffer.byteLength(chunk, 'utf8');
+      if (this.stdoutBufferBytes > MAX_JSONL_RECORD_BYTES) {
+        this.stdoutBuffer = '';
+        this.stdoutBufferBytes = 0;
+        this.fail(
+          new Error(`JSONL record exceeded maximum size of ${MAX_JSONL_RECORD_BYTES} UTF-8 bytes`),
+        );
+        return;
+      }
+    }
     let newlineIndex = this.stdoutBuffer.indexOf('\n');
     while (newlineIndex >= 0) {
       let line = this.stdoutBuffer.slice(0, newlineIndex);
       this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
+      this.stdoutBufferBytes = Buffer.byteLength(this.stdoutBuffer, 'utf8');
       if (line.endsWith('\r')) line = line.slice(0, -1);
       this.readLine(line);
       newlineIndex = this.stdoutBuffer.indexOf('\n');
@@ -162,6 +190,7 @@ export class JsonlProcess {
         ? this.stdoutBuffer.slice(0, -1)
         : this.stdoutBuffer;
       this.stdoutBuffer = '';
+      this.stdoutBufferBytes = 0;
       this.readLine(line);
     }
   }
@@ -231,9 +260,6 @@ export class JsonlProcess {
     }
   }
 }
-
-const MAX_STDERR_BYTES = 64 * 1024;
-const PROCESS_TERMINATION_GRACE_MS = 1_000;
 
 function listenerError(kind: 'message' | 'stderr', error: unknown): Error {
   return new Error(

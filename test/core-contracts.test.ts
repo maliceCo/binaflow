@@ -23,6 +23,47 @@ describe('plan-build contracts', () => {
     expect(() => validateWorkflowDefinition(cyclic)).toThrow('dependency cycle');
   });
 
+  it('rejects duplicate input-reference names and unreachable step-output refs', () => {
+    const duplicateInputs = structuredClone(planBuildWorkflow);
+    duplicateInputs.steps[1]!.inputReferences.push({
+      name: 'objective',
+      source: { kind: 'workflow-input', key: 'objective' },
+    });
+    expect(() => validateWorkflowDefinition(duplicateInputs)).toThrow(
+      'duplicate input reference names',
+    );
+
+    const unreachable = structuredClone(planBuildWorkflow);
+    unreachable.steps.push({
+      kind: 'agent',
+      id: 'extra',
+      profile: 'builder',
+      prompt: 'extra',
+      dependsOn: [],
+      inputReferences: [
+        { name: 'plan', source: { kind: 'step-output', stepId: 'plan', output: 'plan' } },
+      ],
+      outputs: [{ name: 'result', kind: 'artifact', format: 'text' }],
+    });
+    expect(() => validateWorkflowDefinition(unreachable)).toThrow(
+      'not reachable through dependsOn',
+    );
+
+    const transitive = structuredClone(planBuildWorkflow);
+    transitive.steps.push({
+      kind: 'agent',
+      id: 'verify',
+      profile: 'builder',
+      prompt: 'verify',
+      dependsOn: ['build'],
+      inputReferences: [
+        { name: 'plan', source: { kind: 'step-output', stepId: 'plan', output: 'plan' } },
+      ],
+      outputs: [{ name: 'result', kind: 'artifact', format: 'text' }],
+    });
+    expect(() => validateWorkflowDefinition(transitive)).not.toThrow();
+  });
+
   it('accepts the planner contract and rejects incomplete output', () => {
     const plan = {
       decision: 'build',
