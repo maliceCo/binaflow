@@ -63,7 +63,7 @@ describe('SQLite migrations', () => {
     const columns = verification.prepare('PRAGMA table_info(step_runs)').all() as Array<{
       name: string;
     }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
     expect(columns.map((column) => column.name)).toContain('profile_json');
     const indexes = verification
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'runs_by_%'")
@@ -94,7 +94,7 @@ describe('SQLite migrations', () => {
     const versions = verification
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as Array<{ version: number }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
     verification.close();
     reopened.close();
   });

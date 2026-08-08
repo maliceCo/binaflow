@@ -510,7 +510,7 @@ async function createFailureConfig(
     tools: ['read'],
     workspaceMode: 'read-only',
     timeoutMs: 1000,
-    retryLimit: 0,
+    retryLimit: 1,
   };
   await writeFile(
     join(directory, '.binaflow', 'config.json'),

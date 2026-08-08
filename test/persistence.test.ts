@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +34,10 @@ describe('local persistence', () => {
     };
 
     await store.createRun(run);
-    await store.saveRun({ ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' });
+    await store.saveRun(
+      { ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' },
+      'pending',
+    );
 
     const pendingStep: StepRun = {
       runId: run.id,
@@ -88,11 +92,14 @@ describe('local persistence', () => {
     expect(await artifactStore.read(savedArtifacts[0]!)).toBe(planContent);
     expect(await reopenedStore.getEvents(run.id)).toEqual([event]);
     await expect(
-      reopenedStore.saveRun({
-        ...savedRun!,
-        status: 'pending',
-        updatedAt: '2026-01-01T00:00:04.000Z',
-      }),
+      reopenedStore.saveRun(
+        {
+          ...savedRun!,
+          status: 'pending',
+          updatedAt: '2026-01-01T00:00:04.000Z',
+        },
+        'running',
+      ),
     ).rejects.toThrow('Invalid run status transition');
     reopenedStore.close();
   });
@@ -210,8 +217,14 @@ describe('local persistence', () => {
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
     await store.createRun(run);
-    await store.saveRun({ ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' });
-    await store.saveRun({ ...run, status: 'waiting', updatedAt: '2026-01-01T00:00:02.000Z' });
+    await store.saveRun(
+      { ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' },
+      'pending',
+    );
+    await store.saveRun(
+      { ...run, status: 'waiting', updatedAt: '2026-01-01T00:00:02.000Z' },
+      'running',
+    );
     const waitingStep: StepRun = {
       runId: run.id,
       stepId: 'research-approval',
@@ -309,6 +322,8 @@ describe('local persistence', () => {
     };
     await store.saveStepRun(pending);
 
+    await expect(store.markRunInterrupted(run.id)).rejects.toThrow('owned by a live execution');
+    await store.releaseExecution(run.id);
     const interrupted = await store.markRunInterrupted(run.id);
 
     expect(interrupted?.status).toBe('interrupted');
@@ -320,5 +335,90 @@ describe('local persistence', () => {
     expect(await store.getArtifacts(run.id)).toEqual([planArtifact]);
     expect(await store.markRunInterrupted(run.id)).toBeUndefined();
     store.close();
+  });
+
+  it('does not let a second local owner recover a live run', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-live-owner-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'run.db');
+    const owner = new SqliteRunStore(databasePath);
+    const other = new SqliteRunStore(databasePath);
+    await owner.createRun({
+      id: 'live-owner-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Stay owned',
+      status: 'failed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await owner.claimRun('live-owner-run', ['failed']);
+
+    await expect(other.markRunInterrupted('live-owner-run')).rejects.toThrow(
+      'owned by a live execution',
+    );
+    expect(await other.claimRun('live-owner-run', ['failed'])).toBeUndefined();
+    expect((await other.getRun('live-owner-run'))?.status).toBe('running');
+    owner.close();
+    other.close();
+  });
+
+  it('recovers an abandoned owner only through explicit interruption', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-abandoned-owner-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'run.db');
+    const owner = new SqliteRunStore(databasePath);
+    await owner.createRun({
+      id: 'abandoned-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Recover this run',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const database = new Database(databasePath);
+    database.prepare('UPDATE run_execution_owners SET owner_pid = ?').run(999_999);
+    database.close();
+    const recovery = new SqliteRunStore(databasePath);
+
+    expect((await recovery.markRunInterrupted('abandoned-run'))?.status).toBe('interrupted');
+    expect(await recovery.claimRun('abandoned-run', ['interrupted'])).toMatchObject({
+      status: 'running',
+    });
+    owner.close();
+    recovery.close();
+  });
+
+  it('rejects a stale run transition after another writer changes its status', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-status-cas-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'run.db');
+    const first = new SqliteRunStore(databasePath);
+    const second = new SqliteRunStore(databasePath);
+    const run: WorkflowRun = {
+      id: 'status-cas-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Protect newer state',
+      status: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await first.createRun(run);
+    await first.saveRun(
+      { ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' },
+      'pending',
+    );
+
+    await expect(
+      second.saveRun(
+        { ...run, status: 'running', updatedAt: '2026-01-01T00:00:02.000Z' },
+        'pending',
+      ),
+    ).rejects.toThrow('expected status pending');
+    expect((await second.getRun(run.id))?.updatedAt).toBe('2026-01-01T00:00:01.000Z');
+    first.close();
+    second.close();
   });
 });

@@ -1,12 +1,23 @@
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
-import type { RunListPage, RunListQuery, RunStore, StepRunQueryOptions } from './run-store.js';
+import {
+  RunExecutionOwnedError,
+  RunStatusConflictError,
+  type RunListPage,
+  type RunListQuery,
+  type RunStore,
+  type StepRunQueryOptions,
+} from './run-store.js';
+
+const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
 
 export class SqliteRunStore implements RunStore {
   private readonly database: Database.Database;
+  private readonly ownerId = randomUUID();
 
   constructor(databasePath: string) {
     this.database = new Database(databasePath);
@@ -27,6 +38,7 @@ export class SqliteRunStore implements RunStore {
         )
         .run(toRunParams(run));
       for (const artifact of artifacts) this.insertArtifact(artifact);
+      if (run.status === 'running') this.acquireExecutionOwner(run.id);
     });
     transaction();
   }
@@ -58,6 +70,7 @@ export class SqliteRunStore implements RunStore {
         )
         .run(new Date().toISOString(), runId, ...statuses);
       if (result.changes !== 1) return undefined;
+      this.acquireExecutionOwner(runId);
       const row = this.database.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
         RunRow | undefined;
       return row ? fromRunRow(row) : undefined;
@@ -80,11 +93,15 @@ export class SqliteRunStore implements RunStore {
         .get(runId, approvalStep.stepId) as { status: StepRun['status'] } | undefined;
       if (!step || step.status !== 'waiting') return undefined;
 
-      this.writeStepRun(approvalStep);
       const updatedAt = new Date().toISOString();
-      this.database
-        .prepare("UPDATE runs SET status = 'running', updated_at = ? WHERE id = ?")
+      const result = this.database
+        .prepare(
+          "UPDATE runs SET status = 'running', updated_at = ? WHERE id = ? AND status = 'waiting'",
+        )
         .run(updatedAt, runId);
+      if (result.changes !== 1) return undefined;
+      this.acquireExecutionOwner(runId);
+      this.writeStepRun(approvalStep);
       return fromRunRow({ ...run, status: 'running', updated_at: updatedAt });
     });
     return transaction();
@@ -95,6 +112,9 @@ export class SqliteRunStore implements RunStore {
       const run = this.database.prepare('SELECT * FROM runs WHERE id = ?').get(runId) as
         RunRow | undefined;
       if (!run || run.status !== 'running') return undefined;
+      const owner = this.getExecutionOwner(runId);
+      if (owner && this.isLiveOwner(owner)) throw new RunExecutionOwnedError(runId);
+      this.database.prepare('DELETE FROM run_execution_owners WHERE run_id = ?').run(runId);
 
       const interruptedAt = new Date().toISOString();
       this.database
@@ -123,6 +143,12 @@ export class SqliteRunStore implements RunStore {
       return fromRunRow({ ...run, status: 'interrupted', updated_at: interruptedAt });
     });
     return transaction();
+  }
+
+  async releaseExecution(runId: string): Promise<void> {
+    this.database
+      .prepare('DELETE FROM run_execution_owners WHERE run_id = ? AND owner_id = ?')
+      .run(runId, this.ownerId);
   }
 
   async listRuns(): Promise<WorkflowRun[]> {
@@ -180,24 +206,38 @@ export class SqliteRunStore implements RunStore {
     };
   }
 
-  async saveRun(run: WorkflowRun): Promise<void> {
-    const current = this.database.prepare('SELECT status FROM runs WHERE id = ?').get(run.id) as
-      { status: WorkflowRun['status'] } | undefined;
-    if (!current) throw new Error(`Cannot update unknown run: ${run.id}`);
-    assertRunTransition(current.status, run.status);
+  async saveRun(run: WorkflowRun, expectedStatus: RunStatus): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      const current = this.database.prepare('SELECT status FROM runs WHERE id = ?').get(run.id) as
+        { status: WorkflowRun['status'] } | undefined;
+      if (!current) throw new Error(`Cannot update unknown run: ${run.id}`);
+      if (current.status !== expectedStatus) {
+        throw new RunStatusConflictError(run.id, expectedStatus, current.status);
+      }
+      assertRunTransition(expectedStatus, run.status);
+      if (expectedStatus === 'running') this.assertCurrentExecutionOwner(run.id);
+      if (run.status === 'running') this.acquireExecutionOwner(run.id);
 
-    this.database
-      .prepare(
-        `UPDATE runs
-         SET workflow_id = @workflowId,
-             workflow_version = @workflowVersion,
-             objective = @objective,
-             status = @status,
-             created_at = @createdAt,
-             updated_at = @updatedAt
-         WHERE id = @id`,
-      )
-      .run(toRunParams(run));
+      const result = this.database
+        .prepare(
+          `UPDATE runs
+            SET workflow_id = @workflowId,
+                workflow_version = @workflowVersion,
+                objective = @objective,
+                status = @status,
+                created_at = @createdAt,
+                updated_at = @updatedAt
+            WHERE id = @id AND status = @expectedStatus`,
+        )
+        .run({ ...toRunParams(run), expectedStatus });
+      if (result.changes !== 1) {
+        throw new RunStatusConflictError(run.id, expectedStatus, run.status);
+      }
+      if (run.status !== 'running') {
+        this.database.prepare('DELETE FROM run_execution_owners WHERE run_id = ?').run(run.id);
+      }
+    });
+    transaction();
   }
 
   async saveStepRun(stepRun: StepRun): Promise<void> {
@@ -357,6 +397,42 @@ export class SqliteRunStore implements RunStore {
         startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
       });
   }
+
+  private acquireExecutionOwner(runId: string): void {
+    const owner = this.getExecutionOwner(runId);
+    if (owner) {
+      if (owner.owner_id === this.ownerId) return;
+      if (this.isLiveOwner(owner)) throw new RunExecutionOwnedError(runId);
+      this.database.prepare('DELETE FROM run_execution_owners WHERE run_id = ?').run(runId);
+    }
+    this.database
+      .prepare(
+        `INSERT INTO run_execution_owners
+           (run_id, owner_id, owner_pid, owner_started_at, acquired_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(runId, this.ownerId, process.pid, PROCESS_STARTED_AT, new Date().toISOString());
+  }
+
+  private assertCurrentExecutionOwner(runId: string): void {
+    const owner = this.getExecutionOwner(runId);
+    if (!owner || owner.owner_id !== this.ownerId) throw new RunExecutionOwnedError(runId);
+  }
+
+  private getExecutionOwner(runId: string): ExecutionOwnerRow | undefined {
+    return this.database
+      .prepare('SELECT * FROM run_execution_owners WHERE run_id = ?')
+      .get(runId) as ExecutionOwnerRow | undefined;
+  }
+
+  private isLiveOwner(owner: ExecutionOwnerRow): boolean {
+    try {
+      process.kill(owner.owner_pid, 0);
+    } catch {
+      return false;
+    }
+    return owner.owner_pid !== process.pid || owner.owner_started_at === PROCESS_STARTED_AT;
+  }
 }
 
 interface RunRow {
@@ -401,6 +477,14 @@ interface ArtifactRow {
   path: string;
   media_type: string;
   size_bytes: number;
+}
+
+interface ExecutionOwnerRow {
+  run_id: string;
+  owner_id: string;
+  owner_pid: number;
+  owner_started_at: string;
+  acquired_at: string;
 }
 
 function toRunParams(run: WorkflowRun): Record<string, unknown> {

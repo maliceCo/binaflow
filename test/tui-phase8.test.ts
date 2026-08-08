@@ -238,6 +238,10 @@ describe('Phase 8 attached history and inspection UI', () => {
         ],
         getArtifacts: async () => [],
         countEvents: async () => 0,
+        claimRun: async () => ({ ...failedRun, status: 'running' as const }),
+        claimApproval: async () => undefined,
+        markRunInterrupted: async () => undefined,
+        releaseExecution: async () => undefined,
       } as unknown as RunStore,
       artifacts: {} as ArtifactStore,
       engine: {
@@ -395,6 +399,10 @@ function applicationContext(
           : [step('plan', 'completed')],
       getArtifacts: async () => approvalArtifacts,
       countEvents: async () => 2,
+      claimRun: async () => ({ ...runValue, status: 'running' as const }),
+      claimApproval: async () => undefined,
+      markRunInterrupted: async () => undefined,
+      releaseExecution: async () => undefined,
     } as unknown as RunStore,
     artifacts: {
       readBounded: async (candidate: ArtifactReference) => {

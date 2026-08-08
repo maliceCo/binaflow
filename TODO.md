@@ -304,35 +304,51 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Tests First
 
-- [ ] Verify incompatible resume rejects without changing run status, steps,
+- [x] Verify incompatible resume rejects without changing run status, steps,
       approvals, artifacts, or timestamps.
-- [ ] Verify incompatible approval rejects before persisting its decision.
-- [ ] Using independent application/store instances, verify a live run cannot
+- [x] Verify incompatible approval rejects before persisting its decision.
+- [x] Using independent application/store instances, verify a live run cannot
       be marked interrupted or resumed by a second process.
-- [ ] Verify a genuinely abandoned run can still be recovered explicitly.
-- [ ] Verify concurrent run transitions cannot overwrite a newer state.
+- [x] Verify a genuinely abandoned run can still be recovered explicitly.
+- [x] Verify concurrent run transitions cannot overwrite a newer state.
 
 ### Implementation
 
-- [ ] Check workflow ID, workflow version, persisted input, profile validity,
+- [x] Check workflow ID, workflow version, persisted input, profile validity,
       retry eligibility, and approval preconditions before claiming a run.
-- [ ] Keep engine-side validation as defense in depth.
-- [ ] Replace optional `claimRun` and `claimApproval` fallbacks with the required
+- [x] Keep engine-side validation as defense in depth.
+- [x] Replace optional `claimRun` and `claimApproval` fallbacks with the required
       transactional store contract.
-- [ ] Add the smallest local execution-ownership mechanism that can distinguish
+- [x] Add the smallest local execution-ownership mechanism that can distinguish
       a live owner from an abandoned attached run. Keep it local and do not turn
       it into a lease service or daemon.
-- [ ] Allow `markRunInterrupted` only after proving that no live execution owns
+- [x] Allow `markRunInterrupted` only after proving that no live execution owns
       the run.
-- [ ] Make run status writes compare-and-set against the expected previous
+- [x] Make run status writes compare-and-set against the expected previous
       status and reject stale writers.
 
 ### Exit Criteria
 
-- [ ] Validation failures are non-mutating.
-- [ ] At most one local process can execute or recover a run at a time.
-- [ ] Phase 2 QA, remediation, focused/full verification, and commit are
-      complete.
+- [x] Validation failures are non-mutating.
+- [x] At most one local process can execute or recover a run at a time.
+- [x] Phase 2 QA, remediation, focused verification, static verification, and
+      commit are complete. Full-suite verification remains blocked only by the
+      recorded legacy TUI and CLI test failures; no Phase 2-focused failure was
+      observed.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 2 tests passed: 46 tests across application
+  operations, persistence, migrations, and engine suites. They cover
+  non-mutating resume and approval preflights, retry/profile validation,
+  transactional claims, live-owner rejection, explicit abandoned recovery, and
+  compare-and-set status transitions.
+- On 2026-08-08, `pnpm run format:check`, `pnpm run lint`,
+  `pnpm run typecheck`, and `pnpm run build` passed.
+- On 2026-08-08, the full suite reached 198 passed, 1 skipped, and 3 failures.
+  The failures are the pre-existing stale legacy TUI setup assertion and the
+  intermittent legacy TUI refresh-coalescing and CLI incremental-input timeouts;
+  no Phase 2-focused test failed.
 
 ## Phase 3: Repair Step And Research Checkpoints
 

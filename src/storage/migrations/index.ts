@@ -4,8 +4,9 @@ import { initialMigration } from './001-initial.js';
 import { currentMigration } from './002-current.js';
 import { profileSnapshotMigration } from './003-profile-snapshot.js';
 import { runHistoryMigration } from './004-run-history.js';
+import { executionOwnershipMigration } from './005-execution-ownership.js';
 
-const currentSchemaVersion = 4;
+const currentSchemaVersion = 5;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   database.exec(`
@@ -56,6 +57,13 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     database.transaction(() => {
       database.exec(runHistoryMigration);
       recordMigration(database, 4);
+    })();
+  }
+
+  if (version < 5) {
+    database.transaction(() => {
+      database.exec(executionOwnershipMigration);
+      recordMigration(database, 5);
     })();
   }
 

@@ -174,11 +174,15 @@ describe('application operations', () => {
     const store = {
       getRun: async () => ({ ...previous, status }),
       getArtifacts: async () => [],
+      getStepRuns: async () => [
+        { runId: previous.id, stepId: 'plan', profile: 'planner', status: 'pending', attempt: 1 },
+      ],
       claimRun: async () => {
         if (status !== 'failed') return undefined;
         status = 'running';
         return { ...previous, status: 'running' as const };
       },
+      releaseExecution: async () => undefined,
     } as unknown as RunStore;
     const context = {
       config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
@@ -230,6 +234,115 @@ describe('application operations', () => {
     expect(claimRun).not.toHaveBeenCalled();
   });
 
+  it('rejects an incompatible resume without mutating persisted state', async () => {
+    const previous = {
+      ...persistedRun(),
+      status: 'failed' as const,
+      workflowVersion: 2,
+      updatedAt: '2026-01-01T00:00:05.000Z',
+    };
+    const steps: StepRun[] = [
+      {
+        runId: previous.id,
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'failed',
+        attempt: 1,
+        error: { message: 'retry me', retryable: true },
+      },
+      approvalStep(previous.id),
+    ];
+    const artifacts: ArtifactReference[] = [
+      {
+        id: 'input',
+        runId: previous.id,
+        stepId: 'run',
+        name: 'input',
+        kind: 'json',
+        path: '/tmp/input.json',
+        mediaType: 'application/json',
+        sizeBytes: 32,
+      },
+    ];
+    const claimRun = vi.fn(async () => ({ ...previous, status: 'running' as const }));
+    const context = applicationContext(
+      { planner: profile('planner'), builder: profile('builder') },
+      vi.fn(async () => previous),
+      {
+        getRun: async () => previous,
+        getStepRuns: async () => steps,
+        getArtifacts: async () => artifacts,
+        claimRun,
+      },
+    );
+    context.artifacts = {
+      read: vi.fn(async () => JSON.stringify({ objective: previous.objective })),
+    } as unknown as ArtifactStore;
+    const before = JSON.stringify({ previous, steps, artifacts });
+
+    await expect(resumeWorkflow(context, { runId: previous.id })).rejects.toThrow(
+      'workflow version 2; installed version is 1',
+    );
+    expect(claimRun).not.toHaveBeenCalled();
+    expect(JSON.stringify({ previous, steps, artifacts })).toBe(before);
+  });
+
+  it('rejects a non-retryable failed run before claiming it', async () => {
+    const previous = { ...persistedRun(), status: 'failed' as const };
+    const claimRun = vi.fn(async () => ({ ...previous, status: 'running' as const }));
+    const context = applicationContext(
+      { planner: profile('planner'), builder: profile('builder') },
+      vi.fn(async () => previous),
+      {
+        getRun: async () => previous,
+        getStepRuns: async () => [
+          {
+            runId: previous.id,
+            stepId: 'plan',
+            profile: 'planner',
+            status: 'failed',
+            attempt: 1,
+            error: { message: 'permanent', retryable: false },
+          },
+        ],
+        claimRun,
+      },
+    );
+
+    await expect(resumeWorkflow(context, { runId: previous.id })).rejects.toThrow(
+      'has no retryable failed',
+    );
+    expect(claimRun).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid execution profile before claiming a retry', async () => {
+    const previous = { ...persistedRun(), status: 'failed' as const };
+    const claimRun = vi.fn(async () => ({ ...previous, status: 'running' as const }));
+    const context = applicationContext(
+      { planner: profile('planner'), builder: { ...profile('builder'), timeoutMs: 0 } },
+      vi.fn(async () => previous),
+      {
+        getRun: async () => previous,
+        getStepRuns: async () => [
+          {
+            runId: previous.id,
+            stepId: 'build',
+            profile: 'builder',
+            status: 'failed',
+            attempt: 1,
+            error: { message: 'retry me', retryable: true },
+          },
+        ],
+        claimRun,
+      },
+    );
+
+    await expect(resumeWorkflow(context, { runId: previous.id })).rejects.toThrow(
+      'Profile builder has invalid configuration',
+    );
+    expect(claimRun).not.toHaveBeenCalled();
+  });
+
   it('marks a claimed run interrupted when execution fails before starting', async () => {
     const previous = { ...persistedRun(), status: 'failed' as const };
     const markRunInterruptedSpy = vi.fn(async () => ({
@@ -245,6 +358,7 @@ describe('application operations', () => {
         getRun: async () => ({ ...previous, status: 'running' as const }),
         claimRun: async () => ({ ...previous, status: 'running' as const }),
         markRunInterrupted: markRunInterruptedSpy,
+        releaseExecution: async () => undefined,
       },
     );
 
@@ -375,6 +489,12 @@ describe('application operations', () => {
         status = 'running';
         return { ...previous, status: 'running' as const };
       },
+      claimApproval: async () => {
+        if (status !== 'waiting') return undefined;
+        status = 'running';
+        return { ...previous, status: 'running' as const };
+      },
+      releaseExecution: async () => undefined,
     } as unknown as RunStore;
     const context = {
       config: {
@@ -435,6 +555,38 @@ describe('application operations', () => {
     expect(saveStepRun).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
+
+  it('rejects incompatible approval before persisting its decision', async () => {
+    const previous = {
+      ...persistedRun(),
+      workflowId: researchPlanBuildWorkflow.id,
+      workflowVersion: 2,
+      status: 'waiting' as const,
+    };
+    const claimApproval = vi.fn(async () => previous);
+    const saveStepRun = vi.fn(async () => undefined);
+    const context = applicationContext(
+      {
+        researcher: profile('researcher'),
+        'research-reviewer': profile('reviewer'),
+        planner: profile('planner'),
+        builder: profile('builder'),
+      },
+      vi.fn(async () => previous),
+      {
+        getRun: async () => previous,
+        getStepRuns: async () => [approvalStep(previous.id)],
+        claimApproval,
+        saveStepRun,
+      },
+    );
+
+    await expect(
+      decideApproval(context, { runId: previous.id, decision: 'approved' }),
+    ).rejects.toThrow('workflow version 2; installed version is 1');
+    expect(claimApproval).not.toHaveBeenCalled();
+    expect(saveStepRun).not.toHaveBeenCalled();
+  });
 });
 
 function applicationContext(
@@ -443,6 +595,17 @@ function applicationContext(
   storeOverrides: Partial<RunStore> = {},
 ): ApplicationContext {
   const getRun = storeOverrides.getRun ?? (async () => undefined);
+  const getStepRuns =
+    storeOverrides.getStepRuns ??
+    (async (runId: string): Promise<StepRun[]> => [
+      {
+        runId,
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'pending',
+        attempt: 1,
+      },
+    ]);
   const claimRun =
     storeOverrides.claimRun ??
     (async (runId: string, eligibleStatuses: readonly WorkflowRun['status'][]) => {
@@ -454,8 +617,15 @@ function applicationContext(
   const store = {
     getRun,
     getArtifacts: async () => [],
-    getStepRuns: async () => [],
+    getStepRuns,
     claimRun,
+    claimApproval: async (runId: string, approvalStep: StepRun) => {
+      const run = await getRun(runId);
+      if (!run || run.status !== 'waiting') return undefined;
+      await storeOverrides.saveStepRun?.(approvalStep);
+      return { ...run, status: 'running' as const };
+    },
+    releaseExecution: async () => undefined,
     ...storeOverrides,
   } as unknown as RunStore;
   return {

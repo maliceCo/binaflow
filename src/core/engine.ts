@@ -64,6 +64,10 @@ export class WorkflowEngine {
     }
     const input = await this.resolveInput(request);
     validateWorkflowInput(workflow, input);
+    if (request.resume) {
+      for (const step of workflow.steps)
+        resolveProfile({ profiles: request.profiles }, step.profile);
+    }
 
     if (workflow.id === researchPlanBuildWorkflow.id) {
       return this.executeResearchPlanBuild(workflow, request, input);
@@ -359,15 +363,43 @@ export class WorkflowEngine {
       if (existing.status === 'completed') return existing;
       if (existing.status === 'cancelled') throw new Error(`Run ${existing.id} was cancelled`);
 
+      if (existing.status === 'failed' || existing.status === 'interrupted') {
+        const steps = await this.runStore.getStepRuns(existing.id);
+        if (
+          !steps.some(
+            (step) =>
+              step.status === 'pending' ||
+              step.status === 'interrupted' ||
+              (step.status === 'failed' && step.error?.retryable === true),
+          )
+        ) {
+          throw new Error(
+            `Run ${existing.id} has no retryable failed, interrupted, or pending steps`,
+          );
+        }
+      }
+
       let run = existing;
       if (run.status === 'running') {
         if (!request.runClaimed) throw new Error(`Run ${run.id} is already running`);
         return run;
       }
-      if (run.status === 'failed' || run.status === 'interrupted') {
-        run = await this.saveRunStatus(run, 'pending');
+      if (request.runClaimed) {
+        if (run.status === 'failed' || run.status === 'interrupted') {
+          run = await this.saveRunStatus(run, 'pending');
+        }
+        return this.saveRunStatus(run, 'running');
       }
-      return this.saveRunStatus(run, 'running');
+      const claimed = await this.runStore.claimRun(run.id, [run.status]);
+      if (!claimed) {
+        const current = await this.runStore.getRun(run.id);
+        if (!current) throw new Error(`Unknown run: ${run.id}`);
+        if (current.status === 'running') throw new Error(`Run ${run.id} is already running`);
+        throw new Error(
+          `Run ${run.id} is not eligible for execution from status ${current.status}`,
+        );
+      }
+      return claimed;
     }
 
     if (request.objective === undefined || typeof input.objective !== 'string') {
@@ -668,8 +700,8 @@ export class WorkflowEngine {
     status: WorkflowRun['status'],
   ): Promise<WorkflowRun> {
     const updated = { ...run, status, updatedAt: new Date().toISOString() };
-    if (run.status === 'pending') await this.runStore.saveRun(updated);
-    else if (run.status !== status) await this.runStore.saveRun(updated);
+    if (run.status === 'pending') await this.runStore.saveRun(updated, run.status);
+    else if (run.status !== status) await this.runStore.saveRun(updated, run.status);
     return updated;
   }
 

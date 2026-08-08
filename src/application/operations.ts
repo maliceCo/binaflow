@@ -1,7 +1,8 @@
 import type { ArtifactStore } from '../artifacts/artifact-store.js';
-import type { AgentProfile, BinaflowConfig } from '../config.js';
+import { validateAgentProfile, type AgentProfile, type BinaflowConfig } from '../config.js';
 import {
   validateWorkflowInput,
+  WorkflowVersionMismatchError,
   type ExecuteWorkflowRequest,
   type WorkflowEngine,
 } from '../core/engine.js';
@@ -69,7 +70,9 @@ export async function resumeWorkflow(
   }
 
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
+  validatePersistedRunCompatibility(previous, workflow);
   await preflightPersistedInput(context, previous, workflow);
+  await validateResumeEligibility(context, previous);
   await claimRunForExecution(context, previous.id, ['pending', 'failed', 'interrupted']);
   const run = await executeClaimedWorkflow(context, workflow, {
     runId: request.runId,
@@ -431,6 +434,7 @@ export async function decideApproval(
   const previous = await context.store.getRun(request.runId);
   if (!previous) throw new Error(`Unknown run: ${request.runId}`);
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
+  validatePersistedRunCompatibility(previous, workflow);
   await preflightPersistedInput(context, previous, workflow);
   if (!workflow.approval) throw new Error(`Workflow ${workflow.id} has no approval gate`);
   if (previous.status !== 'waiting') {
@@ -456,12 +460,12 @@ export async function decideApproval(
       decidedAt: new Date().toISOString(),
     },
   };
-  if (typeof context.store.claimApproval === 'function') {
-    const claimed = await context.store.claimApproval(request.runId, decisionStep);
-    if (!claimed) throw new Error(`Run ${request.runId} is no longer waiting for approval`);
-  } else {
-    await claimRunForExecution(context, request.runId, ['waiting']);
-    await context.store.saveStepRun(decisionStep);
+  const claimed = await context.store.claimApproval(request.runId, decisionStep);
+  if (!claimed) {
+    const current = await context.store.getRun(request.runId);
+    if (!current) throw new Error(`Unknown run: ${request.runId}`);
+    if (current.status === 'running') throw new Error(`Run ${request.runId} is already running`);
+    throw new Error(`Run ${request.runId} is no longer waiting for approval`);
   }
 
   return executeClaimedWorkflow(context, workflow, {
@@ -479,17 +483,7 @@ async function claimRunForExecution(
   runId: string,
   eligibleStatuses: readonly WorkflowRun['status'][],
 ): Promise<WorkflowRun> {
-  const claimRun = context.store.claimRun;
-  if (typeof claimRun !== 'function') {
-    const current = await context.store.getRun(runId);
-    if (!current) throw new Error(`Unknown run: ${runId}`);
-    if (current.status === 'running') throw new Error(`Run ${runId} is already running`);
-    if (!eligibleStatuses.includes(current.status)) {
-      throw new Error(`Run ${runId} is not eligible for execution from status ${current.status}`);
-    }
-    return { ...current, status: 'running' };
-  }
-  const claimed = await claimRun.call(context.store, runId, eligibleStatuses);
+  const claimed = await context.store.claimRun(runId, eligibleStatuses);
   if (claimed) return claimed;
   const current = await context.store.getRun(runId);
   if (!current) throw new Error(`Unknown run: ${runId}`);
@@ -538,6 +532,32 @@ function resolveAndValidateWorkflow(
   return workflow;
 }
 
+function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowDefinition): void {
+  if (run.workflowId !== workflow.id) {
+    throw new Error(`Run ${run.id} belongs to workflow ${run.workflowId}`);
+  }
+  if (run.workflowVersion !== workflow.version) {
+    throw new WorkflowVersionMismatchError(run.id, run.workflowVersion, workflow.version);
+  }
+}
+
+async function validateResumeEligibility(
+  context: Pick<ApplicationContext, 'store'>,
+  run: WorkflowRun,
+): Promise<void> {
+  if (run.status !== 'failed' && run.status !== 'interrupted') return;
+  const steps = await context.store.getStepRuns(run.id);
+  const retryable = steps.some(
+    (step) =>
+      step.status === 'pending' ||
+      step.status === 'interrupted' ||
+      (step.status === 'failed' && step.error?.retryable === true),
+  );
+  if (!retryable) {
+    throw new Error(`Run ${run.id} has no retryable failed, interrupted, or pending steps`);
+  }
+}
+
 async function preflightPersistedInput(
   context: Pick<ApplicationContext, 'artifacts' | 'store'>,
   run: WorkflowRun,
@@ -571,9 +591,11 @@ async function executeClaimedWorkflow(
   try {
     return await context.engine.execute(workflow, request);
   } catch (error) {
-    // The claim has already made this run running. Use the storage compare-and-set
-    // directly so a stale read cannot leave a failed pre-execution claim stranded.
-    await context.store.markRunInterrupted(request.runId!);
+    // The engine has stopped owning the run. Release its local marker before the
+    // explicit recovery transition, leaving the store to perform the CAS.
+    if (!request.runId) throw error;
+    await context.store.releaseExecution(request.runId);
+    await context.store.markRunInterrupted(request.runId);
     throw error;
   }
 }
@@ -592,5 +614,11 @@ export function validateWorkflowProfiles(
     throw new Error(
       `Missing agent profile(s): ${missing.join(', ')}. Add them to .binaflow/config.json`,
     );
+  }
+  for (const name of required) {
+    const validation = validateAgentProfile(name, profiles[name]);
+    if (validation.errors.length > 0) {
+      throw new Error(`Profile ${name} has invalid configuration: ${validation.errors.join('; ')}`);
+    }
   }
 }
