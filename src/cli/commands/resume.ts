@@ -1,5 +1,11 @@
 import type { Command } from 'commander';
-import { exitCodeFor, machineMode, writeJsonl, writeJsonlFailure } from '../protocol.js';
+import {
+  exitCodeFor,
+  machineMode,
+  runStartedRecord,
+  writeJsonl,
+  writeJsonlFailure,
+} from '../protocol.js';
 
 export function registerResumeCommand(cli: Command): void {
   cli
@@ -34,28 +40,14 @@ export function registerResumeCommand(cli: Command): void {
                 );
               }
               if (mode === 'jsonl') {
-                writeJsonl({
-                  protocol: 'binaflow-cli',
-                  version: 1,
-                  type: 'run.started',
-                  command: 'resume',
-                  runId: startedRun.id,
-                  workflowId: startedRun.workflowId,
-                });
+                writeJsonl(runStartedRecord('resume', startedRun.id, startedRun.workflowId));
               }
             },
           });
           const run = result.run;
           if (mode === 'jsonl' && result.alreadyCompleted) {
             started = true;
-            writeJsonl({
-              protocol: 'binaflow-cli',
-              version: 1,
-              type: 'run.started',
-              command: 'resume',
-              runId: run.id,
-              workflowId: run.workflowId,
-            });
+            writeJsonl(runStartedRecord('resume', run.id, run.workflowId));
           }
           if (mode) await printMachineRunResult('resume', run, context, mode);
           else {

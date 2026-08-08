@@ -606,27 +606,49 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ## Phase 7: Normalize CLI Contracts
 
-- [ ] Reject unsupported JSONL modes before loading configuration, opening
+- [x] Reject unsupported JSONL modes before loading configuration, opening
       SQLite, or reading artifacts.
-- [ ] Determine machine output mode through argument parsing that respects the
+- [x] Determine machine output mode through argument parsing that respects the
       `--` delimiter, not `process.argv.includes`.
-- [ ] Use the CLI usage-error contract and exit code `2` for invalid update
+- [x] Use the CLI usage-error contract and exit code `2` for invalid update
       options.
-- [ ] Consolidate only the repeated protocol record constructors whose shapes
+- [x] Consolidate only the repeated protocol record constructors whose shapes
       must remain synchronized across run, resume, approve, and reject.
-- [ ] Verify human progress remains on stderr, human final output on stdout, and
+- [x] Verify human progress remains on stderr, human final output on stdout, and
       machine stdout contains protocol records only.
-- [ ] Keep only focused subprocess tests where process exit, stdout/stderr, or
+- [x] Keep only focused subprocess tests where process exit, stdout/stderr, or
       protocol framing is the contract; do not test installation or bundle
       launchers in this phase.
 
 ### Exit Criteria
 
-- [ ] Invalid invocations are deterministic and side-effect free.
-- [ ] Protocol-v1 output is byte-for-byte compatible where ordering is part of
+- [x] Invalid invocations are deterministic and side-effect free.
+- [x] Protocol-v1 output is byte-for-byte compatible where ordering is part of
       the contract.
-- [ ] Phase 7 QA, remediation, focused/full verification, and commit are
+- [x] Phase 7 QA, remediation, focused/full verification, and commit are
       complete.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 7 verification passed across
+  `test/cli-protocol.test.ts` and the Phase 7 scenarios in
+  `test/cli-subprocess.test.ts`. Coverage includes early unsupported-JSONL
+  rejection without opening config/SQLite, argv machine-mode parsing that stops
+  at bare `--`, shared `run.started`/`event`/`run.finished` constructors, update
+  usage errors with exit code `2`, human progress on stderr, and machine stdout
+  containing protocol records only.
+- `rejectUnsupportedJsonl` runs before `openStorageContext` /
+  `diagnoseConfigurationFile` / installer work for show, runs, artifacts,
+  artifact, doctor, workflows, and update.
+- Top-level error handling and Commander help routing use
+  `machineModeFromArgv` / `machineOutputRequestedFromArgv` instead of
+  `process.argv.includes`.
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
+- Full suite: 228 passed, 1 skipped, 2 failed. Failures are pre-existing legacy
+  TUI tests (`test/tui-phase6.test.ts` stale setup status assertion;
+  `test/tui.test.ts` intermittent empty first render). No Phase 7 CLI test
+  failed.
 
 ## Phase 8: Remove Legacy And Unused Code
 

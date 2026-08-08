@@ -2,8 +2,17 @@ import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync } from 'node:fs';
 import { createCli } from '../src/cli/index.js';
-import { CliError, writeJsonlFailure } from '../src/cli/protocol.js';
+import {
+  CliError,
+  machineModeFromArgv,
+  machineOutputRequestedFromArgv,
+  runEventRecord,
+  runFinishedRecord,
+  runStartedRecord,
+  writeJsonlFailure,
+} from '../src/cli/protocol.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import { listWorkflowContracts } from '../src/workflows/catalog.js';
@@ -57,6 +66,146 @@ describe('CLI protocol', () => {
     await expect(
       createCli().parseAsync(['node', 'binaflow', '--json', '--jsonl', 'workflows']),
     ).rejects.toMatchObject({ code: 'CONFLICTING_OUTPUT_MODES', exitCode: 2 });
+  });
+
+  it('reads machine-output flags only before the bare -- delimiter', () => {
+    expect(machineModeFromArgv(['node', 'binaflow', '--jsonl', 'run', 'plan-build'])).toBe('jsonl');
+    expect(machineModeFromArgv(['node', 'binaflow', '--json', 'workflows'])).toBe('json');
+    expect(
+      machineModeFromArgv(['node', 'binaflow', 'run', '--', '--jsonl', 'not-a-flag']),
+    ).toBeUndefined();
+    expect(machineOutputRequestedFromArgv(['node', 'binaflow', '--', '--json'])).toBe(false);
+    expect(machineOutputRequestedFromArgv(['node', 'binaflow', '--json', '--', 'x'])).toBe(true);
+  });
+
+  it('keeps shared JSONL lifecycle constructors synchronized', () => {
+    const event = {
+      runId: 'run-1',
+      stepId: 'plan',
+      type: 'status' as const,
+      message: 'started',
+      occurredAt: '2026-01-01T00:00:00.000Z',
+    };
+    const run: WorkflowRun = {
+      id: 'run-1',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'sync constructors',
+      status: 'completed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const steps: StepRun[] = [
+      {
+        runId: 'run-1',
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'completed',
+        attempt: 1,
+      },
+    ];
+    const artifacts: ArtifactReference[] = [];
+
+    expect(runStartedRecord('run', 'run-1', 'plan-build')).toEqual({
+      protocol: 'binaflow-cli',
+      version: 1,
+      type: 'run.started',
+      command: 'run',
+      runId: 'run-1',
+      workflowId: 'plan-build',
+    });
+    expect(runEventRecord(3, event)).toEqual({
+      protocol: 'binaflow-cli',
+      version: 1,
+      type: 'event',
+      sequence: 3,
+      event,
+    });
+    expect(runFinishedRecord('resume', run, steps, artifacts)).toEqual({
+      protocol: 'binaflow-cli',
+      version: 1,
+      type: 'run.finished',
+      command: 'resume',
+      run,
+      steps,
+      artifacts,
+    });
+  });
+
+  it('rejects unsupported JSONL modes before opening SQLite or reading config', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-jsonl-reject-'));
+    const configDirectory = join(directory, '.binaflow');
+    mkdirSync(configDirectory);
+    // Intentionally omit config.json and runs.db so any storage/config open would fail first.
+    try {
+      await expect(
+        createCli().parseAsync([
+          'node',
+          'binaflow',
+          '--cwd',
+          directory,
+          '--jsonl',
+          'show',
+          'run-1',
+        ]),
+      ).rejects.toMatchObject({
+        code: 'UNSUPPORTED_OUTPUT_MODE',
+        exitCode: 2,
+        message: expect.stringContaining('show'),
+      });
+      await expect(
+        createCli().parseAsync(['node', 'binaflow', '--cwd', directory, '--jsonl', 'runs']),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+      await expect(
+        createCli().parseAsync([
+          'node',
+          'binaflow',
+          '--cwd',
+          directory,
+          '--jsonl',
+          'artifacts',
+          'r',
+        ]),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+      await expect(
+        createCli().parseAsync([
+          'node',
+          'binaflow',
+          '--cwd',
+          directory,
+          '--jsonl',
+          'artifact',
+          'r',
+          'plan.plan',
+        ]),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+      await expect(
+        createCli().parseAsync(['node', 'binaflow', '--cwd', directory, '--jsonl', 'doctor']),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+      await expect(
+        createCli().parseAsync(['node', 'binaflow', '--jsonl', 'workflows']),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+      await expect(
+        createCli().parseAsync(['node', 'binaflow', '--jsonl', 'update', '--check']),
+      ).rejects.toMatchObject({ code: 'UNSUPPORTED_OUTPUT_MODE', exitCode: 2 });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the CLI usage-error contract for invalid update options', async () => {
+    await expect(
+      createCli().parseAsync(['node', 'binaflow', 'update', '--check', '--rollback']),
+    ).rejects.toMatchObject({
+      code: 'CONFLICTING_UPDATE_OPTIONS',
+      exitCode: 2,
+    });
+    await expect(
+      createCli().parseAsync(['node', 'binaflow', 'update', '--channel', 'nightly']),
+    ).rejects.toMatchObject({
+      code: 'INVALID_UPDATE_CHANNEL',
+      exitCode: 2,
+    });
   });
 
   it('emits a correlatable JSONL failure record', () => {

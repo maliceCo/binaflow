@@ -85,9 +85,31 @@ export function machineMode(options: RootOptions): MachineMode | undefined {
   return undefined;
 }
 
+/** Read machine-output flags from argv, stopping at the first bare `--` delimiter. */
+export function machineModeFromArgv(argv: readonly string[]): MachineMode | undefined {
+  const flags = machineModeFlagsFromArgv(argv);
+  if (flags.jsonl) return 'jsonl';
+  if (flags.json) return 'json';
+  return undefined;
+}
+
+export function machineOutputRequestedFromArgv(argv: readonly string[]): boolean {
+  const flags = machineModeFlagsFromArgv(argv);
+  return flags.json || flags.jsonl;
+}
+
 export function validateMachineMode(options: RootOptions): void {
   if (options.json && options.jsonl) {
     throw cliUsageError('CONFLICTING_OUTPUT_MODES', 'Choose either --json or --jsonl');
+  }
+}
+
+export function rejectUnsupportedJsonl(mode: MachineMode | undefined, command: string): void {
+  if (mode === 'jsonl') {
+    throw cliUsageError(
+      'UNSUPPORTED_OUTPUT_MODE',
+      `The ${command} command supports --json, not --jsonl`,
+    );
   }
 }
 
@@ -108,6 +130,31 @@ export function writeJsonl(
   process.stdout.write(`${JSON.stringify(record)}\n`);
 }
 
+export function runStartedRecord(
+  command: string,
+  runId: string,
+  workflowId: string,
+): RunStartedRecord {
+  return {
+    protocol: CLI_PROTOCOL,
+    version: CLI_PROTOCOL_VERSION,
+    type: 'run.started',
+    command,
+    runId,
+    workflowId,
+  };
+}
+
+export function runEventRecord(sequence: number, event: NormalizedEvent): RunEventRecord {
+  return {
+    protocol: CLI_PROTOCOL,
+    version: CLI_PROTOCOL_VERSION,
+    type: 'event',
+    sequence,
+    event,
+  };
+}
+
 export function writeJsonlFailure(command: string, runId: string, error: unknown): void {
   writeJsonl({
     protocol: CLI_PROTOCOL,
@@ -117,6 +164,31 @@ export function writeJsonlFailure(command: string, runId: string, error: unknown
     runId,
     error: errorPayload(error),
   });
+}
+
+function machineModeFlagsFromArgv(argv: readonly string[]): { json: boolean; jsonl: boolean } {
+  const start = argv.length >= 2 && looksLikeNodeArgv(argv) ? 2 : 0;
+  let json = false;
+  let jsonl = false;
+  for (let index = start; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === undefined || arg === '--') break;
+    if (arg === '--json') json = true;
+    else if (arg === '--jsonl') jsonl = true;
+  }
+  return { json, jsonl };
+}
+
+function looksLikeNodeArgv(argv: readonly string[]): boolean {
+  const first = argv[0];
+  if (first === undefined) return false;
+  return (
+    first === 'node' ||
+    first.endsWith('/node') ||
+    first.endsWith('\\node') ||
+    first.endsWith('/node.exe') ||
+    first.endsWith('\\node.exe')
+  );
 }
 
 export function writeJsonError(error: unknown, command?: string): void {

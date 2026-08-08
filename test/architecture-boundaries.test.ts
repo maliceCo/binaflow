@@ -79,4 +79,3 @@ describe('architecture boundaries', () => {
     expect(iface).not.toMatch(/\bengine\b/);
   });
 });
-

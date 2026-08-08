@@ -1,6 +1,11 @@
 import type { Command } from 'commander';
 import { resolve } from 'node:path';
-import { cliUsageError, machineMode, writeJsonResult } from '../protocol.js';
+import {
+  cliUsageError,
+  machineMode,
+  rejectUnsupportedJsonl,
+  writeJsonResult,
+} from '../protocol.js';
 import type { ConfigurationDiagnosis } from '../../application/config-operations.js';
 
 interface RootOptions {
@@ -34,15 +39,10 @@ export function registerConfigurationCommands(cli: Command): void {
     .command('doctor')
     .description('Diagnose workspace configuration and workflow readiness')
     .action(async (_options: unknown, command: Command) => {
-      const { diagnoseConfigurationFile } = await import('../../application/config-operations.js');
       const options = rootOptions(command);
       const mode = machineMode(options);
-      if (mode === 'jsonl') {
-        throw cliUsageError(
-          'UNSUPPORTED_OUTPUT_MODE',
-          'The doctor command supports --json, not --jsonl',
-        );
-      }
+      rejectUnsupportedJsonl(mode, 'doctor');
+      const { diagnoseConfigurationFile } = await import('../../application/config-operations.js');
       const diagnosis = await diagnoseConfigurationFile(
         options.config ?? '.binaflow/config.json',
         options.cwd,

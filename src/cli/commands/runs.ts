@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { cliUsageError } from '../protocol.js';
+import { cliUsageError, machineMode, rejectUnsupportedJsonl } from '../protocol.js';
 import type { RunStatus } from '../../core/run.js';
 import { formatTimestamp, humanRunStatus } from '../../presentation/format.js';
 
@@ -22,6 +22,8 @@ export function registerRunsCommand(cli: Command): void {
       const { openStorageContext, printMachineResult, rootOptions, workflowDisplayLabel } =
         await import('./common.js');
       const optionsAtRoot = rootOptions(command);
+      const mode = machineMode(optionsAtRoot);
+      rejectUnsupportedJsonl(mode, 'runs');
       const context = await openStorageContext(optionsAtRoot);
       try {
         const status = parseStatus(options.status);
@@ -31,13 +33,7 @@ export function registerRunsCommand(cli: Command): void {
           ...(options.workflow !== undefined ? { workflowId: options.workflow } : {}),
           ...(options.cursor !== undefined ? { cursor: options.cursor } : {}),
         });
-        if (optionsAtRoot.json || optionsAtRoot.jsonl) {
-          if (optionsAtRoot.jsonl) {
-            throw cliUsageError(
-              'UNSUPPORTED_OUTPUT_MODE',
-              'The runs command supports --json, not --jsonl',
-            );
-          }
+        if (mode === 'json') {
           printMachineResult('runs', page);
           return;
         }

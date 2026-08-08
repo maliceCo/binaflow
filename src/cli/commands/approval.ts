@@ -1,5 +1,11 @@
 import type { Command } from 'commander';
-import { exitCodeFor, machineMode, writeJsonl, writeJsonlFailure } from '../protocol.js';
+import {
+  exitCodeFor,
+  machineMode,
+  runStartedRecord,
+  writeJsonl,
+  writeJsonlFailure,
+} from '../protocol.js';
 
 export function registerApprovalCommands(cli: Command): void {
   cli
@@ -50,14 +56,13 @@ async function decide(
           ? {
               onRunStarted: (startedRun) => {
                 started = true;
-                writeJsonl({
-                  protocol: 'binaflow-cli',
-                  version: 1,
-                  type: 'run.started',
-                  command: decision === 'approved' ? 'approve' : 'reject',
-                  runId: startedRun.id,
-                  workflowId: startedRun.workflowId,
-                });
+                writeJsonl(
+                  runStartedRecord(
+                    decision === 'approved' ? 'approve' : 'reject',
+                    startedRun.id,
+                    startedRun.workflowId,
+                  ),
+                );
               },
             }
           : {}),

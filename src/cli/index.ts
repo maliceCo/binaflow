@@ -17,6 +17,9 @@ import {
   exitCodeFor,
   cliUsageError,
   machineMode,
+  machineModeFromArgv,
+  machineOutputRequestedFromArgv,
+  rejectUnsupportedJsonl,
   validateMachineMode,
   writeJsonError,
   writeJsonResult,
@@ -99,12 +102,8 @@ function registerWorkflowCommand(cli: Command): void {
       let root = command;
       while (root.parent) root = root.parent;
       const mode = machineMode(root.opts());
+      rejectUnsupportedJsonl(mode, 'workflows');
       if (mode) {
-        if (mode === 'jsonl')
-          throw cliUsageError(
-            'UNSUPPORTED_OUTPUT_MODE',
-            'The workflows command supports --json, not --jsonl',
-          );
         writeJsonResult('workflows', { workflows });
         return;
       }
@@ -139,11 +138,7 @@ export async function runCli(argv = process.argv): Promise<void> {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   runCli().catch((error: unknown) => {
-    const mode = process.argv.includes('--jsonl')
-      ? 'jsonl'
-      : process.argv.includes('--json')
-        ? 'json'
-        : undefined;
+    const mode = machineModeFromArgv(process.argv);
     const exitCode = exitCodeFor(error);
     if (mode && exitCode !== 0) writeJsonError(error, parsedCommand);
     else if (!isCommanderError(error)) {
@@ -154,7 +149,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.a
 }
 
 function writeCommandOutput(text: string): void {
-  if (process.argv.includes('--json') || process.argv.includes('--jsonl')) {
+  if (machineOutputRequestedFromArgv(process.argv)) {
     process.stderr.write(text);
   } else {
     process.stdout.write(text);

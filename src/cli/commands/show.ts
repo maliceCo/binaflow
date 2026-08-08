@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { cliUsageError } from '../protocol.js';
+import { machineMode, rejectUnsupportedJsonl } from '../protocol.js';
 
 export function registerShowCommand(cli: Command): void {
   cli
@@ -17,6 +17,8 @@ export function registerShowCommand(cli: Command): void {
         const { openStorageContext, printMachineResult, printRunSummary, rootOptions } =
           await import('./common.js');
         const optionsAtRoot = rootOptions(command);
+        const mode = machineMode(optionsAtRoot);
+        rejectUnsupportedJsonl(mode, 'show');
         const context = await openStorageContext(optionsAtRoot);
         try {
           const inspection = await context.inspectRun(runId, {
@@ -24,12 +26,7 @@ export function registerShowCommand(cli: Command): void {
             includeStepResults: options.fullOutput === true,
           });
           const { run, steps, artifacts, eventCount, events } = inspection;
-          if (optionsAtRoot.json || optionsAtRoot.jsonl) {
-            if (optionsAtRoot.jsonl)
-              throw cliUsageError(
-                'UNSUPPORTED_OUTPUT_MODE',
-                'The show command supports --json, not --jsonl',
-              );
+          if (mode === 'json') {
             printMachineResult('show', {
               run,
               steps,

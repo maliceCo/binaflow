@@ -1,6 +1,11 @@
 import type { Command } from 'commander';
 import type { ReleaseChannel } from '../../update/release-client.js';
-import { cliUsageError, machineMode, writeJsonResult } from '../protocol.js';
+import {
+  cliUsageError,
+  machineMode,
+  rejectUnsupportedJsonl,
+  writeJsonResult,
+} from '../protocol.js';
 
 interface UpdateOptions {
   check?: boolean;
@@ -16,20 +21,21 @@ export function registerUpdateCommand(cli: Command): void {
     .option('--rollback', 'switch to the previously installed version')
     .option('--channel <channel>', 'release channel: preview or stable', 'preview')
     .action(async (options: UpdateOptions, command: Command) => {
-      if (options.check && options.rollback) throw new Error('Choose either --check or --rollback');
+      const { rootOptions } = await import('./common.js');
+      const mode = machineMode(rootOptions(command));
+      rejectUnsupportedJsonl(mode, 'update');
+      if (options.check && options.rollback) {
+        throw cliUsageError('CONFLICTING_UPDATE_OPTIONS', 'Choose either --check or --rollback');
+      }
       if (options.channel !== 'preview' && options.channel !== 'stable') {
-        throw new Error(`Unsupported release channel: ${options.channel}`);
+        throw cliUsageError(
+          'INVALID_UPDATE_CHANNEL',
+          `Unsupported release channel: ${options.channel}`,
+        );
       }
       const { checkForUpdate, installUpdate, rollbackUpdate } =
         await import('../../update/installer.js');
       const { managedInstallRoot } = await import('../../update/paths.js');
-      const { rootOptions } = await import('./common.js');
-      const mode = machineMode(rootOptions(command));
-      if (mode === 'jsonl')
-        throw cliUsageError(
-          'UNSUPPORTED_OUTPUT_MODE',
-          'The update command supports --json, not --jsonl',
-        );
       managedInstallRoot();
       if (options.rollback) {
         const version = await rollbackUpdate();

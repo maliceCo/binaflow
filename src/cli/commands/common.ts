@@ -15,6 +15,7 @@ import {
 import type { NormalizedEvent } from '../../core/events.js';
 import {
   machineMode,
+  runEventRecord,
   runFinishedRecord,
   writeJsonResult,
   writeJsonl,
@@ -93,13 +94,7 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
     onEvent: (event) => {
       presenter.present(event);
       if (mode === 'jsonl') {
-        writeJsonl({
-          protocol: 'binaflow-cli',
-          version: 1,
-          type: 'event',
-          sequence: ++eventSequence,
-          event,
-        });
+        writeJsonl(runEventRecord(++eventSequence, event));
       }
     },
   });

@@ -88,6 +88,53 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     expect(result.stderr).toContain('Usage: binaflow');
   });
 
+  it('ignores --json and --jsonl that appear after the bare -- delimiter', async () => {
+    const result = await runCli(['--', '--json', 'not-a-command']);
+    // After `--`, flags are not machine-mode options: human usage error, empty stdout.
+    expect(result.code).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/error:/);
+    expect(result.stdout).not.toMatch(/"protocol"\s*:\s*"binaflow-cli"/);
+  });
+
+  it('rejects unsupported JSONL without creating workspace storage', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-jsonl-side-effect-'));
+    try {
+      const result = await runCli(['--cwd', directory, '--jsonl', 'show', 'missing-run']);
+      expect(result.code).toBe(2);
+      const records = protocolRecords(result.stdout);
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        protocol: 'binaflow-cli',
+        type: 'error',
+        error: { code: 'UNSUPPORTED_OUTPUT_MODE' },
+      });
+      await expect(access(join(directory, '.binaflow'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(access(join(directory, 'data'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('uses exit code 2 for invalid update options', async () => {
+    const conflict = await runCli(['update', '--check', '--rollback']);
+    expect(conflict.code).toBe(2);
+    expect(conflict.stdout).toBe('');
+    expect(conflict.stderr).toMatch(/check|rollback/i);
+
+    const channel = await runCli(['--json', 'update', '--channel', 'nightly']);
+    expect(channel.code).toBe(2);
+    const records = protocolRecords(channel.stdout);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      protocol: 'binaflow-cli',
+      type: 'error',
+      error: { code: 'INVALID_UPDATE_CHANNEL' },
+    });
+  });
+
   it('keeps human lifecycle progress on stderr', async () => {
     const directory = await createFailureConfig();
     try {
@@ -398,9 +445,18 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
       ]);
       const firstRecords = protocolRecords(first.stdout);
       expect(first.code).toBe(1);
-      expect(firstRecords[0]).toMatchObject({ type: 'run.started', command: 'run' });
+      expect(first.stderr).not.toMatch(/^\s*\{/);
+      expect(firstRecords[0]).toMatchObject({
+        protocol: 'binaflow-cli',
+        version: 1,
+        type: 'run.started',
+        command: 'run',
+      });
       expect(firstRecords.slice(1, -1).every((record) => record.type === 'event')).toBe(true);
       expectTerminalRecord(firstRecords.at(-1), 'run');
+      for (const line of first.stdout.trim().split(/\r?\n/).filter(Boolean)) {
+        expect(() => JSON.parse(line)).not.toThrow();
+      }
 
       const runId = firstRecords[0]?.runId;
       expect(runId).toEqual(expect.any(String));
@@ -413,6 +469,33 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
         runId,
       });
       expectTerminalRecord(resumedRecords.at(-1), 'resume', runId);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps machine JSON stdout free of human progress text', async () => {
+    const directory = await createFailureConfig();
+    try {
+      const result = await runCli([
+        '--cwd',
+        directory,
+        '--json',
+        'run',
+        'plan-build',
+        '--objective',
+        'Check json stdout purity',
+      ]);
+      expect(result.code).toBe(1);
+      expect(result.stdout).not.toContain('Started run');
+      const records = protocolRecords(result.stdout);
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        protocol: 'binaflow-cli',
+        version: 1,
+        type: 'result',
+        command: 'run',
+      });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

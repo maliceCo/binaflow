@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { cliUsageError, machineMode } from '../protocol.js';
+import { cliUsageError, machineMode, rejectUnsupportedJsonl } from '../protocol.js';
 
 export function registerArtifactCommands(cli: Command): void {
   cli
@@ -9,16 +9,13 @@ export function registerArtifactCommands(cli: Command): void {
     .action(async (runId: string, _options: unknown, command: Command) => {
       const { openStorageContext, printMachineResult, rootOptions } = await import('./common.js');
       const options = rootOptions(command);
+      const mode = machineMode(options);
+      rejectUnsupportedJsonl(mode, 'artifacts');
       const context = await openStorageContext(options);
       try {
         const inspection = await context.inspectRun(runId);
         const artifacts = inspection.artifacts;
-        if (options.json || options.jsonl) {
-          if (options.jsonl)
-            throw cliUsageError(
-              'UNSUPPORTED_OUTPUT_MODE',
-              'The artifacts command supports --json, not --jsonl',
-            );
+        if (mode === 'json') {
           printMachineResult('artifacts', { runId, artifacts });
           return;
         }
@@ -46,7 +43,9 @@ export function registerArtifactCommands(cli: Command): void {
       async (runId: string, artifactKey: string, options: { raw?: boolean }, command: Command) => {
         const { openStorageContext, printMachineResult, rootOptions } = await import('./common.js');
         const root = rootOptions(command);
-        if (options.raw && machineMode(root)) {
+        const mode = machineMode(root);
+        rejectUnsupportedJsonl(mode, 'artifact');
+        if (options.raw && mode) {
           throw cliUsageError(
             'CONFLICTING_OUTPUT_MODES',
             '--raw cannot be combined with --json or --jsonl',
@@ -62,12 +61,7 @@ export function registerArtifactCommands(cli: Command): void {
             process.stdout.write(content);
             return;
           }
-          if (root.json || root.jsonl) {
-            if (root.jsonl)
-              throw cliUsageError(
-                'UNSUPPORTED_OUTPUT_MODE',
-                'The artifact command supports --json, not --jsonl',
-              );
+          if (mode === 'json') {
             printMachineResult('artifact', { artifact, content });
             return;
           }

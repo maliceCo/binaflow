@@ -6,6 +6,7 @@ import {
   cliUsageError,
   exitCodeFor,
   machineMode,
+  runStartedRecord,
   writeJsonl,
   writeJsonlFailure,
 } from '../protocol.js';
@@ -67,14 +68,7 @@ export function registerRunCommand(cli: Command): void {
           onRunStarted: (startedRun: WorkflowRun) => {
             started = true;
             if (mode === 'jsonl') {
-              writeJsonl({
-                protocol: 'binaflow-cli',
-                version: 1,
-                type: 'run.started',
-                command: 'run',
-                runId: startedRun.id,
-                workflowId: startedRun.workflowId,
-              });
+              writeJsonl(runStartedRecord('run', startedRun.id, startedRun.workflowId));
             } else if (!mode) {
               printHumanProgress(`Started run ${startedRun.id}  workflow=${startedRun.workflowId}`);
             }
