@@ -156,6 +156,143 @@ describe('Ink shell', () => {
     await running;
   });
 
+  it.each([
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const)(
+    'cancels safely when %s arrives while context startup is pending',
+    async (signal, exitCode) => {
+      const directory = await temporaryDirectory();
+      await writeConfig(directory);
+      const terminal = createTerminal();
+      let releaseContext: ((context: ApplicationContext & { close(): void }) => void) | undefined;
+      let contextRequested = false;
+      let closed = false;
+      const context = createApplicationContext(
+        vi.fn(async () => createRun('completed')),
+        () => undefined,
+      );
+      const ownedContext = { ...context, close: () => (closed = true) };
+      const opening = new Promise<ApplicationContext & { close(): void }>((resolve) => {
+        releaseContext = resolve;
+      });
+      const previousExitCode = process.exitCode;
+      try {
+        process.exitCode = undefined;
+        const running = runInkShell({
+          cwd: directory,
+          input: terminal.input as unknown as NodeJS.ReadStream,
+          output: terminal.output as unknown as NodeJS.WriteStream,
+          errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+          env: { NO_COLOR: '' },
+          openApplicationContext: async () => {
+            contextRequested = true;
+            return opening;
+          },
+        });
+        await launchWorkflow(terminal, false);
+        await waitForCondition(() => contextRequested);
+        process.emit(signal);
+        releaseContext?.(ownedContext);
+        await running;
+
+        expect(process.exitCode).toBe(exitCode);
+        expect(closed).toBe(true);
+      } finally {
+        process.exitCode = previousExitCode;
+      }
+    },
+  );
+
+  it.each(['input', 'output'] as const)(
+    'unsubscribes and settles active work before closing an owned context after an %s stream failure',
+    async (stream) => {
+      const directory = await temporaryDirectory();
+      await writeConfig(directory);
+      const terminal = createTerminal();
+      const order: string[] = [];
+      let resolveExecution: ((run: WorkflowRun) => void) | undefined;
+      const execution = new Promise<WorkflowRun>((resolve) => {
+        resolveExecution = resolve;
+      });
+      const context = createApplicationContext(
+        async (_workflow, request) => {
+          request.onRunStarted?.(createRun('running'));
+          request.signal?.addEventListener('abort', () => order.push('aborted'));
+          const run = await execution;
+          order.push('settled');
+          return run;
+        },
+        () => undefined,
+      );
+      const ownedContext = {
+        ...context,
+        close: () => order.push('closed'),
+        subscribeEvents: () => () => order.push('unsubscribed'),
+      };
+      const running = runInkShell({
+        cwd: directory,
+        input: terminal.input as unknown as NodeJS.ReadStream,
+        output: terminal.output as unknown as NodeJS.WriteStream,
+        errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+        env: { NO_COLOR: '' },
+        openApplicationContext: async () => ownedContext,
+      });
+      await launchWorkflow(terminal);
+      if (stream === 'input') terminal.input.emit('error', new Error('input failed'));
+      else terminal.output.emit('error', new Error('output failed'));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(order).toContain('aborted');
+      expect(order).toContain('unsubscribed');
+      expect(order).not.toContain('closed');
+      resolveExecution?.(createRun('cancelled'));
+      await expect(running).rejects.toThrow(`${stream} failed`);
+      expect(order).toEqual(['unsubscribed', 'aborted', 'settled', 'closed']);
+    },
+  );
+
+  it('restores the terminal before force signalling and leaves no active work after exit', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const terminal = createTerminal();
+    let resolveExecution: ((run: WorkflowRun) => void) | undefined;
+    let closed = false;
+    const execution = new Promise<WorkflowRun>((resolve) => {
+      resolveExecution = resolve;
+    });
+    const context = createApplicationContext(
+      async (_workflow, request) => {
+        request.onRunStarted?.(createRun('running'));
+        request.signal?.addEventListener('abort', () => undefined);
+        return execution;
+      },
+      () => undefined,
+    );
+    const forceExit = vi.fn(() => {
+      expect(terminal.input.rawMode).toEqual([true, false]);
+      expect(terminal.output.text()).toContain('\u001b[?1049l');
+      resolveExecution?.(createRun('cancelled'));
+    });
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      openApplicationContext: async () => ({ ...context, close: () => (closed = true) }),
+      forceExit,
+    });
+    await launchWorkflow(terminal);
+    terminal.input.push('q');
+    await terminal.output.waitFor('Cancellation requested');
+    terminal.input.push('q');
+    await running;
+
+    expect(forceExit).toHaveBeenCalledWith('SIGINT');
+    expect(closed).toBe(true);
+  });
+
   it('keeps the footer visible and redraws the shell after resize', async () => {
     const directory = await temporaryDirectory();
     const terminal = createTerminal();
@@ -305,6 +442,33 @@ function createTerminal(): { input: FakeInput; output: FakeOutput } {
   return { input: new FakeInput(), output: new FakeOutput() };
 }
 
+async function launchWorkflow(
+  terminal: ReturnType<typeof createTerminal>,
+  waitForLive = true,
+): Promise<void> {
+  await terminal.output.waitFor('New workflow');
+  await terminal.input.waitUntilReady();
+  terminal.input.push('k');
+  await terminal.output.waitFor('> New workflow');
+  terminal.input.push('\r');
+  await terminal.output.waitFor('plan-build');
+  terminal.input.push('\r');
+  await terminal.output.waitFor('plan-build input');
+  terminal.input.push('Run the workflow');
+  await terminal.output.waitFor('Run the workflow');
+  terminal.input.push('\r');
+  await terminal.output.waitFor('Confirm workflow');
+  terminal.input.push('\r');
+  if (waitForLive) await terminal.output.waitFor('Workflow running');
+}
+
+async function waitForCondition(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100 && !condition(); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(condition()).toBe(true);
+}
+
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'binaflow-ink-shell-'));
   return directory;
@@ -335,7 +499,7 @@ function profile(model: string): AgentProfile {
 }
 
 function createApplicationContext(
-  execute: ReturnType<typeof vi.fn>,
+  execute: WorkflowEngine['execute'],
   subscribe: (listener: (event: NormalizedEvent) => void) => void,
 ): ApplicationContext {
   return {

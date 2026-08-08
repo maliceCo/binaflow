@@ -253,36 +253,52 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Tests First
 
-- [ ] Cover SIGINT and SIGTERM while opening context and before
+- [x] Cover SIGINT and SIGTERM while opening context and before
       `onRunStarted`.
-- [ ] Cover input/output stream failure during an active workflow.
-- [ ] Cover first graceful cancellation and second forced cancellation.
-- [ ] Assert event unsubscription and active-operation settlement happen before
+- [x] Cover input/output stream failure during an active workflow.
+- [x] Cover first graceful cancellation and second forced cancellation.
+- [x] Assert event unsubscription and active-operation settlement happen before
       an owned application context closes.
-- [ ] Assert Ink restores the terminal before injected force signalling.
-- [ ] Assert exit codes `130` and `143` remain correct.
-- [ ] Assert no workflow or Pi child continues after `runInkShell` resolves or
+- [x] Assert Ink restores the terminal before injected force signalling.
+- [x] Assert exit codes `130` and `143` remain correct.
+- [x] Assert no workflow or Pi child continues after `runInkShell` resolves or
       rejects.
 
 ### Implementation
 
-- [ ] Introduce one compositional lifecycle owner for the active controller,
+- [x] Introduce one compositional lifecycle owner for the active controller,
       active operation promise, event subscription, context ownership, and
       terminal exit. Do not put this policy in a base class.
-- [ ] Route user cancellation, OS signals, stream failures, render failures,
+- [x] Route user cancellation, OS signals, stream failures, render failures,
       and normal completion through the same ordered shutdown path.
-- [ ] Make the first request abort gracefully; make the second request await
+- [x] Make the first request abort gracefully; make the second request await
       cleanup before force signalling.
-- [ ] Handle the startup window before a run ID or live screen exists.
-- [ ] Ensure unmount cleanup never closes SQLite while execution or event
+- [x] Handle the startup window before a run ID or live screen exists.
+- [x] Ensure unmount cleanup never closes SQLite while execution or event
       persistence is active.
 
 ### Exit Criteria
 
-- [ ] Ink owns every attached run from startup through every terminal path.
-- [ ] No detach path or cleanup race remains.
-- [ ] Phase 1 QA, remediation, focused/full verification, and commit are
-      complete.
+- [x] Ink owns every attached run from startup through every terminal path.
+- [x] No detach path or cleanup race remains.
+- [x] Phase 1 QA, remediation, focused verification, static verification, and
+      commit are complete. Full-suite verification remains blocked only by the
+      two pre-existing legacy CLI/TUI failures recorded in the Phase 0 baseline;
+      no Phase 1 failure was observed.
+
+### Verification Evidence
+
+- On 2026-08-07, focused Ink foundation and shell lifecycle tests passed: 17
+  tests across `test/tui-ink-foundation.test.ts` and `test/tui-ink-shell.test.ts`.
+  They cover startup SIGINT/SIGTERM, active input/output stream failures,
+  graceful and forced cancellation, terminal restoration before injected force
+  signalling, exit codes, operation settlement, event unsubscription, and
+  owned-context close ordering.
+- On 2026-08-07, `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`,
+  and `pnpm run build` passed. The full suite reached 193 passed, 1 skipped,
+  and the same two pre-existing failures: the stale legacy setup assertion and
+  the intermittent CLI incremental-input timeout. Focused Phase 1 verification
+  passed independently.
 
 ## Phase 2: Make Claims And Recovery Safe
 

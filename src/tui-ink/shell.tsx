@@ -65,6 +65,7 @@ import {
   type CompletionState,
   type LiveState,
 } from './execution.js';
+import { createAttachedExecutionLifecycle, type AttachedExecutionLifecycle } from './lifecycle.js';
 
 const HOME_ACTIONS = [
   'New workflow',
@@ -105,37 +106,45 @@ export interface InkShellOptions extends InkApplicationOptions {
 export async function runInkShell(options: InkShellOptions = {}): Promise<void> {
   const cwd = options.cwd ?? process.cwd();
   const configPath = options.configPath ?? '.binaflow/config.json';
+  const lifecycle = createAttachedExecutionLifecycle(options.applicationContext);
   let signalHandler: ((signal: NodeJS.Signals) => boolean) | undefined;
-  await runInkApplication(
-    {
-      ...options,
-      onSignal: (signal) => signalHandler?.(signal) ?? false,
-    },
-    (context) => (
-      <InkShell
-        cwd={cwd}
-        configPath={configPath}
-        applicationContext={options.applicationContext}
-        openApplicationContext={options.openApplicationContext}
-        forceExit={options.forceExit}
-        registerSignalHandler={(handler) => {
-          signalHandler = handler;
-          return () => {
-            if (signalHandler === handler) signalHandler = undefined;
-          };
-        }}
-        {...context}
-      />
-    ),
-  );
+  try {
+    await runInkApplication(
+      {
+        ...options,
+        onSignal: (signal) => signalHandler?.(signal) ?? false,
+      },
+      (context) => (
+        <InkShell
+          cwd={cwd}
+          configPath={configPath}
+          lifecycle={lifecycle}
+          openApplicationContext={options.openApplicationContext}
+          registerSignalHandler={(handler) => {
+            signalHandler = handler;
+            return () => {
+              if (signalHandler === handler) signalHandler = undefined;
+            };
+          }}
+          {...context}
+        />
+      ),
+    );
+  } finally {
+    if (!lifecycle.forceSignal) await lifecycle.shutdown();
+  }
+  const signal = lifecycle.forceSignal;
+  if (signal) {
+    (options.forceExit ?? ((value) => process.kill(process.pid, value)))(signal);
+    await lifecycle.shutdown();
+  }
 }
 
 interface InkShellProps extends InkApplicationContext {
   cwd: string;
   configPath: string;
-  applicationContext?: (ApplicationContext & { close?(): void }) | undefined;
+  lifecycle: AttachedExecutionLifecycle<ApplicationContext & { close?(): void }>;
   openApplicationContext?: InkShellOptions['openApplicationContext'] | undefined;
-  forceExit?: InkShellOptions['forceExit'];
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
 }
 
@@ -144,9 +153,8 @@ function InkShell({
   size,
   cwd,
   configPath,
-  applicationContext: providedContext,
+  lifecycle,
   openApplicationContext: openContext,
-  forceExit,
   registerSignalHandler,
 }: InkShellProps): ReactNode {
   const { exit } = useApp();
@@ -186,10 +194,7 @@ function InkShell({
   const inputValueRef = useRef('');
   const active = useRef(true);
   const refreshPromise = useRef<Promise<void> | undefined>(undefined);
-  const context = useRef(providedContext);
-  const activeController = useRef<AbortController | undefined>(undefined);
   const activeRunId = useRef<string | undefined>(undefined);
-  const unsubscribeEvents = useRef<(() => void) | undefined>(undefined);
   const liveRef = useRef<LiveState | undefined>(undefined);
 
   const setLiveValue = (value: LiveState | undefined): void => {
@@ -225,12 +230,6 @@ function InkShell({
     };
   }, [configPath, cwd]);
 
-  useEffect(() => {
-    return () => {
-      if (context.current !== providedContext) context.current?.close?.();
-    };
-  }, [providedContext]);
-
   const returnHome = (message?: string): void => {
     setScreen('home');
     setSelection(0);
@@ -244,11 +243,10 @@ function InkShell({
   };
 
   const ensureContext = async (): Promise<ApplicationContext & { close?(): void }> => {
-    if (context.current) return context.current;
+    if (lifecycle.context) return lifecycle.context;
     const createContext =
       openContext ?? (await import('../application/runtime.js')).openApplicationContext;
-    context.current = await createContext(configPath, cwd);
-    return context.current;
+    return lifecycle.openContext(async () => createContext(configPath, cwd));
   };
 
   const loadHistory = async (
@@ -298,10 +296,10 @@ function InkShell({
 
   const loadArtifact = async (): Promise<void> => {
     const artifact = detail?.artifacts[artifactSelected];
-    if (!artifact || !context.current || !detail) return;
+    if (!artifact || !lifecycle.context || !detail) return;
     try {
       setArtifactContent(
-        await readArtifact(context.current, detail.run.id, `${artifact.stepId}.${artifact.name}`),
+        await readArtifact(lifecycle.context, detail.run.id, `${artifact.stepId}.${artifact.name}`),
       );
     } catch (reason) {
       setArtifactContent({
@@ -455,9 +453,11 @@ function InkShell({
       })) ?? [];
     let artifacts: string[] = [];
     let finishedAt = run.updatedAt;
-    if (context.current) {
+    if (lifecycle.context) {
       try {
-        const inspection = await inspectRun(context.current, run.id, { includeStepResults: true });
+        const inspection = await inspectRun(lifecycle.context, run.id, {
+          includeStepResults: true,
+        });
         steps = inspection.steps;
         artifacts = inspection.artifacts.map((artifact) => `${artifact.stepId}.${artifact.name}`);
         finishedAt = inspection.run.updatedAt;
@@ -480,112 +480,114 @@ function InkShell({
   };
 
   const requestCancellation = (signal?: NodeJS.Signals): void => {
-    const controller = activeController.current;
     const current = liveRef.current;
-    if (!controller || !current) return;
-    if (current.cancellationRequested) {
-      process.exitCode = signal === 'SIGTERM' ? 143 : 130;
+    const request = lifecycle.requestCancellation(signal ?? 'SIGINT');
+    if (request === 'inactive') return;
+    if (request === 'forced') {
       exit();
-      if (forceExit) forceExit(signal ?? 'SIGINT');
-      else process.kill(process.pid, signal ?? 'SIGINT');
       return;
     }
-    setLiveValue({ ...current, cancellationRequested: true });
+    if (current) setLiveValue({ ...current, cancellationRequested: true });
     setStatus('Cancellation requested. Workflow is still running; press q again to force-cancel.');
-    controller.abort();
   };
 
   useEffect(() => {
     return registerSignalHandler((signal) => {
-      if (!liveRef.current) return false;
-      requestCancellation(signal);
+      const request = lifecycle.requestCancellation(signal);
+      if (request === 'inactive') return false;
+      if (liveRef.current) setLiveValue({ ...liveRef.current, cancellationRequested: true });
+      setStatus(
+        'Cancellation requested. Workflow is still running; press q again to force-cancel.',
+      );
+      exit();
       return true;
     });
-  }, [registerSignalHandler, forceExit]);
+  }, [lifecycle, registerSignalHandler]);
 
-  const startLaunch = async (): Promise<void> => {
+  const startLaunch = (): void => {
     if (!launchInput || !diagnosis || launching) return;
     setLaunching(true);
-    const controller = new AbortController();
-    activeController.current = controller;
-    try {
-      const refreshed = await diagnoseConfigurationFile(configPath, cwd);
-      const currentReview = profileReview(launchInput.workflow, refreshed);
-      if (
-        !refreshed.configValid ||
-        !sameProfileReview(launchInput.reviewedProfiles, currentReview)
-      ) {
-        setDiagnosis(refreshed);
-        setLaunchInput({ ...launchInput, reviewedProfiles: currentReview });
-        setError(
-          !refreshed.configValid
-            ? 'Configuration changed or became invalid; review it before launching.'
-            : 'Profile permissions or settings changed; confirm the workflow again before launching.',
-        );
-        setScreen('launch-confirmation');
-        return;
-      }
-      if (!context.current) {
-        context.current = await ensureContext();
-      }
-      if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
-      unsubscribeEvents.current = context.current.subscribeEvents?.((event) => {
-        if (event.runId !== activeRunId.current) return;
-        const current = liveRef.current;
-        if (!current) return;
-        setLiveValue(appendLiveActivity(current, event));
-        void inspectRun(context.current!, event.runId, { includeStepResults: false })
-          .then((inspection) => {
-            const latest = liveRef.current;
-            if (latest?.run.id === event.runId)
-              setLiveValue(applyStepSnapshot(latest, inspection.steps));
-          })
-          .catch(() => undefined);
-      });
-      const objective = launchInput.values.objective;
-      if (!objective) throw new Error('Workflow objective must be a non-empty string');
-      setStatus(`Starting ${launchInput.workflow.id}...`);
-      const run = await runWorkflow(context.current, {
-        workflowId: launchInput.workflow.id,
-        objective,
-        input: launchInput.values,
-        signal: controller.signal,
-        onRunStarted: (startedRun) => {
-          activeRunId.current = startedRun.id;
-          setLiveValue(createLiveState(startedRun, launchInput.workflow));
-          setCompletion(undefined);
-          setLiveDetail(false);
-          setLiveOffset(0);
-          setScreen('live');
-        },
-      });
-      await finishRun(run);
-    } catch (reason) {
-      const current = liveRef.current;
-      if (current) {
-        await finishRun({
-          ...current.run,
-          status: current.cancellationRequested ? 'cancelled' : 'failed',
-          updatedAt: new Date().toISOString(),
-        });
-      } else returnHome(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      unsubscribeEvents.current?.();
-      unsubscribeEvents.current = undefined;
-      activeRunId.current = undefined;
-      activeController.current = undefined;
-      setLaunching(false);
-    }
+    const controller = lifecycle.beginOperation();
+    lifecycle.trackOperation(
+      (async () => {
+        try {
+          const refreshed = await diagnoseConfigurationFile(configPath, cwd);
+          const currentReview = profileReview(launchInput.workflow, refreshed);
+          if (
+            !refreshed.configValid ||
+            !sameProfileReview(launchInput.reviewedProfiles, currentReview)
+          ) {
+            setDiagnosis(refreshed);
+            setLaunchInput({ ...launchInput, reviewedProfiles: currentReview });
+            setError(
+              !refreshed.configValid
+                ? 'Configuration changed or became invalid; review it before launching.'
+                : 'Profile permissions or settings changed; confirm the workflow again before launching.',
+            );
+            setScreen('launch-confirmation');
+            return;
+          }
+          const application = await ensureContext();
+          if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
+          lifecycle.subscribe(
+            application.subscribeEvents?.((event) => {
+              if (event.runId !== activeRunId.current) return;
+              const current = liveRef.current;
+              if (!current) return;
+              setLiveValue(appendLiveActivity(current, event));
+              void inspectRun(application, event.runId, { includeStepResults: false })
+                .then((inspection) => {
+                  const latest = liveRef.current;
+                  if (latest?.run.id === event.runId)
+                    setLiveValue(applyStepSnapshot(latest, inspection.steps));
+                })
+                .catch(() => undefined);
+            }),
+          );
+          const objective = launchInput.values.objective;
+          if (!objective) throw new Error('Workflow objective must be a non-empty string');
+          setStatus(`Starting ${launchInput.workflow.id}...`);
+          const run = await runWorkflow(application, {
+            workflowId: launchInput.workflow.id,
+            objective,
+            input: launchInput.values,
+            signal: controller.signal,
+            onRunStarted: (startedRun) => {
+              activeRunId.current = startedRun.id;
+              setLiveValue(createLiveState(startedRun, launchInput.workflow));
+              setCompletion(undefined);
+              setLiveDetail(false);
+              setLiveOffset(0);
+              setScreen('live');
+            },
+          });
+          await finishRun(run);
+        } catch (reason) {
+          const current = liveRef.current;
+          if (current) {
+            await finishRun({
+              ...current.run,
+              status: current.cancellationRequested ? 'cancelled' : 'failed',
+              updatedAt: new Date().toISOString(),
+            });
+          } else returnHome(reason instanceof Error ? reason.message : String(reason));
+        } finally {
+          lifecycle.unsubscribe();
+          activeRunId.current = undefined;
+          setLaunching(false);
+        }
+      })(),
+    );
   };
 
-  const startContinuation = async (
+  const startContinuation = (
     operation: (
       application: ApplicationContext,
       signal: AbortSignal,
       onRunStarted: (run: WorkflowRun) => void,
     ) => Promise<WorkflowRun>,
     workflowId: string,
-  ): Promise<void> => {
+  ): void => {
     if (!detail || launching) return;
     const workflow = discoverWorkflows().find((candidate) => candidate.id === workflowId);
     if (!workflow) {
@@ -593,44 +595,48 @@ function InkShell({
       return;
     }
     setLaunching(true);
-    const controller = new AbortController();
-    activeController.current = controller;
-    try {
-      const application = await ensureContext();
-      unsubscribeEvents.current = application.subscribeEvents?.((event) => {
-        if (event.runId !== activeRunId.current) return;
-        const current = liveRef.current;
-        if (!current) return;
-        setLiveValue(appendLiveActivity(current, event));
-      });
-      const run = await operation(application, controller.signal, (startedRun) => {
-        activeRunId.current = startedRun.id;
-        setLiveValue(createLiveState(startedRun, workflow, detail.steps));
-        setLiveDetail(false);
-        setLiveOffset(0);
-        setScreen('live');
-      });
-      await finishRun(run);
-    } catch (reason) {
-      const current = liveRef.current;
-      if (current) {
-        await finishRun({
-          ...current.run,
-          status: current.cancellationRequested ? 'cancelled' : 'failed',
-          updatedAt: new Date().toISOString(),
-        });
-      } else setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      unsubscribeEvents.current?.();
-      unsubscribeEvents.current = undefined;
-      activeRunId.current = undefined;
-      activeController.current = undefined;
-      setLaunching(false);
-    }
+    const controller = lifecycle.beginOperation();
+    lifecycle.trackOperation(
+      (async () => {
+        try {
+          const application = await ensureContext();
+          if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
+          lifecycle.subscribe(
+            application.subscribeEvents?.((event) => {
+              if (event.runId !== activeRunId.current) return;
+              const current = liveRef.current;
+              if (!current) return;
+              setLiveValue(appendLiveActivity(current, event));
+            }),
+          );
+          const run = await operation(application, controller.signal, (startedRun) => {
+            activeRunId.current = startedRun.id;
+            setLiveValue(createLiveState(startedRun, workflow, detail.steps));
+            setLiveDetail(false);
+            setLiveOffset(0);
+            setScreen('live');
+          });
+          await finishRun(run);
+        } catch (reason) {
+          const current = liveRef.current;
+          if (current) {
+            await finishRun({
+              ...current.run,
+              status: current.cancellationRequested ? 'cancelled' : 'failed',
+              updatedAt: new Date().toISOString(),
+            });
+          } else setError(reason instanceof Error ? reason.message : String(reason));
+        } finally {
+          lifecycle.unsubscribe();
+          activeRunId.current = undefined;
+          setLaunching(false);
+        }
+      })(),
+    );
   };
 
   const submitDetailPrompt = async (value: string): Promise<void> => {
-    if (!detail || !detailPrompt || !context.current) return;
+    if (!detail || !detailPrompt || !lifecycle.context) return;
     const normalized = value.trim();
     if (detailPrompt === 'recovery') {
       if (normalized.toLowerCase() !== 'yes') {
@@ -638,7 +644,7 @@ function InkShell({
         return;
       }
       try {
-        await markRunInterrupted(context.current, detail.run.id);
+        await markRunInterrupted(lifecycle.context, detail.run.id);
         setDetailPrompt(undefined);
         setPromptValue('');
         await openDetail({ ...detail.run, status: 'interrupted' });
