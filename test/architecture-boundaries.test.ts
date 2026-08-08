@@ -32,7 +32,7 @@ describe('architecture boundaries', () => {
         if (
           specifier.includes('/cli/') ||
           specifier.includes('/tui') ||
-          specifier.includes('/tui-ink/') ||
+          specifier.includes('/tui/') ||
           specifier.includes('/workflows/') ||
           specifier.includes('/drivers/pi-rpc') ||
           specifier.includes('/storage/sqlite-') ||
@@ -49,7 +49,7 @@ describe('architecture boundaries', () => {
   it('keeps CLI and Ink presentation free of stores, Pi, and the concrete engine', async () => {
     const files = [
       ...(await listSourceFiles(join(root, 'src/cli'))),
-      ...(await listSourceFiles(join(root, 'src/tui-ink'))),
+      ...(await listSourceFiles(join(root, 'src/tui'))),
     ];
     const violations: string[] = [];
     for (const file of files) {

@@ -11,7 +11,7 @@ import {
   createSnapshotInspectionController,
   MAX_ACTIVITY_BYTES,
   MAX_DISPLAYED_ACTIVITY,
-} from '../src/tui-ink/execution.js';
+} from '../src/tui/execution.js';
 
 describe('Ink execution state', () => {
   it('sanitizes and bounds live activity while retaining the newest events', () => {

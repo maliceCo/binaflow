@@ -1,6 +1,6 @@
 /* global process */
 
-import { runInkFoundation } from '../dist/src/tui-ink/bootstrap.js';
+import { runInkFoundation } from '../dist/src/tui/bootstrap.js';
 
 try {
   await runInkFoundation();

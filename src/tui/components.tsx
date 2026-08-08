@@ -112,22 +112,6 @@ export function TextPrompt({ prompt, value }: { prompt: string; value: string })
   return <SafeText>{`${prompt}${value}`}</SafeText>;
 }
 
-export function Confirmation({
-  message,
-  selected,
-}: {
-  message: string;
-  selected: number;
-}): ReactNode {
-  return (
-    <Box flexDirection="column">
-      <SafeText>{message}</SafeText>
-      <SafeText>{selected === 0 ? '> Yes' : '  Yes'}</SafeText>
-      <SafeText>{selected === 1 ? '> No' : '  No'}</SafeText>
-    </Box>
-  );
-}
-
 export function MinimumSizeFallback(): ReactNode {
   return (
     <Box flexDirection="column">

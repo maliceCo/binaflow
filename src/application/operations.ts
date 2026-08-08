@@ -31,9 +31,6 @@ export interface ApplicationInternals {
   researchCoordinator: ResearchPlanBuildCoordinator;
 }
 
-/** @deprecated Prefer ApplicationService. Kept for gradual test migration. */
-export type ApplicationContext = ApplicationInternals;
-
 export type { WorkflowContract };
 
 export interface RunWorkflowRequest {
@@ -253,7 +250,6 @@ export interface ArtifactContentView {
 
 export interface ReadArtifactOptions {
   mode?: 'preview' | 'full';
-  format?: 'raw' | 'text' | 'json';
   maxBytes?: number;
 }
 

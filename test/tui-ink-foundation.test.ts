@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { runInkFoundation } from '../src/tui-ink/bootstrap.js';
+import { runInkFoundation } from '../src/tui/bootstrap.js';
 
 describe('Ink foundation', () => {
   it('refuses non-TTY streams before rendering', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeInkText } from '../src/tui-ink/text.js';
+import { sanitizeInkText } from '../src/tui/text.js';
 
 describe('Ink text safety', () => {
   it('removes terminal control sequences and non-printable characters from dynamic fields', () => {

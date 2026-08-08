@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowRun } from '../src/core/run.js';
-import { runInkShell } from '../src/tui-ink/shell.js';
+import { runInkShell } from '../src/tui/shell.js';
 
 const testDirectories: string[] = [];
 

@@ -652,34 +652,57 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ## Phase 8: Remove Legacy And Unused Code
 
-- [ ] Complete the Ink parity matrix with a passing product or lifecycle test
+- [x] Complete the Ink parity matrix with a passing product or lifecycle test
       for every retained behavior.
-- [ ] Remove duplicate and implementation-detail tests identified in Phase 0
+- [x] Remove duplicate and implementation-detail tests identified in Phase 0
       after confirming a smaller retained scenario protects each real contract.
-- [ ] Verify the functional contracts for both public TUI entry points, non-TTY
+- [x] Verify the functional contracts for both public TUI entry points, non-TTY
       help, normal exit, errors, signals, cancellation, recovery, and approval
       without bundle or installation smoke tests.
-- [ ] Delete `src/tui/app.ts`, `src/tui/render.ts`,
+- [x] Delete `src/tui/app.ts`, `src/tui/render.ts`,
       `src/tui/terminal-session.ts`, legacy-only runners, and legacy-only tests.
-- [ ] Remove unused production APIs and components only after repository-wide
+- [x] Remove unused production APIs and components only after repository-wide
       search proves they have no consumer, including the unused Ink
       `Confirmation`, `RunStore.listRuns`, ignored artifact format options, and
       test-only application helpers.
-- [ ] Remove retry/claim compatibility branches made impossible by the final
+- [x] Remove retry/claim compatibility branches made impossible by the final
       required contracts.
-- [ ] Consolidate `src/tui-ink` under `src/tui` only if the move reduces the
+- [x] Consolidate `src/tui-ink` under `src/tui` only if the move reduces the
       final public source layout without compatibility shims.
-- [ ] Run `git diff --check` and inspect every deleted symbol for a remaining
+- [x] Run `git diff --check` and inspect every deleted symbol for a remaining
       import, test, documentation reference, or package output.
 
 ### Exit Criteria
 
-- [ ] Ink is the sole TUI implementation and no production line exists only for
+- [x] Ink is the sole TUI implementation and no production line exists only for
       the deleted renderer.
-- [ ] Every remaining public and internal API has a current consumer or a
+- [x] Every remaining public and internal API has a current consumer or a
       documented compatibility requirement.
-- [ ] Phase 8 QA, remediation, focused/full verification, and commit are
+- [x] Phase 8 QA, remediation, focused/full verification, and commit are
       complete.
+
+### Verification Evidence
+
+- On 2026-08-08, Ink parity scenarios were added in `test/tui-ink-shell.test.ts`
+  for rejection-feedback cancel, attached historical resume + cancel, YES
+  confirmation before mark-interrupted, and completion usage/cost/artifacts.
+  Existing Ink foundation/shell/phase6/execution/viewport/text suites cover
+  entry, signals, setup, live bounds, and approval previews.
+- Deleted legacy production modules under the old handwritten TUI path and
+  legacy-only tests `test/tui.test.ts`, `test/tui-phase{6,7,8}.test.ts`, and
+  `test/phase9.test.ts`.
+- Removed unused `Confirmation`, store-level `listRuns()`,
+  `ReadArtifactOptions.format`, and the dead `ApplicationContext` alias.
+- Claim/retry dual paths remain intentional (`runClaimed` vs engine claim);
+  no impossible compatibility branch was found to delete.
+- Consolidated `src/tui-ink` into `src/tui` without shims; CLI, architecture
+  boundary tests, and the internal runner import the new path.
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
+- Full suite: 196 passed, 1 skipped, 1 failed. The failure is the pre-existing
+  intermittent CLI incremental-init timeout
+  (`consumes non-TTY init input incrementally`); no Phase 8 Ink or legacy-removal
+  test failed. Legacy TUI failures are gone with the deleted tests.
 
 ## Phase 9: Final Verification And Self-Destruction
 

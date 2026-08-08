@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as configOperations from '../src/application/config-operations.js';
-import { runInkShell } from '../src/tui-ink/shell.js';
+import { runInkShell } from '../src/tui/shell.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
 import type { ApplicationService } from '../src/application/service.js';
 import type { AgentProfile } from '../src/config.js';
@@ -502,6 +502,339 @@ describe('Ink shell', () => {
     terminal.input.push('q');
     await running;
   }, 15_000);
+
+  it('cancels rejection feedback without changing waiting state', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const waiting = {
+      ...createRun('waiting'),
+      id: 'run-waiting',
+      workflowId: 'research-plan-build',
+      objective: 'Needs approval',
+    };
+    const reportArtifact = {
+      id: 'art-report',
+      runId: waiting.id,
+      stepId: 'research',
+      name: 'report',
+      kind: 'json' as const,
+      path: 'report.json',
+      mediaType: 'application/json',
+      sizeBytes: 20,
+    };
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => waiting,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [waiting] }),
+      inspectRun: async () => ({
+        run: waiting,
+        steps: [
+          {
+            runId: waiting.id,
+            stepId: 'research-approval',
+            profile: 'human',
+            status: 'waiting' as const,
+            attempt: 1,
+          },
+        ],
+        artifacts: [reportArtifact],
+        eventCount: 2,
+      }),
+      explainRunRecovery: async () => ({
+        eligible: false,
+        reason: 'waiting',
+        completedStepIds: [],
+        retryableStepIds: [],
+        workflowVersionCompatible: true,
+        actions: [],
+      }),
+      loadResearchApprovalPreviews: async () => [
+        {
+          artifact: reportArtifact,
+          content: '{"summary":"bounded"}',
+          truncated: false,
+          formatted: true,
+        },
+      ],
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+    await openHistory(terminal);
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Approve research and continue');
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Reject research with feedback');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Reject research');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Approve research and continue');
+    expect(terminal.output.text()).toContain('Waiting');
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Reject research with feedback');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Reject research');
+    terminal.input.push('\x1b');
+    await terminal.output.waitFor('Approve research and continue');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Filters:');
+    terminal.input.push('q');
+    await terminal.output.waitFor('New workflow');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
+
+  it('resumes historical recovery attached and forwards q cancellation', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const failed = { ...createRun('failed'), id: 'run-failed', objective: 'Retry me' };
+    const liveRun = { ...createRun('running'), id: 'run-live', objective: 'Retry me' };
+    let aborted = false;
+    let currentStatus: WorkflowRun['status'] = 'failed';
+    let resolveResume: ((run: WorkflowRun) => void) | undefined;
+    const resumeExecution = new Promise<WorkflowRun>((resolve) => {
+      resolveResume = resolve;
+    });
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => failed,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [failed] }),
+      inspectRun: async (runId) => {
+        if (runId === liveRun.id || currentStatus === 'cancelled') {
+          return {
+            run: { ...liveRun, status: currentStatus === 'cancelled' ? 'cancelled' : 'running' },
+            steps: [
+              {
+                runId: liveRun.id,
+                stepId: 'plan',
+                profile: 'planner',
+                status: 'completed' as const,
+                attempt: 1,
+              },
+              {
+                runId: liveRun.id,
+                stepId: 'build',
+                profile: 'builder',
+                status:
+                  currentStatus === 'cancelled' ? ('cancelled' as const) : ('running' as const),
+                attempt: 1,
+              },
+            ],
+            artifacts: [],
+            eventCount: 1,
+          };
+        }
+        return {
+          run: failed,
+          steps: [
+            {
+              runId: failed.id,
+              stepId: 'plan',
+              profile: 'planner',
+              status: 'completed' as const,
+              attempt: 1,
+            },
+            {
+              runId: failed.id,
+              stepId: 'build',
+              profile: 'builder',
+              status: 'failed' as const,
+              attempt: 1,
+              error: { message: 'temporary failure', retryable: true },
+            },
+          ],
+          artifacts: [],
+          eventCount: 1,
+        };
+      },
+      explainRunRecovery: async () => ({
+        eligible: true,
+        reason: 'retryable',
+        completedStepIds: ['plan'],
+        retryableStepIds: ['build'],
+        workflowVersionCompatible: true,
+        actions: [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }],
+      }),
+      resumeWorkflow: async (request) => {
+        request.onRunStarted?.(liveRun);
+        request.signal?.addEventListener('abort', () => {
+          aborted = true;
+          currentStatus = 'cancelled';
+          setTimeout(() => resolveResume?.({ ...liveRun, status: 'cancelled' }), 100);
+        });
+        return { run: await resumeExecution, alreadyCompleted: false };
+      },
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+    await openHistory(terminal);
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Resume retryable work');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Workflow running');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Cancellation requested');
+    expect(aborted).toBe(true);
+    await terminal.output.waitFor('Workflow complete');
+    expect(terminal.output.text()).toMatch(/Cancelled|cancelled/i);
+    terminal.input.push('q');
+    await terminal.output.waitFor('Filters:');
+    terminal.input.push('q');
+    await terminal.output.waitFor('New workflow');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
+
+  it('requires typing YES before marking a persisted running run interrupted', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    let currentRunning = {
+      ...createRun('running'),
+      id: 'run-stale',
+      objective: 'Stale owner',
+    };
+    let interruptions = 0;
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => currentRunning,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [currentRunning] }),
+      inspectRun: async () => ({ run: currentRunning, steps: [], artifacts: [], eventCount: 0 }),
+      explainRunRecovery: async () => ({
+        eligible: currentRunning.status === 'interrupted',
+        reason: 'recovery',
+        completedStepIds: [],
+        retryableStepIds: currentRunning.status === 'interrupted' ? ['build'] : [],
+        workflowVersionCompatible: true,
+        actions:
+          currentRunning.status === 'running'
+            ? [
+                {
+                  kind: 'mark-interrupted',
+                  label: 'Mark interrupted and review recovery',
+                  requiresConfirmation: true,
+                },
+              ]
+            : [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }],
+      }),
+      markRunInterrupted: async (runId) => {
+        expect(runId).toBe(currentRunning.id);
+        interruptions += 1;
+        currentRunning = { ...currentRunning, status: 'interrupted' };
+        return currentRunning;
+      },
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+    await openHistory(terminal);
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Mark interrupted and review recovery');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Type YES to confirm');
+    terminal.input.push('no');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Type YES to confirm recovery.');
+    expect(interruptions).toBe(0);
+    terminal.input.push('\x7f');
+    terminal.input.push('\x7f');
+    terminal.input.push('YES');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Resume retryable work');
+    expect(interruptions).toBe(1);
+    expect(currentRunning.status).toBe('interrupted');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Filters:');
+    terminal.input.push('q');
+    await terminal.output.waitFor('New workflow');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
+
+  it('shows completion usage, cost, and artifacts after an attached run finishes', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const terminal = createTerminal();
+    const context = createApplicationService(
+      async (_workflow, request) => {
+        const run = createRun('running');
+        request.onRunStarted?.(run);
+        return {
+          ...run,
+          status: 'completed',
+          updatedAt: new Date().toISOString(),
+        };
+      },
+      () => undefined,
+    );
+    context.inspectRun = async () => ({
+      run: createRun('completed'),
+      steps: [
+        {
+          runId: 'run-1',
+          stepId: 'plan',
+          profile: 'planner',
+          status: 'completed' as const,
+          attempt: 1,
+          result: { text: '{}', usage: { totalTokens: 12 }, costUsd: 0.004 },
+        },
+      ],
+      artifacts: [
+        {
+          id: 'artifact-1',
+          runId: 'run-1',
+          stepId: 'plan',
+          name: 'plan',
+          kind: 'json' as const,
+          path: 'plan.json',
+          mediaType: 'application/json',
+          sizeBytes: 2,
+        },
+      ],
+      eventCount: 1,
+    });
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+    await launchWorkflow(terminal, false);
+    await terminal.output.waitFor('Workflow complete');
+    expect(terminal.output.text()).toContain('12 tokens');
+    expect(terminal.output.text()).toContain('$0.0040');
+    expect(terminal.output.text()).toContain('plan.plan');
+    terminal.input.push('q');
+    await terminal.output.waitFor('New workflow');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
 });
 
 class FakeInput extends EventEmitter {
@@ -581,6 +914,17 @@ class FakeOutput extends EventEmitter {
 
 function createTerminal(): { input: FakeInput; output: FakeOutput } {
   return { input: new FakeInput(), output: new FakeOutput() };
+}
+
+async function openHistory(terminal: ReturnType<typeof createTerminal>): Promise<void> {
+  await terminal.output.waitFor('New workflow');
+  await terminal.input.waitUntilReady();
+  terminal.input.push('j');
+  await terminal.output.waitFor('> Refresh diagnosis');
+  terminal.input.push('j');
+  await terminal.output.waitFor('> Run history');
+  terminal.input.push('\r');
+  await terminal.output.waitFor('Filters:');
 }
 
 async function launchWorkflow(

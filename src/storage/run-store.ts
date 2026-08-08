@@ -28,7 +28,6 @@ export interface RunStore {
   claimApproval(runId: string, approvalStep: StepRun): Promise<WorkflowRun | undefined>;
   markRunInterrupted(runId: string): Promise<WorkflowRun | undefined>;
   releaseExecution(runId: string): Promise<void>;
-  listRuns(): Promise<WorkflowRun[]>;
   listRunsPage(query?: RunListQuery): Promise<RunListPage>;
   saveRun(run: WorkflowRun, expectedStatus: RunStatus): Promise<void>;
   saveStepRun(stepRun: StepRun): Promise<void>;

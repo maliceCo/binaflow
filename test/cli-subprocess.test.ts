@@ -410,7 +410,7 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
       const store = new SqliteRunStore(join(config.dataDir, 'runs.db'));
       const artifacts = new FileArtifactStore(join(config.dataDir, 'artifacts'));
       try {
-        const [run] = await store.listRuns();
+        const [run] = (await store.listRunsPage()).runs;
         expect(run).toBeDefined();
         const inputArtifact = (await store.getArtifacts(run!.id)).find(
           (artifact) => artifact.stepId === 'run' && artifact.name === 'input',

@@ -151,10 +151,6 @@ export class SqliteRunStore implements RunStore {
       .run(runId, this.ownerId);
   }
 
-  async listRuns(): Promise<WorkflowRun[]> {
-    return (await this.listRunsPage()).runs;
-  }
-
   async listRunsPage(query: RunListQuery = {}): Promise<RunListPage> {
     const limit = validateLimit(query.limit);
     const conditions: string[] = [];

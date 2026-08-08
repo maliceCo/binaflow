@@ -4,7 +4,7 @@ import {
   moveSelection,
   pageSelection,
   scrollText,
-} from '../src/tui-ink/viewport.js';
+} from '../src/tui/viewport.js';
 
 describe('Ink viewport state', () => {
   it('keeps selection visible while moving and paging', () => {

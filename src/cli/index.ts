@@ -84,7 +84,7 @@ function registerTuiCommand(cli: Command): void {
       if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
         throw cliUsageError('TUI_REQUIRES_TTY', 'The tui command requires an interactive terminal');
       }
-      const { runInkShell: runTui } = await import('../tui-ink/shell.js');
+      const { runInkShell: runTui } = await import('../tui/shell.js');
       await runTui({
         ...(options.cwd ? { cwd: options.cwd } : {}),
         ...(options.config ? { configPath: options.config } : {}),
@@ -122,7 +122,7 @@ export async function runCli(argv = process.argv): Promise<void> {
       createCli().outputHelp();
       return;
     }
-    const { runInkShell: runTui } = await import('../tui-ink/shell.js');
+    const { runInkShell: runTui } = await import('../tui/shell.js');
     await runTui();
     return;
   }
