@@ -37,6 +37,7 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('> New workflow');
     terminal.input.push('\r');
     await terminal.output.waitFor('Setup required');
+    expect(terminal.output.text()).toContain('No configuration was found at the displayed path.');
     terminal.input.push('\r');
     await terminal.output.waitFor('Planner provider');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
@@ -140,7 +141,7 @@ describe('Ink setup and launch safety', () => {
     await mkdir(join(directory, '.binaflow'), { recursive: true });
     await writeFile(configPath, original);
     terminal.input.push('\r');
-    await terminal.output.waitFor('nothing was overwritten');
+    await terminal.output.waitFor('Configuration already exists at');
     expect(await readFile(configPath, 'utf8')).toBe(original);
     terminal.input.push('q');
     await running;

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { registerResumeCommand } from './commands/resume.js';
@@ -137,7 +137,7 @@ export async function runCli(argv = process.argv): Promise<void> {
   await cli.parseAsync(argv);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   runCli().catch((error: unknown) => {
     const mode = process.argv.includes('--jsonl')
       ? 'jsonl'

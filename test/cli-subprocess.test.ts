@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
@@ -22,6 +22,21 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     expect(result.stdout).toContain('Usage: binaflow');
     expect(result.stdout).toContain('tui');
     expect(result.stderr).toBe('');
+  });
+
+  it('runs when the CLI entry is reached through a symlinked directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-cli-symlink-'));
+    try {
+      const linkedDirectory = join(directory, 'current');
+      await symlink(dirname(cliEntry), linkedDirectory, 'dir');
+      const result = await runCliFrom(join(linkedDirectory, 'index.ts'), ['--help']);
+
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('Usage: binaflow');
+      expect(result.stderr).toBe('');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('rejects the explicit TUI command without a TTY', async () => {
@@ -405,8 +420,15 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
 });
 
 function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+  return runCliFrom(cliEntry, args);
+}
+
+function runCliFrom(
+  entry: string,
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [tsxEntry, cliEntry, ...args], {
+    const child = spawn(process.execPath, [tsxEntry, entry, ...args], {
       cwd: fileURLToPath(new URL('..', import.meta.url)),
       env: { ...process.env, FORCE_COLOR: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],

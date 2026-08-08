@@ -923,6 +923,7 @@ function InkShell({
     return (
       <SelectionScreen
         title="Setup required"
+        description="No configuration was found at the displayed path. Create one to configure the planner and builder."
         items={['Create configuration', 'Read documentation', 'Exit']}
         selected={selection}
         colors={colors}
@@ -1364,12 +1365,14 @@ function detailActions(
 
 function SelectionScreen({
   title,
+  description,
   items,
   selected,
   colors,
   footer,
 }: {
   title: string;
+  description?: string;
   items: string[];
   selected: number;
   colors: boolean;
@@ -1377,6 +1380,7 @@ function SelectionScreen({
 }): ReactNode {
   return (
     <ScreenFrame title={title} footer={footer} colors={colors}>
+      {description ? <Text>{description}</Text> : null}
       <SelectionList items={items} selected={selected} offset={0} visibleRows={items.length} />
     </ScreenFrame>
   );

@@ -1,9 +1,583 @@
-# Active Implementation Plan
+# Architecture Remediation Execution Plan
 
-This plan is the execution contract for the consumer-facing Binaflow
-milestone. Work through phases in order. Complete and verify one phase before
-starting the next phase. Phase 10 supersedes the previous external-review
-pauses with its execution, review, remediation, and commit protocol.
+This section is the authoritative execution contract for Terra or Luna. It
+supersedes every unchecked task later in this file. The remaining content is
+historical context and verification evidence only; do not implement an old
+unchecked item unless this plan explicitly includes it.
+
+Execute the phases in order without waiting for review between phases. Stop
+only for an unresolved product decision, a destructive operation outside this
+repository, or a blocker that cannot be resolved from the code and tests.
+
+## Outcome
+
+Leave Binaflow with:
+
+- safe ownership of every attached execution;
+- coherent state transitions and crash recovery;
+- bounded live rendering, storage access, and process transport;
+- an application boundary shared by CLI and TUI without exposing storage or
+  engine internals;
+- a sequential core free from presentation and concrete harness concerns;
+- experimental research orchestration that remains explicit and specific;
+- one supported Ink TUI and no legacy implementation;
+- no `TODO.md` after all work and verification are complete.
+
+## Non-Negotiable Constraints
+
+- Preserve protocol-v1 JSON and JSONL envelopes, fields, ordering, stream
+  separation, and exit-code behavior.
+- Preserve persisted-run compatibility. Use additive migrations when storage
+  changes are required.
+- Keep execution attached. Do not add a daemon, detach, reconnect, scheduler,
+  remote worker, second driver, parallel workflow execution, or generic plugin
+  framework.
+- Keep `research-plan-build` experimental. Do not introduce generic approval,
+  loop, or DAG primitives.
+- Prefer composition over inheritance. Do not add base classes for application,
+  workflow, CLI, or TUI behavior.
+- Do not add a dependency-injection framework, command bus, global TUI state
+  library, or speculative ports with no current consumer.
+- Keep CLI and TUI as presentation adapters. Neither may read SQLite, mutate
+  engine state, or read artifact files directly.
+- Keep Pi protocol details in the Pi driver and JSONL transport.
+- Add the smallest behavior-focused regression scenario before each bug fix;
+  one scenario may protect several related assertions.
+- Do not weaken or delete a safety test merely to make the suite pass.
+- Preserve unrelated working-tree changes. Inspect the diff before every edit.
+- Finish every phase with its own QA review and one phase-specific commit.
+- Never amend, force-push, or push. Publication remains an explicit owner
+  action.
+- Do not build, package, install, or smoke-test the Linux bundle unless the
+  owner explicitly requests it. Final bundle validation belongs to the owner.
+
+## Test Value Rules
+
+The test suite exists to protect functionality, not to maximize coverage. Do
+not add or configure a coverage target.
+
+A test is valuable only when it protects at least one current contract:
+
+- user-visible behavior or a complete application flow;
+- persisted data integrity, state transitions, or crash recovery;
+- cancellation, process, signal, stream, or terminal lifecycle safety;
+- CLI JSON/JSONL compatibility, exit codes, or stdout/stderr separation;
+- security boundaries such as path containment or terminal sanitization;
+- a simple deterministic bound needed for functionality, such as one active
+  refresh, bounded retained activity, or bounded parser input;
+- a previously reproduced regression that could plausibly return.
+
+Apply these rules to every test change:
+
+- Prefer one readable behavior scenario over separate tests for equivalent
+  permutations or individual lines.
+- Test through the narrowest stable public boundary that proves the contract.
+  Add a subprocess or full TUI journey only when the process/terminal boundary
+  itself is the behavior under test.
+- Do not test private helpers, internal call order, exact ANSI chunks, exact
+  React component trees, implementation-specific strings, trivial accessors,
+  TypeScript types, or library behavior.
+- Do not duplicate the same assertion at engine, application, CLI, and TUI
+  levels unless each level protects a different observable boundary.
+- Avoid broad snapshots. Assert the small semantic output that consumers rely
+  on.
+- Do not add benchmark suites, load tests, smoke tests, or wall-clock
+  assertions. Prove required bounds with a small deterministic input and direct
+  observable assertions.
+- Prefer real SQLite/filesystem adapters when transaction, migration, locking,
+  or path behavior is the contract. Prefer small in-memory fakes for pure
+  application orchestration.
+- Fakes must implement the narrow interface consumed by the subject. Do not use
+  `as unknown as` to disguise incomplete `RunStore`, `ArtifactStore`, engine, or
+  application objects. Stream fixture casts are acceptable only at the Node/Ink
+  boundary when the fake intentionally implements the exercised stream subset.
+- Use `satisfies` for fixtures and protocol documents so excess or missing
+  fields fail type checking without widening literal types.
+- Every new test must state what regression it prevents. If that answer is only
+  "coverage" or "this method exists", do not add the test.
+- When a new test supersedes an equivalent legacy or lower-value test, remove
+  the old test in the same verified phase.
+- Keep live Pi tests opt-in. Driver behavior must remain reproducible with the
+  fake JSONL process without credentials or model requests.
+
+The phase test lists below describe required contracts, not required test
+counts. Combine related bullets into the minimum number of coherent scenarios.
+
+## TypeScript Quality Rules
+
+- Keep `strict`, `noUncheckedIndexedAccess`, and
+  `exactOptionalPropertyTypes` enabled. Fix errors instead of weakening compiler
+  options.
+- Do not introduce `any`, `@ts-ignore`, unchecked double casts, or non-null
+  assertions to bypass a design problem. Narrow `unknown` at external JSON,
+  process, filesystem, and error boundaries.
+- Prefer discriminated unions for workflow, run, screen, and operation states so
+  invalid combinations are not representable. Use exhaustive `never` checks
+  when every variant must be handled.
+- Model required and optional data accurately. Do not use optional properties to
+  avoid constructing valid state.
+- Prefer narrow consumer-owned interfaces and `Pick`-style capabilities over
+  passing broad contexts. Name a capability interface when it has more than one
+  consumer; do not create one for a single trivial call.
+- Prefer plain functions and composition. Use classes only for resources with
+  identity or lifecycle, such as SQLite and child processes. Use inheritance
+  only for idiomatic `Error` subclasses.
+- Use `import type` for type-only dependencies and avoid barrel files that hide
+  dependency direction or create cycles.
+- Keep serialized workflow, profile, protocol, and persisted DTOs free of
+  methods, class instances, `Map`, `Set`, `Date`, functions, and implicit
+  `undefined` values.
+- Preserve readonly inputs where mutation is not part of the contract. Copy at
+  ownership boundaries rather than defensively cloning throughout the code.
+- Handle promises explicitly. Do not leave floating work unless it is
+  intentionally detached from control flow, cannot outlive its owner, and has a
+  documented error path. Attached workflow work may never be fire-and-forget.
+- Catch values as `unknown`, retain useful typed error codes, and do not parse
+  behavior from human error messages.
+- Avoid boolean option accumulation when named operations or a discriminated
+  request make valid combinations clearer. Do not refactor a stable one-flag API
+  without a concrete need.
+- Avoid generic helpers, conditional types, overloads, and type-level machinery
+  when a direct concrete type expresses the current use.
+- Let TypeScript infer local implementation details, but annotate exported
+  contracts, persistence/protocol boundaries, and callbacks where ownership or
+  lifecycle would otherwise be ambiguous.
+
+## Phase Protocol
+
+For every phase:
+
+1. Read the affected production code and existing tests completely.
+2. Record any changed assumption in this section before implementation.
+3. Add the minimum failing regression scenario needed to reproduce the
+   observable defect; combine related behavior when the setup and contract are
+   the same.
+4. Implement the smallest cohesive correction.
+5. Run focused functional tests, `pnpm run format:check`, `pnpm run lint`,
+   `pnpm run typecheck`, `pnpm run test`, and `pnpm run build`. Do not run bundle
+   or installation checks.
+6. Perform the phase QA review defined below.
+7. Fix every real QA finding and rerun affected verification.
+8. Mark tasks complete only after verification and record any environmental
+   failure separately from product failures.
+9. Inspect `git status`, the complete phase diff, `git diff --check`, and recent
+   commits. Stage only intended phase files and create one non-interactive commit
+   with a concise phase-specific message.
+10. Start the next phase only after the QA remediation and commit succeed.
+
+Only one phase may be in progress at a time. Do not combine architecture work
+from a later phase with a correctness fix from the active phase.
+
+## Mandatory QA For Every Phase
+
+Each phase is incomplete until Terra or Luna performs and records its own QA:
+
+- Verify every changed production line traces to an active phase task.
+- Verify every new or retained test protects functional behavior, data,
+  lifecycle, protocol, or security rather than coverage or implementation
+  details.
+- Verify no equivalent behavior is tested redundantly at multiple layers.
+- Verify TypeScript strictness was not bypassed with `any`, double casts,
+  `@ts-ignore`, unjustified non-null assertions, or broad partial fakes.
+- Verify SRP, dependency direction, composition over inheritance, cleanup
+  ownership, error paths, and persisted compatibility.
+- Verify async work is awaited or explicitly owned and cannot outlive its
+  resource owner.
+- Verify hot paths remain bounded by inspection and a small deterministic
+  functional scenario; do not create a benchmark or smoke test.
+- Verify unrelated worktree changes remain untouched.
+- Record findings in the active phase, remediate them, rerun affected checks,
+  then create exactly one commit for that phase.
+
+## Phase 0: Establish The Baseline
+
+- [ ] Inspect `git status`, the complete worktree diff, and recent commits;
+      preserve all current unrelated edits.
+- [ ] Inventory existing tests by the contract they protect: product, data,
+      lifecycle, protocol, or security.
+- [ ] Identify duplicate, implementation-detail, legacy-only, and coverage-only
+      tests. Record candidates for Phase 8; do not delete safety or compatibility
+      coverage before its Ink/application replacement passes.
+- [ ] Inventory unsafe test casts. Replace broad `as unknown as` fakes when the
+      corresponding application/store boundary is narrowed; do not perform a
+      standalone cast-cleanup rewrite.
+- [ ] Run the current focused Ink, application, engine, persistence, driver,
+      CLI, and protocol tests without changing expectations.
+- [ ] Run the complete static and test verification suite.
+- [ ] Record current failures as product or environmental failures.
+- [ ] Confirm explicit CLI commands still lazy-load no React, Ink, SQLite, Ajv,
+      Pi, or workflow execution graph unless the command needs it.
+
+### Exit Criteria
+
+- [ ] The starting behavior and failures are reproducible and documented.
+- [ ] Every retained test category has a stated functional purpose; raw test
+      count and line coverage are not acceptance criteria.
+- [ ] No production code changed in this phase.
+- [ ] Phase 0 QA is complete, findings are resolved or recorded, and the
+      baseline has its own commit.
+
+### Current Test Audit Evidence
+
+- On 2026-08-07, `pnpm run test` completed with 187 passed, 3 failed, and 1
+  skipped test in 126.71 seconds.
+- The three failures are in legacy TUI tests: one stale setup status assertion,
+  one refresh-coalescing timeout, and one resize-render assertion. Equivalent
+  Ink suites pass, so Phase 0 must classify whether each legacy test protects a
+  still-current contract before Phase 8 removes or replaces it.
+- The test tree contains 58 `as unknown as` occurrences. Most represent broad
+  infrastructure fakes; stream fixture casts at the Node/Ink boundary are a
+  separate intentional case. Narrow them only while implementing the final
+  application interfaces.
+
+## Phase 1: Own Attached Execution Safely
+
+### Tests First
+
+- [ ] Cover SIGINT and SIGTERM while opening context and before
+      `onRunStarted`.
+- [ ] Cover input/output stream failure during an active workflow.
+- [ ] Cover first graceful cancellation and second forced cancellation.
+- [ ] Assert event unsubscription and active-operation settlement happen before
+      an owned application context closes.
+- [ ] Assert Ink restores the terminal before injected force signalling.
+- [ ] Assert exit codes `130` and `143` remain correct.
+- [ ] Assert no workflow or Pi child continues after `runInkShell` resolves or
+      rejects.
+
+### Implementation
+
+- [ ] Introduce one compositional lifecycle owner for the active controller,
+      active operation promise, event subscription, context ownership, and
+      terminal exit. Do not put this policy in a base class.
+- [ ] Route user cancellation, OS signals, stream failures, render failures,
+      and normal completion through the same ordered shutdown path.
+- [ ] Make the first request abort gracefully; make the second request await
+      cleanup before force signalling.
+- [ ] Handle the startup window before a run ID or live screen exists.
+- [ ] Ensure unmount cleanup never closes SQLite while execution or event
+      persistence is active.
+
+### Exit Criteria
+
+- [ ] Ink owns every attached run from startup through every terminal path.
+- [ ] No detach path or cleanup race remains.
+- [ ] Phase 1 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 2: Make Claims And Recovery Safe
+
+### Tests First
+
+- [ ] Verify incompatible resume rejects without changing run status, steps,
+      approvals, artifacts, or timestamps.
+- [ ] Verify incompatible approval rejects before persisting its decision.
+- [ ] Using independent application/store instances, verify a live run cannot
+      be marked interrupted or resumed by a second process.
+- [ ] Verify a genuinely abandoned run can still be recovered explicitly.
+- [ ] Verify concurrent run transitions cannot overwrite a newer state.
+
+### Implementation
+
+- [ ] Check workflow ID, workflow version, persisted input, profile validity,
+      retry eligibility, and approval preconditions before claiming a run.
+- [ ] Keep engine-side validation as defense in depth.
+- [ ] Replace optional `claimRun` and `claimApproval` fallbacks with the required
+      transactional store contract.
+- [ ] Add the smallest local execution-ownership mechanism that can distinguish
+      a live owner from an abandoned attached run. Keep it local and do not turn
+      it into a lease service or daemon.
+- [ ] Allow `markRunInterrupted` only after proving that no live execution owns
+      the run.
+- [ ] Make run status writes compare-and-set against the expected previous
+      status and reject stale writers.
+
+### Exit Criteria
+
+- [ ] Validation failures are non-mutating.
+- [ ] At most one local process can execute or recover a run at a time.
+- [ ] Phase 2 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 3: Repair Step And Research Checkpoints
+
+### Tests First
+
+- [ ] Fail a step, resume successfully, and verify the completed retry contains
+      no stale error, result, disposition, skip reason, or terminal timestamp.
+- [ ] Verify retry attempt history records the actual retry start time.
+- [ ] Verify non-retryable failures in research, review, plan, and build are not
+      silently rerun.
+- [ ] Inject failure at every research-loop checkpoint boundary and verify a
+      resumed run never combines new research with an old review.
+- [ ] Verify rejection feedback and approval attempt state survive interruption.
+- [ ] Verify permanent and transient `AgentDriverError` codes and retryability
+      remain distinguishable in persisted state.
+
+### Implementation
+
+- [ ] Construct pending/running retry state explicitly instead of spreading a
+      terminal `StepRun` into a new attempt.
+- [ ] Apply the same retry eligibility policy to normal and experimental
+      workflow paths.
+- [ ] Add one research-specific transactional checkpoint operation that updates
+      the input artifact reference, research step, review step, and approval
+      state atomically.
+- [ ] Preserve driver error codes and combine driver retryability with the
+      configured retry budget.
+- [ ] Keep completed step state and artifact references transactional.
+
+### Exit Criteria
+
+- [ ] Every persisted step state is internally consistent.
+- [ ] Crash recovery cannot pair artifacts from different research iterations.
+- [ ] Phase 3 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 4: Fix Ink Correctness And Performance
+
+### Functional Tests First
+
+- [ ] Feed a small burst of text and status events and verify UI updates are
+      coalesced, at most one inspection is active, and retained activity stays
+      within its configured bounds.
+- [ ] Verify at most one persisted snapshot inspection is in flight and late
+      snapshots cannot regress displayed state.
+- [ ] Verify launch, resume, and approval continuation update step state, usage,
+      and cost consistently.
+- [ ] Verify a context opened for history cannot execute after configuration
+      changes; execution must use exactly the profile values just reviewed.
+- [ ] Verify history detail and completion metadata do not load complete agent
+      result text.
+- [ ] Verify approval shows the configured message, bounded research/review
+      previews, and workspace-modification warning before actions.
+- [ ] Verify terminal controls are sanitized in objectives, IDs, profile/model
+      names, errors, artifact content, and persisted metadata.
+- [ ] Verify hidden actions cannot run below minimum terminal size.
+- [ ] Verify selection remains visible and long detail/artifact content can
+      reach its final line.
+
+### Implementation
+
+- [ ] Buffer bounded live activity outside React render state and publish UI
+      snapshots at a measured bounded interval.
+- [ ] Refresh persisted step summaries on status/error events or a coalesced
+      timer, never once per text event.
+- [ ] Share one launch/continuation event path so resume cannot omit snapshots.
+- [ ] Track retained activity bytes incrementally instead of rescanning and
+      copying the full bounded history for every event.
+- [ ] Recreate the owned application runtime after final configuration review,
+      or provide an application operation that validates and opens the exact
+      execution snapshot atomically.
+- [ ] Add a narrow inspection projection for completion metadata if existing
+      compact inspection is insufficient.
+- [ ] Use the existing bounded research approval preview operation.
+- [ ] Centralize safe dynamic text rendering so raw dynamic `<Text>` calls do
+      not depend on caller discipline.
+- [ ] Give each scrollable list or text area explicit selection and offset
+      state; block all hidden actions while below minimum size.
+
+### Exit Criteria
+
+- [ ] Live updates have bounded retained activity and at most one persisted
+      inspection in flight under a small deterministic event burst.
+- [ ] Setup, launch, completion, history, recovery, artifacts, and approval are
+      safe at supported terminal sizes.
+- [ ] Phase 4 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 5: Harden Workflow And Process Contracts
+
+### Tests First
+
+- [ ] Reject duplicate input-reference names.
+- [ ] Reject step-output references that are not reachable through declared
+      dependencies; preserve valid transitive references.
+- [ ] Prove a non-BuildPlan JSON output named `plan` is validated only by its
+      declared contract.
+- [ ] Make a fake Pi acknowledge `prompt` and exit before `agent_settled`; verify
+      immediate failure instead of waiting for profile timeout.
+- [ ] Feed an oversized unterminated JSONL record and verify bounded failure.
+- [ ] Use a small deterministic burst with a blocked event sink to verify queued
+      work remains ordered and owned without relying on timing thresholds.
+
+### Implementation
+
+- [ ] Strengthen serializable workflow validation without changing valid
+      workflow versions unnecessarily.
+- [ ] Remove output-name dispatch from the generic engine. Represent the current
+      plan disposition with the smallest explicit workflow-owned contract.
+- [ ] Expose process termination to the Pi driver and race it against
+      `agent_settled`, cancellation, and timeout.
+- [ ] Add a maximum JSONL record size measured in UTF-8 bytes.
+- [ ] Add bounded transport backpressure only if the deterministic scenario
+      reproduces queue growth; otherwise record that no change was justified.
+- [ ] Avoid compiling the same structured-output schema for every attempt when
+      a workflow-owned compiled validator already exists.
+
+### Exit Criteria
+
+- [ ] Workflow behavior follows declared dependencies and contracts, not array
+      order or artifact names.
+- [ ] Malformed or terminated child processes fail promptly with bounded memory.
+- [ ] Phase 5 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 6: Enforce Application And Presentation Boundaries
+
+### Architecture Rules To Enforce
+
+- [ ] Core may depend on domain types and inward-facing ports, never CLI, TUI,
+      concrete storage, filesystem artifacts, Pi, or concrete workflow modules.
+- [ ] Application composes use cases and workflow-specific coordination.
+- [ ] CLI and TUI depend on application operations and presentation helpers
+      only.
+- [ ] Storage, filesystem artifacts, and Pi remain replaceable adapters behind
+      narrow consumer-owned contracts.
+
+### Implementation
+
+- [ ] Move the experimental research coordinator out of the generic sequential
+      engine while reusing one shared step execution/retry implementation. Do
+      not generalize approval or loops.
+- [ ] Replace the infrastructure-exposing `ApplicationContext` consumed by
+      presentation with a narrow application service/facade containing current
+      operations and event subscription.
+- [ ] Keep concrete store, artifact store, engine, configuration, and close
+      ownership private to the application composition root.
+- [ ] Move human status labels and date/duration formatting out of `src/core`
+      into shared presentation code.
+- [ ] Consolidate workflow definitions and discovery metadata into one source
+      of truth if the current dual catalogs still require manual synchronization.
+- [ ] Add a small static boundary test or lint rule that rejects forbidden
+      imports. Do not add a dependency-analysis framework.
+- [ ] Replace presentation/application test doubles that cast partial broad
+      infrastructure objects with typed fakes for the final narrow contracts.
+- [ ] Split the Ink shell only along demonstrated responsibilities: application
+      routing, attached execution lifecycle, setup/launch, and
+      history/artifacts/approval. Do not create a generic component framework.
+
+### Exit Criteria
+
+- [ ] Presentation cannot access stores, artifact files, drivers, or engine
+      state even accidentally.
+- [ ] The sequential engine has no import of a concrete workflow.
+- [ ] No production behavior uses class inheritance beyond idiomatic `Error`
+      subclasses.
+- [ ] Phase 6 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 7: Normalize CLI Contracts
+
+- [ ] Reject unsupported JSONL modes before loading configuration, opening
+      SQLite, or reading artifacts.
+- [ ] Determine machine output mode through argument parsing that respects the
+      `--` delimiter, not `process.argv.includes`.
+- [ ] Use the CLI usage-error contract and exit code `2` for invalid update
+      options.
+- [ ] Consolidate only the repeated protocol record constructors whose shapes
+      must remain synchronized across run, resume, approve, and reject.
+- [ ] Verify human progress remains on stderr, human final output on stdout, and
+      machine stdout contains protocol records only.
+- [ ] Keep only focused subprocess tests where process exit, stdout/stderr, or
+      protocol framing is the contract; do not test installation or bundle
+      launchers in this phase.
+
+### Exit Criteria
+
+- [ ] Invalid invocations are deterministic and side-effect free.
+- [ ] Protocol-v1 output is byte-for-byte compatible where ordering is part of
+      the contract.
+- [ ] Phase 7 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 8: Remove Legacy And Unused Code
+
+- [ ] Complete the Ink parity matrix with a passing product or lifecycle test
+      for every retained behavior.
+- [ ] Remove duplicate and implementation-detail tests identified in Phase 0
+      after confirming a smaller retained scenario protects each real contract.
+- [ ] Verify the functional contracts for both public TUI entry points, non-TTY
+      help, normal exit, errors, signals, cancellation, recovery, and approval
+      without bundle or installation smoke tests.
+- [ ] Delete `src/tui/app.ts`, `src/tui/render.ts`,
+      `src/tui/terminal-session.ts`, legacy-only runners, and legacy-only tests.
+- [ ] Remove unused production APIs and components only after repository-wide
+      search proves they have no consumer, including the unused Ink
+      `Confirmation`, `RunStore.listRuns`, ignored artifact format options, and
+      test-only application helpers.
+- [ ] Remove retry/claim compatibility branches made impossible by the final
+      required contracts.
+- [ ] Consolidate `src/tui-ink` under `src/tui` only if the move reduces the
+      final public source layout without compatibility shims.
+- [ ] Run `git diff --check` and inspect every deleted symbol for a remaining
+      import, test, documentation reference, or package output.
+
+### Exit Criteria
+
+- [ ] Ink is the sole TUI implementation and no production line exists only for
+      the deleted renderer.
+- [ ] Every remaining public and internal API has a current consumer or a
+      documented compatibility requirement.
+- [ ] Phase 8 QA, remediation, focused/full verification, and commit are
+      complete.
+
+## Phase 9: Final Verification And Self-Destruction
+
+### Documentation
+
+- [ ] Update `README.md` with only verified user-visible behavior.
+- [ ] Update `AGENTS.md` with the final dependency rules, lifecycle ownership,
+      and verification expectations that must survive this plan.
+- [ ] Remove every `AGENTS.md` instruction requiring agents to read or update
+      `TODO.md`.
+- [ ] Ensure `README.md`, `AGENTS.md`, and `WISHLIST.md` do not refer to the
+      deleted legacy TUI or claim generic approval/loop capabilities.
+
+### Full Verification
+
+- [ ] Run `pnpm run format:check`.
+- [ ] Run `pnpm run lint`.
+- [ ] Run `pnpm run typecheck`.
+- [ ] Run `pnpm run test`.
+- [ ] Run `pnpm run build`.
+- [ ] Do not run `build:bundle`, installation checks, pseudo-terminal smoke, or
+      release validation unless the owner requests them explicitly.
+- [ ] Inspect `git status`, `git diff --check`, the complete diff, and all
+      remaining TODO references.
+- [ ] Complete Phase 9 QA and remediate every finding before applying the
+      destruction gate. The Phase 9 commit is created after deleting this file.
+
+### Destruction Gate
+
+Delete `TODO.md` only when every condition below is true:
+
+- [ ] Every task in this authoritative plan is complete and verified.
+- [ ] No unresolved product failure or blocker remains.
+- [ ] Environmental skips are documented outside `TODO.md` where they will
+      survive its deletion.
+- [ ] Final architecture decisions and operating instructions are preserved in
+      `AGENTS.md`; user behavior is preserved in `README.md`.
+- [ ] `AGENTS.md` and repository scripts no longer require `TODO.md` to exist.
+- [ ] `git grep -n "TODO.md" -- ':!TODO.md'` returns no obsolete dependency on
+      this file.
+- [ ] The complete final verification passes after documentation and legacy
+      deletion.
+- [ ] The owner has not requested bundle validation, or any explicitly requested
+      bundle validation has been completed separately by the owner or on demand.
+
+When the destruction gate passes, delete `TODO.md` as the final repository
+edit, stage only the verified Phase 9 changes and this deletion, and create the
+single Phase 9 commit. Do not replace the file with another planning file,
+completion marker, archive, or compatibility stub.
+
+---
+
+# Historical Implementation Record
+
+Everything below this heading is retained temporarily as migration history and
+measurement evidence. It is not active scope. It will be deleted together with
+this file after Phase 9 passes.
 
 ## Product Direction
 
@@ -1621,3 +2195,26 @@ BY` for both default and filtered history queries.
   The archive is `release/binaflow-linux-x64-0.1.0-preview.0.tar.gz`, SHA-256
   `54C9504C983924CD50FED6D5DC98DD5567945499017E18303A3A8248AF9002F0`; its
   extracted launcher passed `--help` smoke verification.
+- Local managed-install verification found and fixed a launcher defect: the
+  `current` version symlink caused the CLI main-module check to skip execution.
+  The CLI now compares canonical entry paths, with a subprocess regression test
+  for a symlinked entry directory. A rebuilt bundle was checksum-verified,
+  installed under a native WSL test root, and its managed launcher printed its
+  version and help successfully.
+- Installed-bundle measurements on 2026-08-07: first Ink frame was 252-292 ms
+  with a native WSL workspace and 285-311 ms with a `/mnt/d` workspace. With a
+  valid configuration, readiness diagnosis was 799-841 ms native and 881-937
+  ms mounted. A warm `pi --version` probe took about 480 ms; it is the dominant
+  readiness delay after the first frame. In contrast, source development
+  `pnpm run cli --help` from `/mnt/d` took 2.55-2.70 s, while installed bundle
+  help took 30-40 ms.
+- Full verification for the launcher fix passed formatting, linting,
+  typecheck, build, the focused symlink regression, bundle construction,
+  checksum verification, and installed-launcher smoke. Full Vitest verification
+  had three unrelated legacy TUI failures: an Ink setup test expected an
+  unwrapped status string, a legacy setup test expected a stale status string,
+  and a legacy refresh test timed out after 5 seconds.
+- Clarified the Ink missing-configuration screen: the displayed path is the
+  expected target, and setup will collect planner and builder settings before
+  writing only after confirmation. Focused Ink setup tests and TypeScript
+  typecheck passed.
