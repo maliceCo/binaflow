@@ -191,31 +191,32 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ## Phase 0: Establish The Baseline
 
-- [ ] Inspect `git status`, the complete worktree diff, and recent commits;
+- [x] Inspect `git status`, the complete worktree diff, and recent commits;
       preserve all current unrelated edits.
-- [ ] Inventory existing tests by the contract they protect: product, data,
+- [x] Inventory existing tests by the contract they protect: product, data,
       lifecycle, protocol, or security.
-- [ ] Identify duplicate, implementation-detail, legacy-only, and coverage-only
+- [x] Identify duplicate, implementation-detail, legacy-only, and coverage-only
       tests. Record candidates for Phase 8; do not delete safety or compatibility
       coverage before its Ink/application replacement passes.
-- [ ] Inventory unsafe test casts. Replace broad `as unknown as` fakes when the
+- [x] Inventory unsafe test casts. Replace broad `as unknown as` fakes when the
       corresponding application/store boundary is narrowed; do not perform a
       standalone cast-cleanup rewrite.
-- [ ] Run the current focused Ink, application, engine, persistence, driver,
+- [x] Run the current focused Ink, application, engine, persistence, driver,
       CLI, and protocol tests without changing expectations.
-- [ ] Run the complete static and test verification suite.
-- [ ] Record current failures as product or environmental failures.
-- [ ] Confirm explicit CLI commands still lazy-load no React, Ink, SQLite, Ajv,
+- [x] Run the complete static and test verification suite.
+- [x] Record current failures as product or environmental failures.
+- [x] Confirm explicit CLI commands still lazy-load no React, Ink, SQLite, Ajv,
       Pi, or workflow execution graph unless the command needs it.
 
 ### Exit Criteria
 
-- [ ] The starting behavior and failures are reproducible and documented.
-- [ ] Every retained test category has a stated functional purpose; raw test
+- [x] The starting behavior and failures are reproducible and documented.
+- [x] Every retained test category has a stated functional purpose; raw test
       count and line coverage are not acceptance criteria.
-- [ ] No production code changed in this phase.
-- [ ] Phase 0 QA is complete, findings are resolved or recorded, and the
-      baseline has its own commit.
+- [x] No production code changed in this phase.
+- [x] Phase 0 QA is complete. The only finding is the recorded stale legacy
+      assertion; it is retained until Phase 8 replaces it with Ink parity
+      coverage. The baseline has its own commit.
 
 ### Current Test Audit Evidence
 
@@ -229,6 +230,24 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
   infrastructure fakes; stream fixture casts at the Node/Ink boundary are a
   separate intentional case. Narrow them only while implementing the final
   application interfaces.
+- On 2026-08-07, Phase 0 reran the complete suite: 189 tests passed, 1 was
+  skipped, and one legacy TUI test failed. The failure in
+  `test/tui-phase6.test.ts` expects the stale message
+  `Configuration written; readiness requires attention.` after configuration
+  setup; the renderer instead reports the current `Configuration is ready.`
+  state. The equivalent Ink setup suite passed, so retain this legacy test only
+  until Phase 8 removes it after parity coverage is confirmed.
+- Static verification (`format:check`, `lint`, `typecheck`, and `build`) passed.
+  The 28 test files protect core workflow/data contracts; persistence and
+  migrations; Pi transport and CLI protocol boundaries; configuration and
+  application operations; and Ink/legacy TUI product and lifecycle behavior.
+  Legacy `test/tui*.test.ts` files are Phase 8 removal candidates only after
+  their Ink replacements protect the same contracts.
+- Explicit CLI commands lazy-load Ink/React from `src/cli/index.ts`; the TUI
+  shell is imported only for `tui` or an interactive no-argument invocation.
+  Execution-only SQLite, Pi, and artifact dependencies remain behind dynamic
+  imports in command handlers. Workflow catalog metadata is intentionally
+  loaded to render help and workflow choices.
 
 ## Phase 1: Own Attached Execution Safely
 
