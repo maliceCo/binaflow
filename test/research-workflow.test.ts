@@ -8,6 +8,7 @@ import type { AgentStepResult } from '../src/core/run.js';
 import type { AgentProfile } from '../src/config.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
+import { AgentDriverError } from '../src/drivers/contract.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 
@@ -300,6 +301,10 @@ describe('research-plan-build workflow', () => {
   });
 
   it('restores automatic research feedback after an interrupted iteration', async () => {
+    const retryProfiles = {
+      ...profiles,
+      researcher: { ...profiles.researcher, retryLimit: 2 },
+    };
     const interruptedDriver = new FakeDriver([
       reportResult(),
       reviewResult('needs_more_research'),
@@ -310,7 +315,7 @@ describe('research-plan-build workflow', () => {
     const failed = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'automatic-feedback-resume',
       objective: 'Investigate the workflow',
-      profiles,
+      profiles: retryProfiles,
     });
 
     expect(failed.status).toBe('failed');
@@ -323,7 +328,7 @@ describe('research-plan-build workflow', () => {
       researchPlanBuildWorkflow,
       {
         runId: failed.id,
-        profiles,
+        profiles: retryProfiles,
         resume: true,
       },
     );
@@ -334,12 +339,16 @@ describe('research-plan-build workflow', () => {
   });
 
   it('restores human rejection feedback after an interrupted iteration', async () => {
+    const retryProfiles = {
+      ...profiles,
+      researcher: { ...profiles.researcher, retryLimit: 2 },
+    };
     const initialDriver = new FakeDriver([reportResult(), reviewResult('ready')]);
     const { engine, store, artifacts } = createEnvironment(initialDriver);
     const waiting = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'human-feedback-resume',
       objective: 'Investigate the workflow',
-      profiles,
+      profiles: retryProfiles,
     });
     const approval = (await store.getStepRuns(waiting.id)).find(
       (step) => step.stepId === 'research-approval',
@@ -360,7 +369,7 @@ describe('research-plan-build workflow', () => {
       new FakeDriver([new Error('research process interrupted')]),
     ).execute(researchPlanBuildWorkflow, {
       runId: waiting.id,
-      profiles,
+      profiles: retryProfiles,
       resume: true,
     });
 
@@ -368,13 +377,20 @@ describe('research-plan-build workflow', () => {
     expect(await persistedInput(store, artifacts, waiting.id)).toMatchObject({
       researchFeedback: 'Check the persistence migration too.',
     });
+    expect(
+      (await store.getStepRuns(waiting.id)).find((step) => step.stepId === 'research-approval'),
+    ).toMatchObject({
+      status: 'pending',
+      attempt: 2,
+      approval: { feedback: 'Check the persistence migration too.' },
+    });
 
     const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
     const resumed = await new WorkflowEngine(store, artifacts, resumedDriver).execute(
       researchPlanBuildWorkflow,
       {
         runId: waiting.id,
-        profiles,
+        profiles: retryProfiles,
         resume: true,
       },
     );
@@ -383,4 +399,68 @@ describe('research-plan-build workflow', () => {
     expect(resumedDriver.calls[0]?.prompt).toContain('Check the persistence migration too.');
     store.close();
   });
+
+  it.each(['research', 'research-review', 'plan', 'build'] as const)(
+    'does not rerun a non-retryable %s failure',
+    async (failedStep) => {
+      const initialResponses: Array<AgentStepResult | Error> = [];
+      if (failedStep !== 'research') initialResponses.push(reportResult());
+      if (failedStep !== 'research' && failedStep !== 'research-review') {
+        initialResponses.push(reviewResult('ready'));
+      }
+      if (failedStep === 'build') initialResponses.push(planResult());
+      initialResponses.push(
+        new AgentDriverError(
+          `permanent ${failedStep} failure`,
+          `${failedStep.toUpperCase()}_PERMANENT`,
+        ),
+      );
+      const initialDriver = new FakeDriver(initialResponses);
+      const { engine, store, artifacts } = createEnvironment(initialDriver);
+
+      let run = await engine.execute(researchPlanBuildWorkflow, {
+        runId: `non-retryable-${failedStep}`,
+        objective: 'Do not rerun permanent failures',
+        profiles,
+      });
+      if (failedStep === 'plan' || failedStep === 'build') {
+        const approval = (await store.getStepRuns(run.id)).find(
+          (step) => step.stepId === 'research-approval',
+        )!;
+        await store.saveStepRun({
+          ...approval,
+          status: 'pending',
+          approval: { decision: 'approved', decidedAt: new Date().toISOString() },
+        });
+        run = await engine.execute(researchPlanBuildWorkflow, {
+          runId: run.id,
+          profiles,
+          resume: true,
+        });
+      }
+      expect(run.status).toBe('failed');
+
+      if (failedStep === 'build') {
+        await expect(
+          new WorkflowEngine(store, artifacts, new FakeDriver([])).execute(
+            researchPlanBuildWorkflow,
+            { runId: run.id, profiles, resume: true },
+          ),
+        ).rejects.toThrow('no retryable failed');
+        expect(initialDriver.calls.filter((call) => call.stepId === 'build')).toHaveLength(1);
+        store.close();
+        return;
+      }
+
+      const retryDriver = new FakeDriver([]);
+      const resumed = await new WorkflowEngine(store, artifacts, retryDriver).execute(
+        researchPlanBuildWorkflow,
+        { runId: run.id, profiles, resume: true },
+      );
+
+      expect(resumed.status).toBe('failed');
+      expect(retryDriver.calls).toHaveLength(0);
+      store.close();
+    },
+  );
 });

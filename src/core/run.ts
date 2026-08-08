@@ -93,3 +93,13 @@ export interface StepAttempt {
   finishedAt?: string;
   externalSessionId?: string;
 }
+
+export function isStepRetryEligible(step: StepRun, resume: boolean): boolean {
+  if (!resume) return step.status === 'pending';
+  return (
+    step.status === 'pending' ||
+    step.status === 'interrupted' ||
+    step.status === 'skipped' ||
+    (step.status === 'failed' && step.error?.retryable === true)
+  );
+}

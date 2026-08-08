@@ -354,36 +354,55 @@ Each phase is incomplete until Terra or Luna performs and records its own QA:
 
 ### Tests First
 
-- [ ] Fail a step, resume successfully, and verify the completed retry contains
+- [x] Fail a step, resume successfully, and verify the completed retry contains
       no stale error, result, disposition, skip reason, or terminal timestamp.
-- [ ] Verify retry attempt history records the actual retry start time.
-- [ ] Verify non-retryable failures in research, review, plan, and build are not
+- [x] Verify retry attempt history records the actual retry start time.
+- [x] Verify non-retryable failures in research, review, plan, and build are not
       silently rerun.
-- [ ] Inject failure at every research-loop checkpoint boundary and verify a
+- [x] Inject failure at every research-loop checkpoint boundary and verify a
       resumed run never combines new research with an old review.
-- [ ] Verify rejection feedback and approval attempt state survive interruption.
-- [ ] Verify permanent and transient `AgentDriverError` codes and retryability
+- [x] Verify rejection feedback and approval attempt state survive interruption.
+- [x] Verify permanent and transient `AgentDriverError` codes and retryability
       remain distinguishable in persisted state.
 
 ### Implementation
 
-- [ ] Construct pending/running retry state explicitly instead of spreading a
+- [x] Construct pending/running retry state explicitly instead of spreading a
       terminal `StepRun` into a new attempt.
-- [ ] Apply the same retry eligibility policy to normal and experimental
+- [x] Apply the same retry eligibility policy to normal and experimental
       workflow paths.
-- [ ] Add one research-specific transactional checkpoint operation that updates
+- [x] Add one research-specific transactional checkpoint operation that updates
       the input artifact reference, research step, review step, and approval
       state atomically.
-- [ ] Preserve driver error codes and combine driver retryability with the
+- [x] Preserve driver error codes and combine driver retryability with the
       configured retry budget.
-- [ ] Keep completed step state and artifact references transactional.
+- [x] Keep completed step state and artifact references transactional.
 
 ### Exit Criteria
 
-- [ ] Every persisted step state is internally consistent.
-- [ ] Crash recovery cannot pair artifacts from different research iterations.
-- [ ] Phase 3 QA, remediation, focused/full verification, and commit are
+- [x] Every persisted step state is internally consistent.
+- [x] Crash recovery cannot pair artifacts from different research iterations.
+- [x] Phase 3 QA, remediation, focused/full verification, and commit are
       complete.
+
+### Verification Evidence
+
+- On 2026-08-08, focused Phase 3 verification passed 41 tests across engine,
+  research workflow, persistence, and migrations. The scenarios cover clean
+  retry state, actual attempt start timestamps, shared retry eligibility,
+  permanent/transient driver error metadata, non-retryable research/review/plan/
+  build failures, rejection feedback and approval attempt recovery, and the
+  transactional research checkpoint rollback/commit boundary.
+- `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, and
+  `pnpm run build` passed.
+- The full suite completed with 208 passed, 1 skipped, and 1 pre-existing
+  failure. `test/tui-phase6.test.ts` still expects the stale
+  `Configuration written; readiness requires attention.` message; the current
+  renderer reports `Configuration is ready.`, and the equivalent Ink setup test
+  passes. No Phase 3 test failed.
+- No migration was required: the existing `step_attempts` schema already stores
+  the required attempt history, and the checkpoint uses an additive RunStore
+  operation over existing tables.
 
 ## Phase 4: Fix Ink Correctness And Performance
 

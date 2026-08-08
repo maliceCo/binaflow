@@ -6,7 +6,12 @@ import {
   type ExecuteWorkflowRequest,
   type WorkflowEngine,
 } from '../core/engine.js';
-import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
+import {
+  isStepRetryEligible,
+  type ArtifactReference,
+  type StepRun,
+  type WorkflowRun,
+} from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { RunListPage, RunListQuery, RunStore } from '../storage/run-store.js';
 import {
@@ -128,12 +133,7 @@ export async function explainRunRecovery(
     .filter((step) => step.status === 'completed')
     .map((step) => step.stepId);
   const retryableStepIds = steps
-    .filter(
-      (step) =>
-        step.status === 'pending' ||
-        step.status === 'interrupted' ||
-        (step.status === 'failed' && step.error?.retryable === true),
-    )
+    .filter((step) => isStepRetryEligible(step, true))
     .map((step) => step.stepId);
 
   if (!workflowVersionCompatible) {
@@ -547,12 +547,7 @@ async function validateResumeEligibility(
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
   const steps = await context.store.getStepRuns(run.id);
-  const retryable = steps.some(
-    (step) =>
-      step.status === 'pending' ||
-      step.status === 'interrupted' ||
-      (step.status === 'failed' && step.error?.retryable === true),
-  );
+  const retryable = steps.some((step) => isStepRetryEligible(step, true));
   if (!retryable) {
     throw new Error(`Run ${run.id} has no retryable failed, interrupted, or pending steps`);
   }

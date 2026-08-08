@@ -32,6 +32,12 @@ export interface RunStore {
   getStepRuns(runId: string, options?: StepRunQueryOptions): Promise<StepRun[]>;
   getArtifacts(runId: string): Promise<ArtifactReference[]>;
   replaceArtifact(artifact: ArtifactReference): Promise<void>;
+  checkpointResearchIteration(
+    inputArtifact: ArtifactReference,
+    researchStep: StepRun,
+    reviewStep: StepRun,
+    approvalStep?: StepRun,
+  ): Promise<void>;
   completeStep(stepRun: StepRun, artifacts: ArtifactReference[]): Promise<void>;
   saveEvent(event: NormalizedEvent): Promise<void>;
   saveEvents(events: NormalizedEvent[]): Promise<void>;

@@ -1,13 +1,15 @@
+import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink, NormalizedEvent } from '../src/core/events.js';
-import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
+import type { AgentStepResult, StepRun, WorkflowRun } from '../src/core/run.js';
 import type { WorkflowDefinition } from '../src/core/workflow.js';
 import { WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
+import { AgentDriverError } from '../src/drivers/contract.js';
 import { planBuildWorkflow } from '../src/workflows/plan-build.js';
 import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
@@ -558,6 +560,111 @@ describe('WorkflowEngine', () => {
       'completed',
       'completed',
     ]);
+    store.close();
+  });
+
+  it('cleans retry state and records the retry start time on the new attempt', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-retry-state-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'run.db');
+    const store = new SqliteRunStore(databasePath);
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    let buildCalls = 0;
+    let retryState: StepRun | undefined;
+    const driver: AgentDriver = {
+      async execute(request) {
+        if (request.stepId === 'plan') return plannerResult();
+        buildCalls += 1;
+        if (buildCalls === 1) throw new Error('builder failed');
+        retryState = (await store.getStepRuns('retry-state')).find(
+          (step) => step.stepId === 'build',
+        );
+        return { text: 'fresh build result' };
+      },
+    };
+    const engine = new WorkflowEngine(store, artifactStore, driver);
+
+    const failed = await engine.execute(planBuildWorkflow, {
+      runId: 'retry-state',
+      objective: 'Retry without stale state',
+      profiles,
+    });
+    const failedStep = (await store.getStepRuns(failed.id)).find(
+      (step) => step.stepId === 'build',
+    )!;
+    await store.saveStepRun({
+      ...failedStep,
+      result: { text: 'stale result' },
+      disposition: { kind: 'stop', code: 'STALE', message: 'stale disposition' },
+      skipReason: { code: 'STALE', message: 'stale skip reason' },
+      error: { message: 'stale error', retryable: true },
+    });
+
+    const resumed = await engine.execute(planBuildWorkflow, {
+      runId: failed.id,
+      profiles,
+      resume: true,
+    });
+
+    expect(resumed.status).toBe('completed');
+    expect(retryState).toMatchObject({ status: 'running', attempt: 2 });
+    expect(retryState).not.toHaveProperty('finishedAt');
+    expect(retryState).not.toHaveProperty('result');
+    expect(retryState).not.toHaveProperty('disposition');
+    expect(retryState).not.toHaveProperty('skipReason');
+    expect(retryState).not.toHaveProperty('error');
+    const completed = (await store.getStepRuns(failed.id)).find((step) => step.stepId === 'build')!;
+    expect(completed.result?.text).toBe('fresh build result');
+    expect(completed.disposition).toBeUndefined();
+    expect(completed.skipReason).toBeUndefined();
+    expect(completed.error).toBeUndefined();
+
+    const database = new Database(databasePath);
+    const attempts = database
+      .prepare(
+        'SELECT attempt, started_at FROM step_attempts WHERE run_id = ? AND step_id = ? ORDER BY attempt',
+      )
+      .all(failed.id, 'build') as Array<{ attempt: number; started_at: string }>;
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]?.started_at).toBe(completed.startedAt);
+    database.close();
+    store.close();
+  });
+
+  it('preserves driver error codes and intrinsic retryability with the retry budget', async () => {
+    const driver = new FakeDriver([
+      plannerResult(),
+      new AgentDriverError('temporary driver failure', 'DRIVER_TRANSIENT', true),
+      new AgentDriverError('permanent driver failure', 'DRIVER_PERMANENT', false),
+    ]);
+    const { engine, store } = createEnvironment(driver);
+
+    const first = await engine.execute(planBuildWorkflow, {
+      runId: 'driver-error-metadata',
+      objective: 'Preserve driver metadata',
+      profiles,
+    });
+    expect(
+      (await store.getStepRuns(first.id)).find((step) => step.stepId === 'build')?.error,
+    ).toEqual({
+      message: 'temporary driver failure',
+      code: 'DRIVER_TRANSIENT',
+      retryable: true,
+    });
+
+    const second = await engine.execute(planBuildWorkflow, {
+      runId: first.id,
+      profiles,
+      resume: true,
+    });
+    expect(second.status).toBe('failed');
+    expect(
+      (await store.getStepRuns(first.id)).find((step) => step.stepId === 'build')?.error,
+    ).toEqual({
+      message: 'permanent driver failure',
+      code: 'DRIVER_PERMANENT',
+      retryable: false,
+    });
     store.close();
   });
 });

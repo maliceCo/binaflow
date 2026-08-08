@@ -11,6 +11,7 @@ import type {
   StepSkipReason,
   WorkflowRun,
 } from './run.js';
+import { isStepRetryEligible } from './run.js';
 import type { RunStore } from '../storage/run-store.js';
 import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import { resolveProfile, type AgentProfile } from '../config.js';
@@ -126,7 +127,7 @@ export class WorkflowEngine {
           continue;
         }
 
-        if (existing && !canRetry(existing, request.resume === true)) {
+        if (existing && !isStepRetryEligible(existing, request.resume === true)) {
           failed = true;
           statuses.set(step.id, existing.status);
           await this.emitStatus(run.id, step.id, `Step ${step.id} is not retryable`);
@@ -187,6 +188,14 @@ export class WorkflowEngine {
         if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
         let research = stepRuns.get(researchStep.id);
         if (!research || research.status !== 'completed') {
+          if (research && !isStepRetryEligible(research, request.resume === true)) {
+            await this.emitStatus(
+              run.id,
+              researchStep.id,
+              `Step ${researchStep.id} is not retryable`,
+            );
+            return this.saveRunStatus(run, 'failed');
+          }
           const result = await this.executeStep(
             run,
             researchStep,
@@ -204,6 +213,10 @@ export class WorkflowEngine {
 
         let review = stepRuns.get(reviewStep.id);
         if (!review || review.status !== 'completed') {
+          if (review && !isStepRetryEligible(review, request.resume === true)) {
+            await this.emitStatus(run.id, reviewStep.id, `Step ${reviewStep.id} is not retryable`);
+            return this.saveRunStatus(run, 'failed');
+          }
           const result = await this.executeStep(run, reviewStep, review, input, artifacts, request);
           review = result.stepRun;
           stepRuns.set(reviewStep.id, review);
@@ -229,9 +242,17 @@ export class WorkflowEngine {
             ...input,
             researchFeedback: researchReview.nextResearchQuestions.join('\n'),
           };
-          artifacts = await this.persistResearchInput(run.id, input, artifacts);
-          const resetResearch = await this.resetLoopStep(research);
-          const resetReview = await this.resetLoopStep(review);
+          const inputArtifact = await this.writeResearchInputArtifact(run.id, input, artifacts);
+          const resetResearch = this.resetLoopStep(research);
+          const resetReview = this.resetLoopStep(review);
+          const approval = stepRuns.get(workflow.approval.id);
+          await this.runStore.checkpointResearchIteration(
+            inputArtifact,
+            resetResearch,
+            resetReview,
+            approval,
+          );
+          artifacts = replaceArtifacts(artifacts, [inputArtifact]);
           stepRuns.set(researchStep.id, resetResearch);
           stepRuns.set(reviewStep.id, resetReview);
           continue;
@@ -259,10 +280,10 @@ export class WorkflowEngine {
             researchFeedback:
               approval.approval.feedback ?? 'The user requested another research iteration.',
           };
-          artifacts = await this.persistResearchInput(run.id, input, artifacts);
-          const resetResearch = await this.resetLoopStep(research);
-          const resetReview = await this.resetLoopStep(review);
-          approval = {
+          const inputArtifact = await this.writeResearchInputArtifact(run.id, input, artifacts);
+          const resetResearch = this.resetLoopStep(research);
+          const resetReview = this.resetLoopStep(review);
+          const resetApproval: StepRun = {
             runId: approval.runId,
             stepId: approval.stepId,
             profile: approval.profile,
@@ -270,7 +291,14 @@ export class WorkflowEngine {
             attempt: approval.attempt + 1,
             approval: { feedback: input.researchFeedback as string },
           };
-          await this.runStore.saveStepRun(approval);
+          await this.runStore.checkpointResearchIteration(
+            inputArtifact,
+            resetResearch,
+            resetReview,
+            resetApproval,
+          );
+          artifacts = replaceArtifacts(artifacts, [inputArtifact]);
+          approval = resetApproval;
           stepRuns.set(researchStep.id, resetResearch);
           stepRuns.set(reviewStep.id, resetReview);
           stepRuns.set(workflow.approval.id, approval);
@@ -301,6 +329,10 @@ export class WorkflowEngine {
       let plan = stepRuns.get(planStep.id);
       if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
       if (!plan || plan.status !== 'completed') {
+        if (plan && !isStepRetryEligible(plan, request.resume === true)) {
+          await this.emitStatus(run.id, planStep.id, `Step ${planStep.id} is not retryable`);
+          return this.saveRunStatus(run, 'failed');
+        }
         const result = await this.executeStep(run, planStep, plan, input, artifacts, request);
         plan = result.stepRun;
         stepRuns.set(planStep.id, plan);
@@ -318,6 +350,10 @@ export class WorkflowEngine {
       const build = stepRuns.get(buildStep.id);
       if (request.signal?.aborted) return this.saveRunStatus(run, 'cancelled');
       if (!build || build.status !== 'completed') {
+        if (build && !isStepRetryEligible(build, request.resume === true)) {
+          await this.emitStatus(run.id, buildStep.id, `Step ${buildStep.id} is not retryable`);
+          return this.saveRunStatus(run, 'failed');
+        }
         const result = await this.executeStep(run, buildStep, build, input, artifacts, request);
         stepRuns.set(buildStep.id, result.stepRun);
       }
@@ -365,14 +401,7 @@ export class WorkflowEngine {
 
       if (existing.status === 'failed' || existing.status === 'interrupted') {
         const steps = await this.runStore.getStepRuns(existing.id);
-        if (
-          !steps.some(
-            (step) =>
-              step.status === 'pending' ||
-              step.status === 'interrupted' ||
-              (step.status === 'failed' && step.error?.retryable === true),
-          )
-        ) {
+        if (!steps.some((step) => isStepRetryEligible(step, true))) {
           throw new Error(
             `Run ${existing.id} has no retryable failed, interrupted, or pending steps`,
           );
@@ -464,27 +493,26 @@ export class WorkflowEngine {
     return parsed;
   }
 
-  private async resetLoopStep(step: StepRun): Promise<StepRun> {
-    const reset: StepRun = {
+  private resetLoopStep(step: StepRun): StepRun {
+    return {
       runId: step.runId,
       stepId: step.stepId,
       profile: step.profile,
       status: 'pending',
       attempt: step.attempt + 1,
     };
-    await this.runStore.saveStepRun(reset);
-    return reset;
   }
 
-  private async persistResearchInput(
+  private async writeResearchInputArtifact(
     runId: string,
     input: Record<string, unknown>,
     artifacts: ArtifactReference[],
-  ): Promise<ArtifactReference[]> {
-    const inputArtifact = findArtifact(artifacts, 'run', 'input');
-    if (!inputArtifact) throw new Error('Missing persisted run input artifact');
+  ): Promise<ArtifactReference> {
+    if (!findArtifact(artifacts, 'run', 'input')) {
+      throw new Error('Missing persisted run input artifact');
+    }
     // Keep superseded files until a future artifact GC policy can remove them safely.
-    const updated = await this.artifactStore.write(
+    return this.artifactStore.write(
       runId,
       'run',
       'input',
@@ -492,8 +520,6 @@ export class WorkflowEngine {
       JSON.stringify(input),
       'application/json',
     );
-    await this.runStore.replaceArtifact(updated);
-    return replaceArtifacts(artifacts, [updated]);
   }
 
   private async executeStep(
@@ -578,7 +604,7 @@ export class WorkflowEngine {
         if (completedPersisted) throw error;
         if (error instanceof PlannerSchemaError && !repairAttempted) {
           await this.recordAttemptFailure(run.id, step, running, error, true);
-          pending = { ...running, status: 'pending', attempt: running.attempt + 1 };
+          pending = createPendingRetry(running);
           await this.runStore.saveStepRun(pending);
           repairAttempted = true;
           continue;
@@ -612,11 +638,11 @@ export class WorkflowEngine {
       if (existing.status === 'running') {
         await this.runStore.saveStepRun({ ...existing, status: 'interrupted' });
       }
-      const pending: StepRun = { ...existing, status: 'pending', attempt };
+      const pending = createPendingRetry(existing, attempt);
       await this.runStore.saveStepRun(pending);
       return pending;
     }
-    return { ...existing, status: 'pending', attempt };
+    return createPendingRetry(existing, attempt);
   }
 
   private async recordFailure(
@@ -682,7 +708,7 @@ export class WorkflowEngine {
     const pending: StepRun = existing
       ? existing.status === 'pending'
         ? existing
-        : { ...existing, status: 'pending' }
+        : createPendingRetry(existing, existing.attempt)
       : { runId, stepId: step.id, profile: step.profile, status: 'pending', attempt: 1 };
     if (existing?.status === 'running') {
       await this.runStore.saveStepRun({ ...existing, status: 'interrupted' });
@@ -831,16 +857,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function canRetry(step: StepRun, resume: boolean): boolean {
-  if (!resume) return step.status === 'pending';
-  return (
-    step.status === 'pending' ||
-    step.status === 'interrupted' ||
-    step.status === 'skipped' ||
-    (step.status === 'failed' && step.error?.retryable === true)
-  );
-}
-
 function isBlocked(status: StepRun['status'] | undefined): boolean {
   return (
     status === 'failed' ||
@@ -851,10 +867,34 @@ function isBlocked(status: StepRun['status'] | undefined): boolean {
 }
 
 function toStepError(error: unknown, retryable: boolean): NonNullable<StepRun['error']> {
+  const driverError = isAgentDriverError(error) ? error : undefined;
   return {
     message: error instanceof Error ? error.message : String(error),
-    code: error instanceof PlannerSchemaError ? 'PLAN_SCHEMA_INVALID' : 'AGENT_EXECUTION_FAILED',
-    retryable,
+    code:
+      error instanceof PlannerSchemaError
+        ? 'PLAN_SCHEMA_INVALID'
+        : driverError
+          ? driverError.code
+          : 'AGENT_EXECUTION_FAILED',
+    retryable: retryable && (driverError?.retryable ?? true),
+  };
+}
+
+function isAgentDriverError(error: unknown): error is Error & { code: string; retryable: boolean } {
+  return (
+    error instanceof Error &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    typeof (error as { retryable?: unknown }).retryable === 'boolean'
+  );
+}
+
+function createPendingRetry(step: StepRun, attempt = step.attempt + 1): StepRun {
+  return {
+    runId: step.runId,
+    stepId: step.stepId,
+    profile: step.profile,
+    status: 'pending',
+    attempt,
   };
 }
 

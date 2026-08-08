@@ -258,6 +258,130 @@ describe('local persistence', () => {
     store.close();
   });
 
+  it('commits research input and loop state together, and rolls them back together', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-research-checkpoint-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    const run: WorkflowRun = {
+      id: 'research-checkpoint-run',
+      workflowId: 'research-plan-build',
+      workflowVersion: 1,
+      objective: 'Checkpoint research safely',
+      status: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const oldInput = await artifactStore.write(
+      run.id,
+      'run',
+      'input',
+      'json',
+      '{"objective":"old"}',
+      'application/json',
+    );
+    await store.createRun(run, [oldInput]);
+    const research: StepRun = {
+      runId: run.id,
+      stepId: 'research',
+      profile: 'researcher',
+      status: 'pending',
+      attempt: 1,
+    };
+    const review: StepRun = {
+      runId: run.id,
+      stepId: 'research-review',
+      profile: 'research-reviewer',
+      status: 'pending',
+      attempt: 1,
+    };
+    const approval: StepRun = {
+      runId: run.id,
+      stepId: 'research-approval',
+      profile: 'human',
+      status: 'pending',
+      attempt: 1,
+    };
+    await store.saveStepRun(research);
+    await store.saveStepRun({ ...research, status: 'completed' });
+    await store.saveStepRun(review);
+    await store.saveStepRun({ ...review, status: 'completed' });
+    await store.saveStepRun(approval);
+    await store.saveStepRun({ ...approval, status: 'waiting' });
+
+    const newInput = await artifactStore.write(
+      run.id,
+      'run',
+      'input',
+      'json',
+      '{"objective":"new"}',
+      'application/json',
+    );
+    await expect(
+      store.checkpointResearchIteration(
+        newInput,
+        { ...research, status: 'failed', attempt: 2 },
+        { ...review, status: 'pending', attempt: 2 },
+      ),
+    ).rejects.toThrow('Invalid step status transition');
+    expect(
+      (await store.getArtifacts(run.id)).find((artifact) => artifact.stepId === 'run'),
+    ).toEqual(oldInput);
+    await expect(
+      store.checkpointResearchIteration(
+        newInput,
+        { ...research, status: 'pending', attempt: 2 },
+        { ...review, status: 'failed', attempt: 2 },
+      ),
+    ).rejects.toThrow('Invalid step status transition');
+    expect(
+      (await store.getArtifacts(run.id)).find((artifact) => artifact.stepId === 'run'),
+    ).toEqual(oldInput);
+    expect((await store.getStepRuns(run.id)).map((step) => [step.stepId, step.status])).toEqual([
+      ['research', 'completed'],
+      ['research-review', 'completed'],
+      ['research-approval', 'waiting'],
+    ]);
+
+    await expect(
+      store.checkpointResearchIteration(
+        newInput,
+        { ...research, status: 'pending', attempt: 2 },
+        { ...review, status: 'pending', attempt: 2 },
+        { ...approval, status: 'completed', attempt: 2 },
+      ),
+    ).rejects.toThrow('Invalid step status transition');
+    expect(
+      (await store.getArtifacts(run.id)).find((artifact) => artifact.stepId === 'run'),
+    ).toEqual(oldInput);
+
+    await store.checkpointResearchIteration(
+      newInput,
+      { ...research, status: 'pending', attempt: 2 },
+      { ...review, status: 'pending', attempt: 2 },
+      {
+        ...approval,
+        status: 'pending',
+        attempt: 2,
+        approval: { feedback: 'Need stronger evidence' },
+      },
+    );
+    expect(
+      (await store.getArtifacts(run.id)).find((artifact) => artifact.stepId === 'run'),
+    ).toEqual(newInput);
+    expect(await store.getStepRuns(run.id)).toEqual([
+      { ...research, status: 'pending', attempt: 2 },
+      { ...review, status: 'pending', attempt: 2 },
+      {
+        ...approval,
+        status: 'pending',
+        attempt: 2,
+        approval: { feedback: 'Need stronger evidence' },
+      },
+    ]);
+    store.close();
+  });
+
   it('marks only running work interrupted in one transaction', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-interrupt-'));
     temporaryDirectories.push(directory);

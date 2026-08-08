@@ -266,10 +266,31 @@ export class SqliteRunStore implements RunStore {
 
   async replaceArtifact(artifact: ArtifactReference): Promise<void> {
     const transaction = this.database.transaction(() => {
-      this.database
-        .prepare('DELETE FROM artifacts WHERE run_id = ? AND step_id = ? AND name = ?')
-        .run(artifact.runId, artifact.stepId, artifact.name);
-      this.insertArtifact(artifact);
+      this.replaceArtifactInTransaction(artifact);
+    });
+    transaction();
+  }
+
+  async checkpointResearchIteration(
+    inputArtifact: ArtifactReference,
+    researchStep: StepRun,
+    reviewStep: StepRun,
+    approvalStep?: StepRun,
+  ): Promise<void> {
+    if (
+      inputArtifact.stepId !== 'run' ||
+      inputArtifact.name !== 'input' ||
+      researchStep.runId !== inputArtifact.runId ||
+      reviewStep.runId !== inputArtifact.runId ||
+      (approvalStep?.runId !== undefined && approvalStep.runId !== inputArtifact.runId)
+    ) {
+      throw new Error('Research checkpoint state must belong to the same run');
+    }
+    const transaction = this.database.transaction(() => {
+      this.replaceArtifactInTransaction(inputArtifact);
+      this.writeStepRun(researchStep);
+      this.writeStepRun(reviewStep);
+      if (approvalStep) this.writeStepRun(approvalStep);
     });
     transaction();
   }
@@ -351,6 +372,13 @@ export class SqliteRunStore implements RunStore {
       .run(toArtifactParams(artifact));
   }
 
+  private replaceArtifactInTransaction(artifact: ArtifactReference): void {
+    this.database
+      .prepare('DELETE FROM artifacts WHERE run_id = ? AND step_id = ? AND name = ?')
+      .run(artifact.runId, artifact.stepId, artifact.name);
+    this.insertArtifact(artifact);
+  }
+
   private writeStepRun(stepRun: StepRun): void {
     const current = this.database
       .prepare('SELECT status FROM step_runs WHERE run_id = ? AND step_id = ?')
@@ -379,23 +407,25 @@ export class SqliteRunStore implements RunStore {
       )
       .run(row);
 
-    this.database
-      .prepare(
-        `INSERT INTO step_attempts
-          (run_id, step_id, attempt, status, started_at, finished_at, external_session_id, result_json, error_json)
-         VALUES (@runId, @stepId, @attempt, @status, @startedAt, @finishedAt, @externalSessionId, @resultJson, @errorJson)
-         ON CONFLICT (run_id, step_id, attempt) DO UPDATE SET
-          status = excluded.status,
-          finished_at = excluded.finished_at,
-          external_session_id = excluded.external_session_id,
-          result_json = excluded.result_json,
-          error_json = excluded.error_json`,
-      )
-      .run({
-        ...row,
-        externalSessionId: stepRun.result?.sessionId ?? null,
-        startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
-      });
+    if (stepRun.startedAt !== undefined || stepRun.status !== 'pending') {
+      this.database
+        .prepare(
+          `INSERT INTO step_attempts
+            (run_id, step_id, attempt, status, started_at, finished_at, external_session_id, result_json, error_json)
+           VALUES (@runId, @stepId, @attempt, @status, @startedAt, @finishedAt, @externalSessionId, @resultJson, @errorJson)
+           ON CONFLICT (run_id, step_id, attempt) DO UPDATE SET
+            status = excluded.status,
+            finished_at = excluded.finished_at,
+            external_session_id = excluded.external_session_id,
+            result_json = excluded.result_json,
+            error_json = excluded.error_json`,
+        )
+        .run({
+          ...row,
+          externalSessionId: stepRun.result?.sessionId ?? null,
+          startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
+        });
+    }
   }
 
   private acquireExecutionOwner(runId: string): void {
