@@ -28,6 +28,7 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
+    "@inkjs/ui": "2.0.0",
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.4.1",
     "commander": "^14.0.1",

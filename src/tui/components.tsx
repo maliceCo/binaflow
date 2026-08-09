@@ -108,10 +108,6 @@ export function StatusMessage({
   return error ? <SafeText color="red">{message}</SafeText> : <SafeText>{message}</SafeText>;
 }
 
-export function TextPrompt({ prompt, value }: { prompt: string; value: string }): ReactNode {
-  return <SafeText>{`${prompt}${value}`}</SafeText>;
-}
-
 export function MinimumSizeFallback(): ReactNode {
   return (
     <Box flexDirection="column">
