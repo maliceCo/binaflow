@@ -28,22 +28,17 @@ describe('Ink setup and launch safety', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.output.waitFor('New workflow');
     await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
+    await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
-    await terminal.output.waitFor('Setup required');
-    expect(terminal.output.text()).toContain('No configuration was found at the displayed path.');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Planner provider');
+    await terminal.output.waitFor('Step 2 of 4: planner');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
     const nextFields = [
       'Planner model',
       'Builder provider',
       'Builder model',
       'Builder permissions',
-      'Review configuration',
+      'Step 4 of 4',
     ];
     for (let index = 0; index < answers.length; index += 1) {
       const answer = answers[index]!;
@@ -52,7 +47,7 @@ describe('Ink setup and launch safety', () => {
       terminal.input.push('\r');
       await terminal.output.waitFor(nextFields[index]!);
     }
-    await terminal.output.waitFor('Review configuration');
+    await terminal.output.waitFor('Step 4 of 4');
     expect(terminal.output.text()).toContain('Nothing has been written yet.');
     await expect(fileExists(join(directory, '.binaflow', 'config.json'))).resolves.toBe(false);
     terminal.input.push('\r');
@@ -111,21 +106,17 @@ describe('Ink setup and launch safety', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.output.waitFor('New workflow');
     await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
+    await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
-    await terminal.output.waitFor('Setup required');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Planner provider');
+    await terminal.output.waitFor('Step 2 of 4: planner');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
     const nextFields = [
       'Planner model',
       'Builder provider',
       'Builder model',
       'Builder permissions',
-      'Review configuration',
+      'Step 4 of 4',
     ];
     for (let index = 0; index < answers.length; index += 1) {
       terminal.input.push(answers[index]!);
@@ -140,6 +131,48 @@ describe('Ink setup and launch safety', () => {
     terminal.input.push('\r');
     await terminal.output.waitFor('Configuration already exists at');
     expect(await readFile(configPath, 'utf8')).toBe(original);
+    terminal.input.push('q');
+    await running;
+  });
+
+  it('uses manual text input when Pi discovery has no models', async () => {
+    const directory = await temporaryDirectory('binaflow-ink-setup-fallback-');
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+    });
+
+    await terminal.input.waitUntilReady();
+    await terminal.output.waitFor('Step 1 of 4');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Step 2 of 4: planner');
+    terminal.input.push('manual-provider');
+    await terminal.output.waitFor('manual-provider');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Planner model');
+    terminal.input.push('manual-model');
+    await terminal.output.waitFor('manual-model');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Step 3 of 4: builder');
+    terminal.input.push('manual-provider');
+    await terminal.output.waitFor('manual-provider');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Builder model');
+    terminal.input.push('manual-builder');
+    await terminal.output.waitFor('manual-builder');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Builder permissions');
+    terminal.input.push('no');
+    await terminal.output.waitFor('no');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Step 4 of 4');
+    expect(terminal.output.text()).toContain('Nothing has been written yet.');
+    terminal.input.push('q');
+    await terminal.output.waitFor('j/k or arrows move');
     terminal.input.push('q');
     await running;
   });

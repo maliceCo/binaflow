@@ -1,4 +1,5 @@
 import type { AgentProfile } from '../config.js';
+import type { AgentModel } from '../core/agent.js';
 import type {
   ConfigurationDiagnosis,
   GeneratedConfiguration,
@@ -15,6 +16,23 @@ export const SETUP_FIELDS = [
 
 export type SetupField = (typeof SETUP_FIELDS)[number];
 export type SetupValues = Partial<Record<(typeof SETUP_FIELDS)[number]['key'], string>>;
+export type SetupStep = 1 | 2 | 3 | 4;
+
+export function setupChoices(
+  fieldIndex: number,
+  models: AgentModel[],
+  values: SetupValues,
+): string[] {
+  const field = SETUP_FIELDS[fieldIndex];
+  if (!field) return [];
+  if (field.key.endsWith('Provider')) return [...new Set(models.map((model) => model.provider))];
+  if (field.key.endsWith('Model')) {
+    const provider =
+      values[field.key.startsWith('planner') ? 'plannerProvider' : 'builderProvider'];
+    return models.filter((model) => model.provider === provider).map((model) => model.model);
+  }
+  return [];
+}
 
 export interface LaunchInputState {
   workflow: WorkflowContract;

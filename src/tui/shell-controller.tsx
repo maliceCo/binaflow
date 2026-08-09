@@ -3,9 +3,11 @@ import {
   configurationExists,
   generateConfiguration,
   writeConfigurationAtomically,
+  discoverSetupModels,
   type GeneratedConfiguration,
   type ConfigurationDiagnosis,
 } from '../application/config-operations.js';
+import type { AgentModel } from '../core/agent.js';
 import type {
   ArtifactContentView,
   RunInspection,
@@ -25,12 +27,14 @@ import {
   sameProfileReview,
   SETUP_FIELDS,
   setupValuesToGeneration,
+  setupChoices,
   validateSetupValue,
   validateWorkflowValue,
   validateWorkflowValues,
   workflowInputFields,
   type LaunchInputState,
   type SetupValues,
+  type SetupStep,
 } from './launch.js';
 import {
   applyStepSnapshot,
@@ -48,7 +52,7 @@ import { HOME_ACTIONS, MINIMUM_HEIGHT, MINIMUM_WIDTH, type Screen } from './scre
 import { HomeScreen } from './screens/home.js';
 import { DocumentationScreen, documentationLines } from './screens/documentation.js';
 import { DiagnosisScreen, diagnosisLines } from './screens/diagnosis.js';
-import { SetupChoiceScreen, SetupInputScreen, SetupPreviewScreen } from './screens/setup.js';
+import { SetupWizardScreen } from './screens/setup.js';
 import { WorkflowsScreen, workflowItems } from './screens/workflows.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
 import { LiveScreen } from './screens/live.js';
@@ -89,6 +93,8 @@ export function InkShellController({
   const [selection, setSelection] = useState(0);
   const [listOffset, setListOffset] = useState(0);
   const [setupField, setSetupField] = useState(0);
+  const [setupStep, setSetupStep] = useState<SetupStep>(1);
+  const [setupModels, setSetupModels] = useState<AgentModel[]>([]);
   const [setupValues, setSetupValues] = useState<SetupValues>({});
   const [generated, setGenerated] = useState<GeneratedConfiguration>();
   const [workflows, setWorkflows] = useState(() => discoverWorkflows());
@@ -204,6 +210,12 @@ export function InkShellController({
         if (!active.current) return;
         setDiagnosis(result);
         setDiagnosisOffset(0);
+        if (!result.configExists) {
+          setSetupStep(1);
+          setSelection(0);
+          setListOffset(0);
+          setScreen('setup-wizard');
+        }
       })
       .catch((reason: unknown) => {
         if (active.current) setError(reason instanceof Error ? reason.message : String(reason));
@@ -334,18 +346,22 @@ export function InkShellController({
   };
 
   const startSetup = (): void => {
-    setScreen('setup-input');
+    setScreen('setup-wizard');
+    setSetupStep(1);
     setSetupField(0);
     setSetupValues({});
     setPromptValue('');
     setError(undefined);
+    void discoverSetupModels().then((models) => {
+      if (active.current) setSetupModels(models);
+    });
   };
 
   const selectHomeAction = (): void => {
     const action = HOME_ACTIONS[homeSelected];
     if (action === 'New workflow') {
       if (!diagnosis?.configExists) {
-        setScreen('setup-choice');
+        startSetup();
         setSelection(0);
         setListOffset(0);
       } else if (!diagnosis.configValid)
@@ -373,14 +389,19 @@ export function InkShellController({
     setSetupValues(next);
     setError(undefined);
     setPromptValue('');
-    if (setupField < SETUP_FIELDS.length - 1) setSetupField((fieldIndex) => fieldIndex + 1);
-    else {
+    setSelection(0);
+    if (setupField < SETUP_FIELDS.length - 1) {
+      setSetupField((fieldIndex) => fieldIndex + 1);
+      setSetupStep(setupField < 1 ? 2 : 3);
+    } else {
       try {
         const answers = setupValuesToGeneration(next);
         setGenerated(generateConfiguration({ configPath, cwd, ...answers }));
+        setSetupStep(4);
         setSelection(0);
         setListOffset(0);
-        setScreen('setup-preview');
+        setSetupStep(4);
+        setScreen('setup-wizard');
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
@@ -875,9 +896,30 @@ export function InkShellController({
       return;
     }
 
-    if (screen === 'setup-input' || screen === 'launch-input') {
+    if (
+      screen === 'launch-input' ||
+      (screen === 'setup-wizard' && setupStep === 2) ||
+      (screen === 'setup-wizard' && setupStep === 3)
+    ) {
       if (input === 'q' || key.escape) {
         returnHome('Cancelled.');
+      }
+      if (screen === 'setup-wizard') {
+        const choices = setupChoices(setupField, setupModels, setupValues);
+        if (choices.length > 0) {
+          if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+            const next = moveSelection(
+              { offset: 0, selected: selection },
+              input === 'j' || key.downArrow ? 1 : -1,
+              choices.length,
+              choices.length,
+            );
+            setSelection(next.selected);
+          } else if (input === '\r' || key.return) {
+            const choice = choices[selection];
+            if (choice) submitSetup(choice);
+          }
+        }
       }
       return;
     }
@@ -900,15 +942,14 @@ export function InkShellController({
     }
 
     if (
-      screen === 'setup-choice' ||
-      screen === 'setup-preview' ||
+      (screen === 'setup-wizard' && (setupStep === 1 || setupStep === 4)) ||
       screen === 'workflows' ||
       screen === 'launch-confirmation'
     ) {
       const items =
-        screen === 'setup-choice'
-          ? ['Create configuration', 'Read documentation', 'Exit']
-          : screen === 'setup-preview'
+        screen === 'setup-wizard' && setupStep === 1
+          ? ['Continue', 'Retry diagnosis', 'Exit']
+          : screen === 'setup-wizard' && setupStep === 4
             ? ['Write configuration', 'Cancel']
             : screen === 'workflows'
               ? workflowItems(workflows)
@@ -924,11 +965,15 @@ export function InkShellController({
         setSelection(next.selected);
         setListOffset(next.offset);
       } else if (input === '\r' || key.return) {
-        if (screen === 'setup-choice') {
-          if (selection === 0) startSetup();
-          else if (selection === 1) setScreen('documentation');
+        if (screen === 'setup-wizard' && setupStep === 1) {
+          if (selection === 0) {
+            setSetupStep(2);
+            setSetupField(0);
+            setSelection(0);
+            setPromptValue('');
+          } else if (selection === 1) refresh();
           else returnHome('Cancelled.');
-        } else if (screen === 'setup-preview') {
+        } else if (screen === 'setup-wizard' && setupStep === 4) {
           if (selection === 0) void writeSetup();
           else returnHome('Configuration creation cancelled.');
         } else if (screen === 'workflows') chooseWorkflow();
@@ -981,28 +1026,21 @@ export function InkShellController({
         visibleRows={Math.max(1, size.rows - 7)}
       />
     );
-  if (screen === 'setup-choice') return <SetupChoiceScreen colors={colors} selected={selection} />;
-  if (screen === 'setup-input')
+  if (screen === 'setup-wizard')
     return (
-      <SetupInputScreen
-        key={`${SETUP_FIELDS[setupField]!.key}-${inputValue}`}
+      <SetupWizardScreen
+        key={`${setupStep}-${setupField}`}
         colors={colors}
-        field={SETUP_FIELDS[setupField]!}
-        error={error}
+        step={setupStep}
+        {...(diagnosis ? { diagnosis } : {})}
+        {...(SETUP_FIELDS[setupField] ? { field: SETUP_FIELDS[setupField] } : {})}
+        choices={setupChoices(setupField, setupModels, setupValues)}
+        {...(generated ? { generated } : {})}
+        {...(error ? { error } : {})}
+        selected={selection}
         value={inputValue}
         onChange={setPromptValue}
         onSubmit={submitSetup}
-      />
-    );
-  if (screen === 'setup-preview' && generated)
-    return (
-      <SetupPreviewScreen
-        colors={colors}
-        generated={generated}
-        error={error}
-        selected={selection}
-        offset={listOffset}
-        visibleRows={Math.max(1, size.rows - 10)}
       />
     );
   if (screen === 'workflows')

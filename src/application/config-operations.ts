@@ -9,6 +9,7 @@ import {
   type AgentProfile,
 } from '../config.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
+import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { discoverWorkflows } from './operations.js';
 
 export async function discoverAgentModels(discovery: AgentModelDiscovery): Promise<AgentModel[]> {
@@ -17,6 +18,10 @@ export async function discoverAgentModels(discovery: AgentModelDiscovery): Promi
   } catch {
     return [];
   }
+}
+
+export function discoverSetupModels(): Promise<AgentModel[]> {
+  return discoverAgentModels(new PiModelDiscovery());
 }
 
 export interface ConfigurationDiagnosis {

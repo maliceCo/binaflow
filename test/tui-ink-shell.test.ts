@@ -24,6 +24,7 @@ describe('Ink shell', () => {
 
   it('navigates home, documentation, scrolling, and exit without legacy rendering', async () => {
     const directory = await temporaryDirectory();
+    await writeConfig(directory);
     const terminal = createTerminal();
     const running = runInkShell({
       cwd: directory,
@@ -293,6 +294,7 @@ describe('Ink shell', () => {
 
   it('keeps the footer visible and redraws the shell after resize', async () => {
     const directory = await temporaryDirectory();
+    await writeConfig(directory);
     const terminal = createTerminal();
     const running = runInkShell({
       cwd: directory,
