@@ -12,3 +12,13 @@ export interface AgentRequest {
 export interface AgentDriver {
   execute(request: AgentRequest, emit: EventSink, signal: AbortSignal): Promise<AgentStepResult>;
 }
+
+export interface AgentModel {
+  provider: string;
+  model: string;
+  displayName?: string;
+}
+
+export interface AgentModelDiscovery {
+  discoverModels(): Promise<AgentModel[]>;
+}

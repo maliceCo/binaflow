@@ -1038,6 +1038,7 @@ function createApplicationService(
     clarificationQuestions: async () => [],
     loadResearchApprovalPreviews: async () => [],
     discoverWorkflows: () => [],
+    discoverModels: async () => [],
     diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }

@@ -381,6 +381,7 @@ function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationServi
     clarificationQuestions: async () => [],
     loadResearchApprovalPreviews: async () => [],
     discoverWorkflows: () => [],
+    discoverModels: async () => [],
     diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
 }

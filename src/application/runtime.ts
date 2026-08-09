@@ -4,6 +4,7 @@ import { loadConfig, loadDataDir } from '../config.js';
 import { WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
+import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { RunStore } from '../storage/run-store.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
@@ -57,6 +58,7 @@ export async function openApplicationContext(
     artifacts,
     engine,
     researchCoordinator,
+    modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
       eventListeners.add(listener);
       return () => {
@@ -95,6 +97,7 @@ export async function openApplicationStorage(
     artifacts,
     engine,
     researchCoordinator,
+    modelDiscovery: { discoverModels: async () => [] },
     subscribeEvents: () => () => undefined,
     close: () => store.close(),
   });

@@ -1,5 +1,6 @@
 import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import type { BinaflowConfig } from '../config.js';
+import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { WorkflowEngine } from '../core/engine.js';
 import type { RunStore } from '../storage/run-store.js';
@@ -32,6 +33,7 @@ import {
   type RunWorkflowRequest,
   type WorkflowContract,
 } from './operations.js';
+import { discoverAgentModels } from './config-operations.js';
 
 export interface ApplicationService {
   readonly profiles: BinaflowConfig['profiles'];
@@ -52,6 +54,7 @@ export interface ApplicationService {
   clarificationQuestions(inspection: RunInspection): Promise<string[]>;
   loadResearchApprovalPreviews(inspection: RunInspection): Promise<ArtifactContentView[]>;
   discoverWorkflows(): WorkflowContract[];
+  discoverModels(): Promise<AgentModel[]>;
   diagnoseConfiguration(): ConfigurationDiagnosis;
 }
 
@@ -61,6 +64,7 @@ export interface CreateApplicationServiceOptions {
   artifacts: ArtifactStore;
   engine: WorkflowEngine;
   researchCoordinator: ResearchPlanBuildCoordinator;
+  modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
   close(): void;
 }
@@ -93,6 +97,7 @@ export function createApplicationService(
     loadResearchApprovalPreviews: (inspection) =>
       loadResearchApprovalPreviews(internals, inspection),
     discoverWorkflows,
+    discoverModels: () => discoverAgentModels(options.modelDiscovery),
     diagnoseConfiguration: () => diagnoseConfiguration(options.config),
   };
 }

@@ -8,7 +8,16 @@ import {
   validatePiCommand,
   type AgentProfile,
 } from '../config.js';
+import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
 import { discoverWorkflows } from './operations.js';
+
+export async function discoverAgentModels(discovery: AgentModelDiscovery): Promise<AgentModel[]> {
+  try {
+    return await discovery.discoverModels();
+  } catch {
+    return [];
+  }
+}
 
 export interface ConfigurationDiagnosis {
   workspacePath: string;
