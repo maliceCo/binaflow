@@ -72,6 +72,7 @@ export function LaunchConfirmationScreen({
       colors={colors}
     >
       <SafeText>Workflow: {launchInput.workflow.id}</SafeText>
+      <SafeText>Description: {launchInput.workflow.description}</SafeText>
       <SafeText>Objective: {launchInput.values.objective ?? '(missing)'}</SafeText>
       {launchInput.workflow.experimental ? <SafeText>Experimental workflow</SafeText> : null}
       {Object.values(profiles).some(isWriteCapable) ? (
@@ -80,6 +81,9 @@ export function LaunchConfirmationScreen({
       {permissionLines.map((line) => (
         <SafeText key={line}>{line}</SafeText>
       ))}
+      <SafeText>
+        Steps: {launchInput.workflow.steps.map((step) => `${step.id} (${step.profile})`).join(', ')}
+      </SafeText>
       <SelectionList
         items={['Confirm and launch', 'Edit objective', 'Cancel']}
         selected={selected}

@@ -4,6 +4,7 @@ export const HOME_ACTIONS: string[] = [
   'Refresh diagnosis',
   'Run history',
   'Exit',
+  'Diagnosis',
 ];
 
 export const MINIMUM_WIDTH = 56;

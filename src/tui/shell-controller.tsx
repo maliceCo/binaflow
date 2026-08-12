@@ -72,6 +72,7 @@ interface InkShellControllerProps {
     | ((configPath: string, cwd: string) => Promise<ApplicationService & { close?(): void }>)
     | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
+  hasInjectedContext?: boolean;
 }
 
 export function InkShellController({
@@ -82,12 +83,14 @@ export function InkShellController({
   lifecycle,
   openApplicationContext: openContext,
   registerSignalHandler,
+  hasInjectedContext = false,
 }: InkShellControllerProps): ReactNode {
   const { exit } = useApp();
   const [screen, setScreen] = useState<Screen>('home');
   const [diagnosis, setDiagnosis] = useState<ConfigurationDiagnosis>();
-  const [homeSelected, setHomeSelected] = useState(1);
+  const [homeSelected, setHomeSelected] = useState(0);
   const [homeOffset, setHomeOffset] = useState(0);
+  const [recentRuns, setRecentRuns] = useState<WorkflowRun[]>([]);
   const [documentOffset, setDocumentOffset] = useState(0);
   const [diagnosisOffset, setDiagnosisOffset] = useState(0);
   const [selection, setSelection] = useState(0);
@@ -210,7 +213,7 @@ export function InkShellController({
         if (!active.current) return;
         setDiagnosis(result);
         setDiagnosisOffset(0);
-        if (!result.configExists) {
+        if (!result.configExists && !hasInjectedContext) {
           setSetupStep(1);
           setSelection(0);
           setListOffset(0);
@@ -257,6 +260,18 @@ export function InkShellController({
     const createContext = await resolveContextFactory();
     return lifecycle.openContext(async () => createContext(configPath, cwd));
   };
+
+  useEffect(() => {
+    if (!diagnosis?.configValid) return;
+    void ensureContext()
+      .then((application) => application.listRuns({ limit: 3 }))
+      .then((page) => {
+        if (active.current) setRecentRuns(page.runs);
+      })
+      .catch(() => {
+        if (active.current) setRecentRuns([]);
+      });
+  }, [diagnosis?.configValid]);
 
   const openExecutionContext = async (): Promise<ApplicationService & { close?(): void }> => {
     const createContext = await resolveContextFactory();
@@ -372,7 +387,8 @@ export function InkShellController({
         setListOffset(0);
         setScreen('workflows');
       }
-    } else if (action === 'Read documentation') setScreen('documentation');
+    } else if (action === 'Diagnosis') setScreen('diagnosis');
+    else if (action === 'Read documentation') setScreen('documentation');
     else if (action === 'Refresh diagnosis') refresh();
     else if (action === 'Run history') void loadHistory();
     else exit();
@@ -608,7 +624,12 @@ export function InkShellController({
               status: current.cancellationRequested ? 'cancelled' : 'failed',
               updatedAt: new Date().toISOString(),
             });
-          } else returnHome(reason instanceof Error ? reason.message : String(reason));
+          } else {
+            setError(
+              `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
+            );
+            setScreen('launch-confirmation');
+          }
         } finally {
           lifecycle.unsubscribe();
           activeRunId.current = undefined;
@@ -1171,6 +1192,7 @@ export function InkShellController({
       status={status ?? error ?? (refreshing ? 'loading diagnosis...' : undefined)}
       selected={homeSelected}
       offset={homeOffset}
+      recentRuns={recentRuns}
     />
   );
 }

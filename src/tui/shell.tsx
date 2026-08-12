@@ -24,6 +24,7 @@ interface InkShellProps extends InkApplicationContext {
   lifecycle: AttachedExecutionLifecycle<ApplicationService & { close?(): void }>;
   openApplicationContext?: InkShellOptions['openApplicationContext'] | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
+  hasInjectedContext?: boolean;
 }
 
 export async function runInkShell(options: InkShellOptions = {}): Promise<void> {
@@ -46,6 +47,9 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
               if (signalHandler === handler) signalHandler = undefined;
             };
           }}
+          hasInjectedContext={
+            options.applicationContext !== undefined || options.openApplicationContext !== undefined
+          }
           {...context}
         />
       ),

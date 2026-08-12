@@ -80,8 +80,8 @@ describe('Ink setup and launch safety', () => {
 
     await terminal.output.waitFor('New workflow');
     await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
+    terminal.input.push('\r');
+    terminal.input.push('j');
     terminal.input.push('\r');
     await terminal.output.waitFor('plan-build');
     expect(terminal.output.text()).toContain('research-plan-build [Experimental]');
@@ -196,8 +196,6 @@ describe('Ink setup and launch safety', () => {
 
     await terminal.output.waitFor('New workflow');
     await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
     terminal.input.push('\r');
     await terminal.output.waitFor('plan-build');
     terminal.input.push('\r');
@@ -236,8 +234,6 @@ describe('Ink setup and launch safety', () => {
 
     await terminal.output.waitFor('New workflow');
     await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
     terminal.input.push('\r');
     await terminal.output.waitFor('plan-build');
     terminal.input.push('\r');

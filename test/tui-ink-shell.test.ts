@@ -922,6 +922,8 @@ async function openHistory(terminal: ReturnType<typeof createTerminal>): Promise
   await terminal.output.waitFor('New workflow');
   await terminal.input.waitUntilReady();
   terminal.input.push('j');
+  terminal.input.push('j');
+  terminal.input.push('j');
   await terminal.output.waitFor('> Refresh diagnosis');
   terminal.input.push('j');
   await terminal.output.waitFor('> Run history');
@@ -935,7 +937,7 @@ async function launchWorkflow(
 ): Promise<void> {
   await terminal.output.waitFor('New workflow');
   await terminal.input.waitUntilReady();
-  terminal.input.push('k');
+  terminal.input.push('\r');
   await terminal.output.waitFor('> New workflow');
   terminal.input.push('\r');
   await terminal.output.waitFor('plan-build');

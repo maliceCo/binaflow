@@ -1,5 +1,6 @@
 import type { ConfigurationDiagnosis } from '../../application/config-operations.js';
-import { ScreenFrame, SelectionList, TextViewport } from '../components.js';
+import type { WorkflowRun } from '../../core/run.js';
+import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 import { HOME_ACTIONS } from '../screens.js';
 
 export function HomeScreen({
@@ -8,19 +9,24 @@ export function HomeScreen({
   status,
   selected,
   offset,
+  recentRuns,
 }: {
   colors: boolean;
   diagnosis?: ConfigurationDiagnosis | undefined;
   status?: string | undefined;
   selected: number;
   offset: number;
+  recentRuns: WorkflowRun[];
 }) {
-  const readiness = diagnosis?.ready ? 'ready' : diagnosis ? 'attention required' : 'loading';
+  const readiness = diagnosis?.ready ? 'Ready' : diagnosis ? 'Attention' : 'Checking';
+  const cause = diagnosis?.ready
+    ? 'Configuration and Pi are ready.'
+    : (diagnosis?.errors[0] ?? diagnosis?.piCommandMessage ?? 'Diagnosis is still running.');
   return (
     <ScreenFrame
       title="Binaflow"
       subtitle="Attached Ink shell"
-      status={status ?? (diagnosis ? readiness : 'loading diagnosis...')}
+      status={status}
       footer="j/k or arrows move | Enter select | r refresh | q quit"
       colors={colors}
     >
@@ -28,11 +34,20 @@ export function HomeScreen({
         lines={[
           `Workspace: ${diagnosis?.workspacePath ?? 'loading...'}`,
           `Config: ${diagnosis?.configPath ?? 'loading...'}`,
-          `Ready: ${readiness}`,
+          `Status: ${readiness}`,
+          `Cause: ${cause}`,
         ]}
         offset={0}
         visibleRows={3}
       />
+      <SafeText>Recent runs:</SafeText>
+      {recentRuns.length > 0 ? (
+        recentRuns.map((run) => (
+          <SafeText key={run.id}>{`${run.workflowId}  ${run.status}  ${run.objective}`}</SafeText>
+        ))
+      ) : (
+        <SafeText>No recent runs.</SafeText>
+      )}
       <SelectionList items={HOME_ACTIONS} selected={selected} offset={offset} visibleRows={5} />
     </ScreenFrame>
   );

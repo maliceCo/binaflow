@@ -8,7 +8,7 @@ export function workflowItems(
 ): string[] {
   return orderedWorkflows(workflows).map((workflow) => {
     const missing = diagnosis ? missingProfiles(workflow, diagnosis) : [];
-    const label = workflow.experimental ? `${workflow.id} [Experimental]` : workflow.id;
+    const label = `${workflow.id}${workflow.experimental ? ' [Experimental]' : ''}: ${workflow.description}`;
     return missing.length > 0 ? `${label} (missing: ${missing.join(', ')})` : label;
   });
 }
