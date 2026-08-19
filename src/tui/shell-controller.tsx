@@ -48,6 +48,7 @@ import {
   type SnapshotInspectionController,
 } from './execution.js';
 import type { AttachedExecutionLifecycle } from './lifecycle.js';
+import { explainUserError } from '../presentation/format.js';
 import { HOME_ACTIONS, MINIMUM_HEIGHT, MINIMUM_WIDTH, type Screen } from './screens.js';
 import { HomeScreen } from './screens/home.js';
 import { DocumentationScreen, documentationLines } from './screens/documentation.js';
@@ -205,6 +206,10 @@ export function InkShellController({
     uiPublisherRef.current?.markDirty();
   };
 
+  const reportError = (message: string): void => {
+    setError(explainUserError(message));
+  };
+
   const refresh = (): void => {
     if (refreshPromise.current) return;
     setRefreshing(true);
@@ -222,7 +227,7 @@ export function InkShellController({
         }
       })
       .catch((reason: unknown) => {
-        if (active.current) setError(reason instanceof Error ? reason.message : String(reason));
+        if (active.current) reportError(reason instanceof Error ? reason.message : String(reason));
       })
       .finally(() => {
         refreshPromise.current = undefined;
@@ -301,7 +306,7 @@ export function InkShellController({
       setHistoryHasNext(page.nextCursor !== undefined);
       setScreen('history');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      reportError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setHistoryLoading(false);
     }
@@ -343,7 +348,7 @@ export function InkShellController({
       setApprovalPreviewOffset(0);
       setScreen('detail');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      reportError(reason instanceof Error ? reason.message : String(reason));
     }
   };
 
@@ -359,7 +364,7 @@ export function InkShellController({
         artifact,
         truncated: false,
         formatted: false,
-        error: reason instanceof Error ? reason.message : String(reason),
+        error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
       });
     }
   };
@@ -425,7 +430,7 @@ export function InkShellController({
         setSetupStep(4);
         setScreen('setup-wizard');
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        reportError(reason instanceof Error ? reason.message : String(reason));
       }
     }
   };
@@ -445,7 +450,7 @@ export function InkShellController({
       });
       returnHome('Configuration written. Review diagnosis before launching.');
     } catch (reason) {
-      returnHome(reason instanceof Error ? reason.message : String(reason));
+      returnHome(explainUserError(reason instanceof Error ? reason.message : String(reason)));
     }
   };
 
@@ -453,12 +458,14 @@ export function InkShellController({
     const workflow = orderedWorkflows(workflows)[selection];
     if (!workflow || !diagnosis) return;
     if (!diagnosis.configValid) {
-      setError('Configuration is invalid; diagnose it before launching.');
+      setError('Configuration is invalid; open Diagnosis or fix config before launching.');
       return;
     }
     const missing = missingProfiles(workflow, diagnosis);
     if (missing.length > 0) {
-      setError(`Missing profiles: ${missing.join(', ')}`);
+      setError(
+        `Missing profiles: ${missing.join(', ')}. Fix agent profiles in configuration, then refresh diagnosis.`,
+      );
       return;
     }
     const values: Record<string, string> = {};
@@ -663,7 +670,7 @@ export function InkShellController({
               updatedAt: new Date().toISOString(),
             });
           } else {
-            setError(
+            reportError(
               `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
             );
             setScreen('launch-confirmation');
@@ -718,7 +725,7 @@ export function InkShellController({
               status: current.cancellationRequested ? 'cancelled' : 'failed',
               updatedAt: new Date().toISOString(),
             });
-          } else setError(reason instanceof Error ? reason.message : String(reason));
+          } else reportError(reason instanceof Error ? reason.message : String(reason));
         } finally {
           lifecycle.unsubscribe();
           activeRunId.current = undefined;
@@ -742,7 +749,7 @@ export function InkShellController({
         setPromptValue('');
         await openDetail({ ...detail.run, status: 'interrupted' });
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        reportError(reason instanceof Error ? reason.message : String(reason));
       }
       return;
     }
@@ -899,7 +906,7 @@ export function InkShellController({
         void loadHistory(historyStatus, historyWorkflow, historyCursor);
       } else if (input === 'r') void loadHistory();
       else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const visibleRows = Math.max(1, size.rows - 8);
+        const visibleRows = Math.max(1, size.rows - 10);
         const next = moveSelection(
           { offset: historyOffset, selected: historySelected },
           input === 'j' || key.downArrow ? 1 : -1,
@@ -1216,12 +1223,13 @@ export function InkShellController({
         runs={historyRuns}
         selected={historySelected}
         offset={historyOffset}
-        visibleRows={Math.max(1, size.rows - 8)}
+        visibleRows={Math.max(1, size.rows - 10)}
         status={historyStatus}
         workflow={historyWorkflow}
         hasNext={historyHasNext}
         loading={historyLoading}
         error={error}
+        columns={size.columns}
       />
     );
   if (screen === 'detail' && detail)

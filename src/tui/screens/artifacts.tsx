@@ -1,5 +1,7 @@
 import type { ArtifactContentView, RunInspection } from '../../application/operations.js';
+import { formatBytes } from '../../presentation/format.js';
 import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
+
 export function ArtifactsScreen({
   colors,
   detail,
@@ -17,33 +19,49 @@ export function ArtifactsScreen({
   contentOffset: number;
   visibleRows: number;
 }) {
+  const empty = detail.artifacts.length === 0;
   return (
     <ScreenFrame
       title="Artifacts"
       subtitle="Select an artifact to load a bounded preview."
-      footer="j/k move | Enter preview | q back"
+      footer={empty ? 'q back' : 'j/k move | Enter preview | q back'}
       colors={colors}
     >
-      <SelectionList
-        items={detail.artifacts.map(
-          (artifact) => `${artifact.stepId}.${artifact.name}  ${artifact.sizeBytes} bytes`,
-        )}
-        selected={selected}
-        offset={offset}
-        visibleRows={visibleRows}
-      />
-      {content ? (
-        <TextViewport
-          lines={
-            content.error
-              ? [`ERROR: ${content.error}`]
-              : (content.content ?? 'No readable content.').split('\n')
-          }
-          offset={contentOffset}
-          visibleRows={visibleRows}
-        />
+      {empty ? (
+        <>
+          <SafeText>No artifacts were recorded for this run.</SafeText>
+          <SafeText dimColor>
+            Artifacts appear after steps finish and write outputs. Press q to return to run detail.
+          </SafeText>
+        </>
       ) : (
-        <SafeText>Press Enter to load the selected artifact.</SafeText>
+        <>
+          <SelectionList
+            items={detail.artifacts.map(
+              (artifact) =>
+                `${artifact.stepId}.${artifact.name}  ${formatBytes(artifact.sizeBytes)}`,
+            )}
+            selected={selected}
+            offset={offset}
+            visibleRows={visibleRows}
+          />
+          {content ? (
+            <TextViewport
+              lines={
+                content.error
+                  ? [
+                      `Could not load this artifact: ${content.error}`,
+                      'Try another artifact, or press q to return to run detail.',
+                    ]
+                  : (content.content ?? 'No readable content.').split('\n')
+              }
+              offset={contentOffset}
+              visibleRows={visibleRows}
+            />
+          ) : (
+            <SafeText dimColor>Press Enter to load the selected artifact.</SafeText>
+          )}
+        </>
       )}
     </ScreenFrame>
   );

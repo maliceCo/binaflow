@@ -379,7 +379,7 @@ describe('Ink shell', () => {
     expect(terminal.output.text()).toContain('Persisted metadata only');
     expect(getStepRuns).toHaveBeenCalled();
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters: status=all workflow=all');
+    await terminal.output.waitFor('Filters: [s] status');
     terminal.input.push('q');
     await terminal.output.waitFor('Run history');
     terminal.input.push('q');
@@ -476,7 +476,7 @@ describe('Ink shell', () => {
     expect(terminal.output.text()).toContain('bounded research preview');
     expect(terminal.output.text()).toContain('can modify the workspace');
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters: status=all workflow=all');
+    await terminal.output.waitFor('Filters: [s] status');
     terminal.input.push('q');
     await terminal.output.waitFor('New workflow');
     terminal.input.push('q');
