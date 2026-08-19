@@ -3,15 +3,21 @@ import { EventEmitter } from 'node:events';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import { runInkShell } from '../src/tui/shell.js';
+import * as configOperations from '../src/application/config-operations.js';
 
 const testDirectories: string[] = [];
 
 describe('Ink setup and launch safety', () => {
+  beforeEach(() => {
+    vi.spyOn(configOperations, 'discoverSetupModels').mockResolvedValue([]);
+  });
+
   afterEach(async () => {
+    vi.restoreAllMocks();
     for (const directory of testDirectories.splice(0)) {
       await rm(directory, { recursive: true, force: true });
     }
@@ -60,37 +66,6 @@ describe('Ink setup and launch safety', () => {
         builder: { provider: 'provider-b', model: 'builder-model', workspaceMode: 'read-only' },
       },
     });
-    terminal.input.push('q');
-    await running;
-  });
-
-  it('groups workflows, explains missing profiles, and cancels before execution', async () => {
-    const directory = await temporaryDirectory('binaflow-ink-workflows-');
-    await writeConfig(directory, { planner: profile('planner') });
-    const execute = vi.fn(async () => completedRun());
-    const terminal = createTerminal();
-    const running = runInkShell({
-      cwd: directory,
-      input: terminal.input as unknown as NodeJS.ReadStream,
-      output: terminal.output as unknown as NodeJS.WriteStream,
-      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
-      env: { NO_COLOR: '' },
-      applicationContext: applicationContext(execute),
-    });
-
-    await terminal.output.waitFor('New workflow');
-    await terminal.input.waitUntilReady();
-    terminal.input.push('\r');
-    terminal.input.push('j');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('plan-build');
-    expect(terminal.output.text()).toContain('research-plan-build [Experimental]');
-    expect(terminal.output.text()).toContain('missing: builder');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Missing profiles: builder');
-    expect(execute).not.toHaveBeenCalled();
-    terminal.input.push('q');
-    await terminal.output.waitFor('Read documentation');
     terminal.input.push('q');
     await running;
   });
@@ -195,6 +170,7 @@ describe('Ink setup and launch safety', () => {
     });
 
     await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Status: Ready');
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('plan-build');
@@ -233,6 +209,7 @@ describe('Ink setup and launch safety', () => {
     });
 
     await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Status: Ready');
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('plan-build');

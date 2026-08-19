@@ -2,9 +2,9 @@ export const HOME_ACTIONS: string[] = [
   'New workflow',
   'Read documentation',
   'Refresh diagnosis',
+  'Diagnosis',
   'Run history',
   'Exit',
-  'Diagnosis',
 ];
 
 export const MINIMUM_WIDTH = 56;

@@ -34,16 +34,19 @@ describe('Ink shell', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.output.waitFor('Read documentation');
-    await terminal.input.waitUntilReady();
+    await waitForHomeReady(terminal);
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Read documentation');
     terminal.input.push('\r');
     await terminal.output.waitFor('Documentation');
     for (let index = 0; index < 10; index += 1) terminal.input.push('j');
     await terminal.output.waitFor('v more content');
     terminal.input.push('q');
-    await terminal.output.waitFor('Read documentation');
+    await terminal.output.waitFor('> Read documentation');
     terminal.input.push('j');
     await terminal.output.waitFor('> Refresh diagnosis');
+    terminal.input.push('j');
+    await terminal.output.waitFor('> Diagnosis');
     terminal.input.push('j');
     await terminal.output.waitFor('> Run history');
     terminal.input.push('j');
@@ -123,20 +126,7 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
 
-    await terminal.output.waitFor('New workflow');
-    await terminal.input.waitUntilReady();
-    terminal.input.push('k');
-    await terminal.output.waitFor('> New workflow');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('plan-build');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('plan-build input');
-    terminal.input.push('Run the workflow');
-    await terminal.output.waitFor('Run the workflow');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Confirm workflow');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Workflow running');
+    await launchWorkflow(terminal);
     emitEvent?.({
       runId: 'run-1',
       stepId: 'plan',
@@ -238,6 +228,8 @@ describe('Ink shell', () => {
         openApplicationContext: async () => ownedContext,
       });
       await launchWorkflow(terminal);
+      // Drop setup/open ordering (recent-runs ensureContext + replaceOwnedContext).
+      order.length = 0;
       if (stream === 'input') terminal.input.emit('error', new Error('input failed'));
       else terminal.output.emit('error', new Error('output failed'));
       await new Promise((resolve) => setImmediate(resolve));
@@ -381,14 +373,7 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
 
-    await terminal.output.waitFor('New workflow');
-    await terminal.input.waitUntilReady();
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Refresh diagnosis');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Run history');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Filters: status=all workflow=all');
+    await openHistory(terminal);
     terminal.input.push('\r');
     await terminal.output.waitFor('Historical inspection');
     expect(terminal.output.text()).toContain('Persisted metadata only');
@@ -483,14 +468,7 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
 
-    await terminal.output.waitFor('New workflow');
-    await terminal.input.waitUntilReady();
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Refresh diagnosis');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Run history');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Filters: status=all workflow=all');
+    await openHistory(terminal);
     terminal.input.push('\r');
     await terminal.output.waitFor('Run detail');
     await terminal.output.waitFor('Approve research and continue');
@@ -918,13 +896,20 @@ function createTerminal(): { input: FakeInput; output: FakeOutput } {
   return { input: new FakeInput(), output: new FakeOutput() };
 }
 
-async function openHistory(terminal: ReturnType<typeof createTerminal>): Promise<void> {
+async function waitForHomeReady(terminal: ReturnType<typeof createTerminal>): Promise<void> {
   await terminal.output.waitFor('New workflow');
+  await terminal.output.waitFor('Status: Ready');
   await terminal.input.waitUntilReady();
+}
+
+async function openHistory(terminal: ReturnType<typeof createTerminal>): Promise<void> {
+  await waitForHomeReady(terminal);
   terminal.input.push('j');
-  terminal.input.push('j');
+  await terminal.output.waitFor('> Read documentation');
   terminal.input.push('j');
   await terminal.output.waitFor('> Refresh diagnosis');
+  terminal.input.push('j');
+  await terminal.output.waitFor('> Diagnosis');
   terminal.input.push('j');
   await terminal.output.waitFor('> Run history');
   terminal.input.push('\r');
@@ -935,10 +920,7 @@ async function launchWorkflow(
   terminal: ReturnType<typeof createTerminal>,
   waitForLive = true,
 ): Promise<void> {
-  await terminal.output.waitFor('New workflow');
-  await terminal.input.waitUntilReady();
-  terminal.input.push('\r');
-  await terminal.output.waitFor('> New workflow');
+  await waitForHomeReady(terminal);
   terminal.input.push('\r');
   await terminal.output.waitFor('plan-build');
   terminal.input.push('\r');

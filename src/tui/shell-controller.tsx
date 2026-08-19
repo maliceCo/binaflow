@@ -375,7 +375,9 @@ export function InkShellController({
   const selectHomeAction = (): void => {
     const action = HOME_ACTIONS[homeSelected];
     if (action === 'New workflow') {
-      if (!diagnosis?.configExists) {
+      if (!diagnosis) {
+        setError('Diagnosis is still running. Wait or press r to refresh.');
+      } else if (!diagnosis.configExists) {
         startSetup();
         setSelection(0);
         setListOffset(0);

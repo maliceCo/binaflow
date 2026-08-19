@@ -22,6 +22,17 @@ export function HomeScreen({
   const cause = diagnosis?.ready
     ? 'Configuration and Pi are ready.'
     : (diagnosis?.errors[0] ?? diagnosis?.piCommandMessage ?? 'Diagnosis is still running.');
+  const suggestedFix = diagnosis?.ready
+    ? 'Choose New workflow to start.'
+    : !diagnosis
+      ? 'Wait for diagnosis to finish.'
+      : !diagnosis.configExists
+        ? 'Choose New workflow to create configuration.'
+        : !diagnosis.configValid
+          ? 'Fix configuration errors, then press r to refresh.'
+          : diagnosis.piCommandLaunchable === false
+            ? 'Install or fix the Pi command, then press r to refresh.'
+            : 'Open Diagnosis for details, or press r to refresh.';
   return (
     <ScreenFrame
       title="Binaflow"
@@ -36,9 +47,10 @@ export function HomeScreen({
           `Config: ${diagnosis?.configPath ?? 'loading...'}`,
           `Status: ${readiness}`,
           `Cause: ${cause}`,
+          `Suggested fix: ${suggestedFix}`,
         ]}
         offset={0}
-        visibleRows={3}
+        visibleRows={4}
       />
       <SafeText>Recent runs:</SafeText>
       {recentRuns.length > 0 ? (
