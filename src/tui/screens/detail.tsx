@@ -15,12 +15,11 @@ export function detailActions(
   if (recovery?.actions?.some((action) => action.kind === 'mark-interrupted'))
     actions.push('Mark interrupted and review recovery');
   if (recovery?.eligible) actions.push('Resume retryable work');
-  if (detail.run.status === 'waiting' && detail.run.workflowId === 'research-plan-build')
-    actions.push('Approve research and continue', 'Reject research with feedback', 'Leave waiting');
   if (clarifications.length > 0) actions.push('New run with revised objective');
   actions.push('Browse artifacts', 'Back to history');
   return actions;
 }
+
 export function DetailScreen({
   colors,
   detail,
@@ -57,8 +56,6 @@ export function DetailScreen({
         .map((line) => `  ${line}`),
     ];
   });
-  const writeWarning =
-    detail.run.workflowId === 'research-plan-build' && detail.run.status === 'waiting';
   return (
     <ScreenFrame
       title="Run detail"
@@ -77,9 +74,6 @@ export function DetailScreen({
         <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
       ) : null}
       {approvalMessage ? <SafeText>{`Approval: ${approvalMessage}`}</SafeText> : null}
-      {writeWarning ? (
-        <SafeText>WARNING: approving continues the workflow and can modify the workspace.</SafeText>
-      ) : null}
       {previewLines.length > 0 ? (
         <TextViewport
           lines={previewLines}

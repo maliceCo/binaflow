@@ -147,6 +147,8 @@ describe('Ink execution state', () => {
         profile: 'planner',
         status: 'completed',
         attempt: 1,
+        startedAt: '2026-01-01T00:00:00.000Z',
+        finishedAt: '2026-01-01T00:00:05.000Z',
         result: { text: '{}', usage: { totalTokens: 12 }, costUsd: 0.004 },
       },
       {
@@ -155,12 +157,16 @@ describe('Ink execution state', () => {
         profile: 'builder',
         status: 'running',
         attempt: 1,
+        startedAt: '2026-01-01T00:00:05.000Z',
         result: { text: '', usage: { totalTokens: 8 }, costUsd: 0.002 },
       },
     ];
-    const next = applyStepSnapshot(state, steps, 1, 0);
+    const next = applyStepSnapshot(state, steps, 1, 0, Date.parse('2026-01-01T00:00:08.000Z'));
     expect(next).toBeDefined();
     expect(next!.steps.map((step) => step.status)).toEqual(['completed', 'running']);
+    expect(next!.steps[0]?.durationMs).toBe(5_000);
+    expect(next!.steps[0]?.costUsd).toBe(0.004);
+    expect(next!.steps[1]?.durationMs).toBe(3_000);
     expect(next!.tokens).toBe(20);
     expect(next!.costUsd).toBe(0.006);
   });

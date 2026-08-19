@@ -1,6 +1,56 @@
-import { formatDurationMs, humanRunStatus, humanStepStatus } from '../../presentation/format.js';
+import { Box } from 'ink';
+import { Spinner } from '@inkjs/ui';
+import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
 import { ScreenFrame, SafeText, TextViewport } from '../components.js';
-import type { LiveState } from '../execution.js';
+import type { LiveState, LiveStep } from '../execution.js';
+
+function stepMarker(status: LiveStep['status']): string {
+  switch (status) {
+    case 'completed':
+      return '[x]';
+    case 'failed':
+      return '[!]';
+    case 'cancelled':
+    case 'interrupted':
+      return '[-]';
+    case 'skipped':
+      return '[-]';
+    case 'waiting':
+      return '[?]';
+    case 'running':
+      return '[>]';
+    default:
+      return '[ ]';
+  }
+}
+
+function formatStepMeta(step: LiveStep): string {
+  const parts: string[] = [];
+  if (step.durationMs !== undefined) parts.push(formatDurationMs(step.durationMs));
+  if (step.costUsd !== undefined) parts.push(`$${step.costUsd.toFixed(4)}`);
+  return parts.length > 0 ? `  ${parts.join('  ')}` : '';
+}
+
+function StepChecklistRow({ step, colors }: { step: LiveStep; colors: boolean }) {
+  const meta = formatStepMeta(step);
+  const label = `${step.id}  ${step.profile}${meta}`;
+  if (step.status === 'running') {
+    return (
+      <Box>
+        <Spinner label={label} />
+      </Box>
+    );
+  }
+  const line = `  ${stepMarker(step.status)} ${label}`;
+  if (step.status === 'failed' && colors) {
+    return <SafeText color="red">{line}</SafeText>;
+  }
+  if (step.status === 'completed' && colors) {
+    return <SafeText color="green">{line}</SafeText>;
+  }
+  return <SafeText>{line}</SafeText>;
+}
+
 export function LiveScreen({
   colors,
   live,
@@ -36,11 +86,9 @@ export function LiveScreen({
       </SafeText>
       <SafeText>Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`}</SafeText>
       <SafeText>Cost: {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}</SafeText>
-      <SafeText>Steps:</SafeText>
+      <SafeText>Checklist:</SafeText>
       {live.steps.map((step) => (
-        <SafeText
-          key={step.id}
-        >{`  ${step.id}  ${humanStepStatus(step.status)}  profile=${step.profile}`}</SafeText>
+        <StepChecklistRow key={step.id} step={step} colors={colors} />
       ))}
       <SafeText>Activity:</SafeText>
       <TextViewport

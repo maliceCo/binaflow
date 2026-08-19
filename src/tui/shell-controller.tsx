@@ -56,11 +56,12 @@ import { SetupWizardScreen } from './screens/setup.js';
 import { WorkflowsScreen, workflowItems } from './screens/workflows.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
 import { LiveScreen } from './screens/live.js';
-import { CompletionScreen } from './screens/completion.js';
+import { ApprovalScreen, APPROVAL_ACTIONS } from './screens/approval.js';
+import { CompletionScreen, completionNextAction } from './screens/completion.js';
 import { HistoryScreen } from './screens/history.js';
 import { DetailScreen, detailActions } from './screens/detail.js';
 import { ArtifactsScreen } from './screens/artifacts.js';
-import { FeedbackScreen } from './screens/feedback.js';
+import { RecoveryConfirmScreen, RejectionFeedbackScreen } from './screens/feedback.js';
 
 interface InkShellControllerProps {
   colors: boolean;
@@ -324,19 +325,22 @@ export function InkShellController({
       setDetail(inspection);
       setRecovery(explanation);
       setClarifications(questions);
-      if (approvalWaiting && workflow?.approval) {
-        setApprovalMessage(workflow.approval.message);
-        setApprovalPreviews(await application.loadResearchApprovalPreviews(inspection));
-      } else {
-        setApprovalMessage(undefined);
-        setApprovalPreviews([]);
-      }
-      setApprovalPreviewOffset(0);
       setArtifactContent(undefined);
       setArtifactSelected(0);
       setArtifactOffset(0);
       setSelection(0);
       setListOffset(0);
+      if (approvalWaiting && workflow?.approval) {
+        setApprovalMessage(workflow.approval.message);
+        setApprovalPreviews(await application.loadResearchApprovalPreviews(inspection));
+        setApprovalPreviewOffset(0);
+        setError(undefined);
+        setScreen('approval');
+        return;
+      }
+      setApprovalMessage(undefined);
+      setApprovalPreviews([]);
+      setApprovalPreviewOffset(0);
       setScreen('detail');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -506,6 +510,36 @@ export function InkShellController({
     setScreen('launch-confirmation');
   };
 
+  const presentApproval = async (
+    run: WorkflowRun,
+    inspection?: RunInspection,
+  ): Promise<boolean> => {
+    const workflow = discoverWorkflows().find((candidate) => candidate.id === run.workflowId);
+    if (run.status !== 'waiting' || !workflow?.approval || !lifecycle.context) return false;
+    try {
+      const detailInspection =
+        inspection ?? (await lifecycle.context.inspectRun(run.id, { includeStepResults: false }));
+      const waiting = detailInspection.steps.some(
+        (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
+      );
+      if (!waiting) return false;
+      setDetail(detailInspection);
+      setApprovalMessage(workflow.approval.message);
+      setApprovalPreviews(await lifecycle.context.loadResearchApprovalPreviews(detailInspection));
+      setApprovalPreviewOffset(0);
+      setSelection(0);
+      setListOffset(0);
+      setError(undefined);
+      setStatus(undefined);
+      disposeLiveControllers();
+      setLiveValue(undefined);
+      setScreen('approval');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const finishRun = async (run: WorkflowRun): Promise<void> => {
     const current = liveRef.current;
     let steps =
@@ -518,9 +552,10 @@ export function InkShellController({
       })) ?? [];
     let artifacts: string[] = [];
     let finishedAt = run.updatedAt;
+    let inspection: RunInspection | undefined;
     if (lifecycle.context) {
       try {
-        const inspection = await lifecycle.context.inspectRun(run.id, {
+        inspection = await lifecycle.context.inspectRun(run.id, {
           includeStepResults: 'usage',
         });
         steps = inspection.steps;
@@ -531,6 +566,7 @@ export function InkShellController({
         // Completion remains available when an injected context only supports execution.
       }
     }
+    if (await presentApproval(run, inspection)) return;
     setCompletion({
       run,
       steps,
@@ -763,16 +799,71 @@ export function InkShellController({
       return;
     }
 
-    if (screen === 'completion') {
-      if (input === 'q' || key.escape || input === '\r' || key.return) returnHome();
+    if (screen === 'completion' && completion) {
+      if (input === 'q' || key.escape || input === '\r' || key.return) {
+        const action = completionNextAction(completion.run.status);
+        if (action === 'Review in history' || action === 'Review recovery in history') {
+          void loadHistory();
+        } else if (action === 'Open waiting run') {
+          void openDetail(completion.run);
+        } else {
+          returnHome();
+        }
+      }
       return;
     }
 
-    if (screen === 'approval-feedback') {
+    if (screen === 'approval' && detail) {
+      if (input === 'q' || key.escape) {
+        setScreen('history');
+        return;
+      }
+      if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
+        const visibleRows = Math.max(1, size.rows - 16);
+        const next = moveSelection(
+          { offset: listOffset, selected: selection },
+          input === 'j' || key.downArrow ? 1 : -1,
+          APPROVAL_ACTIONS.length,
+          visibleRows,
+        );
+        setSelection(next.selected);
+        setListOffset(next.offset);
+        return;
+      }
+      if (input === '\r' || key.return) {
+        const action = APPROVAL_ACTIONS[selection];
+        if (action === 'Approve research and continue') {
+          void startContinuation(
+            (application, signal, onRunStarted) =>
+              application.decideApproval({
+                runId: detail.run.id,
+                decision: 'approved',
+                signal,
+                onRunStarted,
+              }),
+            detail.run.workflowId,
+          );
+        } else if (action === 'Reject research with feedback') {
+          setDetailPrompt('rejection');
+          setPromptValue('');
+          setError(undefined);
+          setScreen('rejection-feedback');
+        } else {
+          setScreen('history');
+        }
+      }
+      return;
+    }
+
+    if (screen === 'recovery-confirm' || screen === 'rejection-feedback') {
       if (input === 'q' || key.escape) {
         setDetailPrompt(undefined);
         setPromptValue('');
-        setScreen('detail');
+        setScreen(
+          screen === 'rejection-feedback' && detail?.run.status === 'waiting'
+            ? 'approval'
+            : 'detail',
+        );
       }
       return;
     }
@@ -849,23 +940,7 @@ export function InkShellController({
           setDetailPrompt('recovery');
           setPromptValue('');
           setError(undefined);
-          setScreen('approval-feedback');
-        } else if (action === 'Approve research and continue') {
-          void startContinuation(
-            (application, signal, onRunStarted) =>
-              application.decideApproval({
-                runId: detail.run.id,
-                decision: 'approved',
-                signal,
-                onRunStarted,
-              }),
-            detail.run.workflowId,
-          );
-        } else if (action === 'Reject research with feedback') {
-          setDetailPrompt('rejection');
-          setPromptValue('');
-          setError(undefined);
-          setScreen('approval-feedback');
+          setScreen('recovery-confirm');
         } else if (action === 'New run with revised objective') {
           const workflow = discoverWorkflows().find(
             (candidate) => candidate.id === detail.run.workflowId,
@@ -1112,6 +1187,20 @@ export function InkShellController({
         visibleRows={Math.max(1, size.rows - 13)}
       />
     );
+  if (screen === 'approval' && detail && approvalMessage)
+    return (
+      <ApprovalScreen
+        colors={colors}
+        run={detail.run}
+        message={approvalMessage}
+        previews={approvalPreviews}
+        previewOffset={approvalPreviewOffset}
+        error={error}
+        selected={selection}
+        offset={listOffset}
+        visibleRows={Math.max(1, size.rows - 16)}
+      />
+    );
   if (screen === 'completion' && completion)
     return (
       <CompletionScreen
@@ -1163,11 +1252,22 @@ export function InkShellController({
         visibleRows={Math.max(1, size.rows - 12)}
       />
     );
-  if (screen === 'approval-feedback' && detailPrompt)
+  if (screen === 'recovery-confirm' && detailPrompt === 'recovery')
     return (
-      <FeedbackScreen
+      <RecoveryConfirmScreen
         colors={colors}
-        prompt={detailPrompt}
+        error={error}
+        initialValue={inputValue}
+        onChange={setPromptValue}
+        onSubmit={() => {
+          setTimeout(() => void submitDetailPrompt(inputValueRef.current), 0);
+        }}
+      />
+    );
+  if (screen === 'rejection-feedback' && detailPrompt === 'rejection')
+    return (
+      <RejectionFeedbackScreen
+        colors={colors}
         error={error}
         initialValue={inputValue}
         onChange={setPromptValue}

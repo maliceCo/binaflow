@@ -19,8 +19,10 @@ export type Screen =
   | 'launch-input'
   | 'launch-confirmation'
   | 'live'
+  | 'approval'
   | 'completion'
   | 'history'
   | 'detail'
   | 'artifacts'
-  | 'approval-feedback';
+  | 'recovery-confirm'
+  | 'rejection-feedback';

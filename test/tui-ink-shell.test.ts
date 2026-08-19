@@ -137,7 +137,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('agent output');
     terminal.input.push('q');
     await terminal.output.waitFor('Cancellation requested');
-    await terminal.output.waitFor('Workflow complete');
+    await terminal.output.waitFor('Run status');
     expect(execute).toHaveBeenCalledTimes(1);
     terminal.input.push('q');
     await terminal.output.waitFor('> New workflow');
@@ -470,7 +470,7 @@ describe('Ink shell', () => {
 
     await openHistory(terminal);
     terminal.input.push('\r');
-    await terminal.output.waitFor('Run detail');
+    await terminal.output.waitFor('Approval required');
     await terminal.output.waitFor('Approve research and continue');
     expect(terminal.output.text()).toContain('Review the research artifact');
     expect(terminal.output.text()).toContain('bounded research preview');
@@ -672,7 +672,7 @@ describe('Ink shell', () => {
     terminal.input.push('q');
     await terminal.output.waitFor('Cancellation requested');
     expect(aborted).toBe(true);
-    await terminal.output.waitFor('Workflow complete');
+    await terminal.output.waitFor('Run status');
     expect(terminal.output.text()).toMatch(/Cancelled|cancelled/i);
     terminal.input.push('q');
     await terminal.output.waitFor('Filters:');
@@ -806,10 +806,11 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await launchWorkflow(terminal, false);
-    await terminal.output.waitFor('Workflow complete');
+    await terminal.output.waitFor('Run status');
     expect(terminal.output.text()).toContain('12 tokens');
     expect(terminal.output.text()).toContain('$0.0040');
     expect(terminal.output.text()).toContain('plan.plan');
+    expect(terminal.output.text()).toContain('Return home');
     terminal.input.push('q');
     await terminal.output.waitFor('New workflow');
     terminal.input.push('q');

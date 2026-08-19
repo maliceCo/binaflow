@@ -19,6 +19,8 @@ export interface LiveStep {
   id: string;
   profile: string;
   status: StepRun['status'];
+  durationMs?: number | undefined;
+  costUsd?: number | undefined;
 }
 
 export interface LiveState {
@@ -143,18 +145,34 @@ export function applyStepSnapshot(
   steps: StepRun[],
   generation: number,
   appliedGeneration: number,
+  nowMs: number = Date.now(),
 ): LiveState | undefined {
   if (generation < appliedGeneration) return undefined;
   const byId = new Map(steps.map((step) => [step.stepId, step]));
   return {
     ...state,
-    steps: state.steps.map((step) => ({
-      ...step,
-      status: byId.get(step.id)?.status ?? step.status,
-    })),
+    steps: state.steps.map((step) => {
+      const snapshot = byId.get(step.id);
+      if (!snapshot) return step;
+      return {
+        ...step,
+        status: snapshot.status,
+        durationMs: stepDurationMs(snapshot, nowMs),
+        costUsd: snapshot.result?.costUsd,
+      };
+    }),
     tokens: sumStepTokens(steps),
     costUsd: sumStepCosts(steps),
   };
+}
+
+export function stepDurationMs(step: StepRun, nowMs: number = Date.now()): number | undefined {
+  if (!step.startedAt) return undefined;
+  const start = Date.parse(step.startedAt);
+  if (Number.isNaN(start)) return undefined;
+  const end = step.finishedAt ? Date.parse(step.finishedAt) : nowMs;
+  if (Number.isNaN(end)) return undefined;
+  return Math.max(0, end - start);
 }
 
 export function createSnapshotInspectionController(options: {
