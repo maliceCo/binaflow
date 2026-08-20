@@ -152,11 +152,15 @@ commands, so use a test repository first.
 ## Run A Workflow
 
 For a human session, run `binaflow` with no arguments in a TTY or use
-`binaflow tui`. The TUI guides setup, workflow selection, input validation,
-permission review, attached live execution, completion, history, recovery,
-approval, and artifact browsing. Use `j`/`k` or the arrow keys to move, Enter
-to select, and `q` to go back or leave the current screen. `Ctrl-C` requests
-graceful cancellation during execution; a second request force-cancels.
+`binaflow tui`. The TUI always opens with a welcome screen for the current
+folder. Press Enter to use that folder, or choose another folder while idle.
+After the folder is accepted, the studio shows workflows and runs on the left
+and the selected diagnosis, launch, live, approval, result, or recovery detail
+on the right. The first-run setup appears only when the folder has no config.
+Use `j`/`k` or the arrow keys to move, Enter to select, and `q` to go back or
+leave the current screen. `Ctrl-C` requests graceful cancellation during
+execution; a second request force-cancels. The TUI stays attached to the
+current process and does not use a daemon or detached session.
 
 Non-TTY no-argument invocation shows CLI help. The TUI does not run workflows
 in the background or reconnect to a detached process; the explicit CLI

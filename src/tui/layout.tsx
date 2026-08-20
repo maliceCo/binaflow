@@ -260,7 +260,7 @@ export function AboutOverlay({ colors }: { colors: boolean }) {
       <SafeText>Builder write access is shown before a workflow starts.</SafeText>
       <SafeText>Research approval is experimental and explicit.</SafeText>
       <SafeText> </SafeText>
-      <SafeText dimColor>Press q to close this note.</SafeText>
+      <SafeText dimColor>Press q to return to the welcome screen.</SafeText>
     </Box>
   );
 }

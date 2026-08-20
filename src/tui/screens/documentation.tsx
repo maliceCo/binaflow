@@ -25,7 +25,7 @@ export const documentationLines = [
   'NO_COLOR removes presentation colors but keeps terminal control behavior.',
   'Pi authentication and model availability are not verified by Binaflow.',
   '',
-  'Press q to return home.',
+  'Press q to close this documentation.',
 ];
 
 export function DocumentationScreen({
@@ -40,7 +40,7 @@ export function DocumentationScreen({
   return (
     <ScreenFrame
       title="Documentation"
-      subtitle="Attached Ink shell"
+      subtitle="Attached terminal studio"
       footer="j/k or arrows scroll | PageUp/PageDown page | q back"
       colors={colors}
     >
