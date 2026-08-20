@@ -959,7 +959,7 @@ the spec.
 ## 14. Phase checklist
 
 - [x] Phase 1: `model.ts`, `reduce.ts`, `test/tui-reduce.test.ts`
-- [ ] Phase 2: studio shell, SIGINT unified, leftover setup screens gone
+- [x] Phase 2: studio shell, SIGINT unified, leftover setup screens gone
 - [ ] Phase 3: borders, colors, logo, spinners, `NO_COLOR`
 - [ ] Phase 4: welcome, picker, setup copy + model discovery on auto-open
 - [ ] Phase 5: shell/phase6 tests rewritten to new copy, contracts kept
