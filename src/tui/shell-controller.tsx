@@ -46,7 +46,13 @@ import {
   WelcomeScreen,
 } from './layout.js';
 import type { AttachedExecutionLifecycle } from './lifecycle.js';
-import { createInitialTuiState, type FolderEntry, type TuiEvent, type TuiState } from './model.js';
+import {
+  createInitialTuiState,
+  visibleFolderEntries,
+  type FolderEntry,
+  type TuiEvent,
+  type TuiState,
+} from './model.js';
 import { reduce } from './reduce.js';
 import { ArtifactsScreen } from './screens/artifacts.js';
 import { APPROVAL_ACTIONS, ApprovalScreen } from './screens/approval.js';
@@ -257,9 +263,10 @@ export function InkShellController({
         const dirs = dirents
           .filter((entry) => entry.isDirectory())
           .sort((a, b) => a.name.localeCompare(b.name));
-        const entries: FolderEntry[] = [
-          { path: dirname(path), name: '..', isParent: true, hasBinaflow: false },
-        ];
+        const entries: FolderEntry[] =
+          path === '/'
+            ? []
+            : [{ path: dirname(path), name: '..', isParent: true, hasBinaflow: false }];
         for (const entry of dirs) {
           const full = join(path, entry.name);
           let hasBinaflow = false;
@@ -288,9 +295,18 @@ export function InkShellController({
         const message = reason instanceof Error ? reason.message : String(reason);
         dispatch({
           type: 'folder-listed',
-          entries: [
-            { path: dirname(path), name: '..', isParent: true, hasBinaflow: false, error: message },
-          ],
+          entries:
+            path === '/'
+              ? [{ path, name: path, isParent: false, hasBinaflow: false, error: message }]
+              : [
+                  {
+                    path: dirname(path),
+                    name: '..',
+                    isParent: true,
+                    hasBinaflow: false,
+                    error: message,
+                  },
+                ],
         });
       }
     })();
@@ -894,30 +910,41 @@ export function InkShellController({
         case 'help':
           if (input === 'q' || key.escape) dispatch({ type: 'close-help' });
           break;
-        case 'folder-picker':
+        case 'folder-picker': {
+          const entries = visibleFolderEntries(current.folderEntries ?? [], current.folderFilter);
+          const parent = entries.find((entry) => entry.isParent);
+          const directories = entries.filter((entry) => !entry.isParent);
+          const useIndex = parent ? 1 : 0;
           if (input === 'q' || key.escape) dispatch({ type: 'folder-picker-back' });
           else if (input === 'h') {
             dispatch({ type: 'folder-picker-path', path: dirname(current.folderPickerPath) });
           } else if (input === '/') dispatch({ type: 'folder-picker-path', path: '/' });
-          else if (input === ' ') {
-            const entries = current.folderEntries ?? [];
-            const entry = entries[current.selection];
+          else if (key.backspace || input === '\x7f') {
+            dispatch({ type: 'folder-filter-backspace' });
+          } else if (input.length === 1 && input >= ' ' && input <= '~' && input !== ' ') {
+            dispatch({ type: 'folder-filter-input', value: input });
+          } else if (input === ' ') {
+            const entry =
+              current.selection === 0 && parent
+                ? parent
+                : current.selection > useIndex
+                  ? directories[current.selection - useIndex - 1]
+                  : undefined;
             dispatch({ type: 'folder-picker-select', ...(entry ? { path: entry.path } : {}) });
           } else if (direction !== 0) {
             dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 7) });
           } else if (input === '\r' || key.return) {
-            const entries = current.folderEntries ?? [];
-            if (current.selection < entries.length) {
-              const entry = entries[current.selection];
-              dispatch({
-                type: 'folder-picker-path',
-                path: entry?.path ?? current.folderPickerPath,
-              });
-            } else {
+            if (current.selection === useIndex) {
               dispatch({ type: 'folder-picker-select' });
+            } else if (current.selection === 0 && parent) {
+              dispatch({ type: 'folder-picker-path', path: parent.path });
+            } else {
+              const entry = directories[current.selection - useIndex - 1];
+              if (entry) dispatch({ type: 'folder-picker-path', path: entry.path });
             }
           }
           break;
+        }
         case 'folder-confirm':
           if (input === 'q' || key.escape) dispatch({ type: 'folder-confirm-back' });
           else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 2 });
@@ -1106,6 +1133,7 @@ export function InkShellController({
             selected={state.selection}
             offset={state.offset}
             path={state.folderPickerPath}
+            filter={state.folderFilter}
             visibleRows={Math.max(1, size.rows - 7)}
           />
         );

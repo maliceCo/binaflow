@@ -1,7 +1,12 @@
 import { TextInput } from '@inkjs/ui';
 import type { GeneratedConfiguration } from '../../application/config-operations.js';
 import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
-import { generatedConfigurationPreview, type SetupField, type SetupStep } from '../launch.js';
+import {
+  generatedConfigurationPreview,
+  isWriteCapable,
+  type SetupField,
+  type SetupStep,
+} from '../launch.js';
 import { sanitizeInkText } from '../text.js';
 
 export function SetupWizardScreen({
@@ -49,7 +54,7 @@ export function SetupWizardScreen({
             : 'Pi is not ready; you can still enter provider and model values manually.'}
         </SafeText>
         <SelectionList
-          items={['Continue', 'Retry diagnosis', 'Exit']}
+          items={['Continue', 'Retry diagnosis', 'Cancel']}
           selected={selected}
           offset={0}
           visibleRows={3}
@@ -93,6 +98,11 @@ export function SetupWizardScreen({
         <TextInput
           key={`${step}-${field?.key ?? 'input'}`}
           defaultValue={sanitizeInkText(value)}
+          {...(field?.key?.endsWith('Provider')
+            ? { placeholder: 'openai' }
+            : field?.key?.endsWith('Model')
+              ? { placeholder: 'gpt-4.1' }
+              : {})}
           onChange={(next) => onChange(sanitizeInkText(next))}
           onSubmit={(next) => onSubmit(sanitizeInkText(next))}
         />
@@ -115,10 +125,13 @@ export function SetupPreviewScreen({
   setupPreviewOffset: number;
   showFullConfig: boolean;
 }) {
+  const planner = generated.config.profiles.planner;
+  const builder = generated.config.profiles.builder;
   const summary = [
-    `dataDir: ${generated.config.dataDir}`,
-    `piCommand: ${generated.config.piCommand}`,
-    ...Object.entries(generated.config.profiles).map(([name]) => `profile: ${name}`),
+    `Planner: ${planner?.provider ?? '-'} / ${planner?.model ?? '-'} (read-only)`,
+    `Builder: ${builder?.provider ?? '-'} / ${builder?.model ?? '-'} (${builder && isWriteCapable(builder) ? 'WRITE+SHELL' : 'read-only'})`,
+    `Config path: ${generated.configPath}`,
+    `Pi command: ${generated.config.piCommand}`,
   ];
   const lines = showFullConfig ? generatedConfigurationPreview(generated).split('\n') : summary;
   return (

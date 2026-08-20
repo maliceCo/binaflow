@@ -36,6 +36,7 @@ describe('Ink setup and launch safety', () => {
 
     await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
+    expect(configOperations.discoverSetupModels).toHaveBeenCalled();
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 2 of 4: planner');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];

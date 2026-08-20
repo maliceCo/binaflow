@@ -31,6 +31,7 @@ export function setupChoices(
       values[field.key.startsWith('planner') ? 'plannerProvider' : 'builderProvider'];
     return models.filter((model) => model.provider === provider).map((model) => model.model);
   }
+  if (field.key === 'builderWriteAccess') return ['no', 'yes'];
   return [];
 }
 

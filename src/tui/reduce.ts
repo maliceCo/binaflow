@@ -11,7 +11,7 @@ import {
   workflowInputFields,
   generatedConfigurationPreview,
 } from './launch.js';
-import type { TuiEvent, TuiState } from './model.js';
+import { visibleFolderEntries, type TuiEvent, type TuiState } from './model.js';
 import { APPROVAL_ACTIONS } from './screens/approval.js';
 import { detailActions } from './screens/detail.js';
 import { diagnosisLines } from './screens/diagnosis.js';
@@ -24,7 +24,7 @@ export const WELCOME_ACTIONS = [
   'Quit',
 ];
 export const FOLDER_CONFIRM_ACTIONS = ['Use this folder', 'Back'];
-export const SETUP_STEP1_ACTIONS = ['Continue', 'Retry diagnosis', 'Exit'];
+export const SETUP_STEP1_ACTIONS = ['Continue', 'Retry diagnosis', 'Cancel'];
 export const REVIEW_ACTIONS = ['Save', 'Show full config', 'Go back', 'Cancel'];
 export const LAUNCH_CONFIRM_ACTIONS = ['Confirm and launch', 'Edit objective', 'Cancel'];
 
@@ -62,6 +62,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         folderPickerOrigin: state.overlay === 'welcome' ? 'welcome' : 'studio',
         selection: 0,
         offset: 0,
+        folderFilter: '',
       };
     }
     case 'folder-picker-back':
@@ -71,10 +72,22 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         overlay: state.folderPickerOrigin === 'welcome' ? 'welcome' : 'none',
         selection: 0,
         offset: 0,
+        folderFilter: '',
       };
     case 'folder-picker-path':
       if (state.overlay !== 'folder-picker') return state;
-      return { ...state, folderPickerPath: event.path, selection: 0, offset: 0 };
+      return { ...state, folderPickerPath: event.path, selection: 0, offset: 0, folderFilter: '' };
+    case 'folder-filter-input':
+      if (state.overlay !== 'folder-picker') return state;
+      return {
+        ...state,
+        folderFilter: `${state.folderFilter}${event.value}`,
+        selection: 0,
+        offset: 0,
+      };
+    case 'folder-filter-backspace':
+      if (state.overlay !== 'folder-picker') return state;
+      return { ...state, folderFilter: state.folderFilter.slice(0, -1), selection: 0, offset: 0 };
     case 'folder-picker-select':
       if (state.overlay !== 'folder-picker') return state;
       return {
@@ -83,6 +96,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         overlay: 'folder-confirm',
         selection: 0,
         offset: 0,
+        folderFilter: '',
       };
     case 'folder-confirm':
       if (state.overlay !== 'folder-confirm') return state;
@@ -95,10 +109,11 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         effect: 'diagnose-cwd',
         selection: 0,
         offset: 0,
+        folderFilter: '',
       };
     case 'folder-confirm-back':
       if (state.overlay !== 'folder-confirm') return state;
-      return { ...state, overlay: 'folder-picker', selection: 0, offset: 0 };
+      return { ...state, overlay: 'folder-picker', selection: 0, offset: 0, folderFilter: '' };
     case 'folder-listed':
       return { ...state, folderEntries: event.entries, selection: 0, offset: 0 };
     case 'setup-next':
@@ -442,7 +457,7 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     case 'welcome':
       return moveList(state, WELCOME_ACTIONS.length, direction, visibleRows);
     case 'folder-picker': {
-      const count = (state.folderEntries?.length ?? 0) + 1;
+      const count = visibleFolderEntries(state.folderEntries ?? [], state.folderFilter).length + 1;
       if (count <= 1) return state;
       return moveList(state, count, direction, visibleRows);
     }

@@ -4,7 +4,7 @@ import type { ConfigurationDiagnosis } from '../application/config-operations.js
 import { humanRunStatus, truncateDisplay } from '../presentation/format.js';
 import { AppFrame, Panel, SafeText, SelectionList, StatusBar } from './components.js';
 import type { LiveState } from './execution.js';
-import type { FolderEntry, TuiState } from './model.js';
+import { visibleFolderEntries, type FolderEntry, type TuiState } from './model.js';
 import { workflowItems } from './screens/workflows.js';
 import { BRAND_LOGO } from './brand.js';
 
@@ -152,6 +152,9 @@ export function WelcomeScreen({
       <SafeText> </SafeText>
       <SafeText dimColor>{cwd}</SafeText>
       <SafeText>{status}</SafeText>
+      {!diagnosis?.configValid && diagnosis?.errors[0] ? (
+        <SafeText dimColor>{diagnosis.errors[0]}</SafeText>
+      ) : null}
       <SafeText> </SafeText>
       <SelectionList items={WELCOME_ACTIONS} selected={selected} offset={0} visibleRows={4} />
     </AppFrame>
@@ -164,6 +167,7 @@ export function FolderPickerScreen({
   selected,
   offset,
   path,
+  filter,
   visibleRows,
 }: {
   colors: boolean;
@@ -171,20 +175,25 @@ export function FolderPickerScreen({
   selected: number;
   offset: number;
   path: string;
+  filter: string;
   visibleRows: number;
 }) {
-  const items = entries.map((entry) => {
+  const filteredEntries = visibleFolderEntries(entries, filter);
+  const parent = filteredEntries.find((entry) => entry.isParent);
+  const directories = filteredEntries.filter((entry) => !entry.isParent);
+  const items = directories.map((entry) => {
     if (entry.error) return `${entry.isParent ? '..' : entry.name} (${entry.error})`;
     return entry.isParent ? '..' : `${entry.name}${entry.hasBinaflow ? ' [Binaflow]' : ''}`;
   });
-  const list = [...items, 'Use this folder'];
+  const list = [...(parent ? ['..'] : []), 'Use this folder', ...items];
   return (
     <Box flexDirection="column" padding={1}>
       <SafeText bold {...(colors ? { color: 'cyan' } : {})}>
         Choose a folder
       </SafeText>
       <SafeText dimColor>{path}</SafeText>
-      <SafeText>Enter opens a folder, Space uses the selected folder.</SafeText>
+      <SafeText>Type to filter. Enter opens a folder, Space uses the selected folder.</SafeText>
+      <SafeText>Filter: {filter || '(all folders)'}</SafeText>
       <SafeText> </SafeText>
       <SelectionList items={list} selected={selected} offset={offset} visibleRows={visibleRows} />
     </Box>
@@ -243,8 +252,13 @@ export function AboutOverlay({ colors }: { colors: boolean }) {
       </SafeText>
       <SafeText>Local workflows for coding agents.</SafeText>
       <SafeText> </SafeText>
-      <SafeText>Binaflow is a local workflow orchestrator. Workflows define the</SafeText>
-      <SafeText>work; external agent harnesses execute individual steps.</SafeText>
+      <SafeText>Binaflow stays attached to the process you started.</SafeText>
+      <SafeText>It does not run a daemon or reconnect in the background.</SafeText>
+      <SafeText>Credentials belong to the external agent harness.</SafeText>
+      <SafeText>Binaflow does not ask for or store provider credentials.</SafeText>
+      <SafeText>The planner is read-only.</SafeText>
+      <SafeText>Builder write access is shown before a workflow starts.</SafeText>
+      <SafeText>Research approval is experimental and explicit.</SafeText>
       <SafeText> </SafeText>
       <SafeText dimColor>Press q to close this note.</SafeText>
     </Box>

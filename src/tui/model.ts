@@ -20,6 +20,12 @@ export interface FolderEntry {
   error?: string;
 }
 
+export function visibleFolderEntries(entries: FolderEntry[], filter: string): FolderEntry[] {
+  const normalized = filter.trim().toLowerCase();
+  if (!normalized) return entries;
+  return entries.filter((entry) => entry.isParent || entry.name.toLowerCase().includes(normalized));
+}
+
 export type FocusPane = 'workflows' | 'runs' | 'detail';
 
 export type Overlay =
@@ -66,6 +72,7 @@ export interface TuiState {
   error?: string;
   status?: string;
   folderEntries?: FolderEntry[];
+  folderFilter: string;
   selection: number;
   offset: number;
   inputValue: string;
@@ -113,6 +120,7 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     selection: 0,
     offset: 0,
     inputValue: '',
+    folderFilter: '',
     clarifications: [],
     approvalPreviews: [],
     approvalPreviewOffset: 0,
@@ -133,6 +141,8 @@ export type TuiEvent =
   | { type: 'open-folder-picker' }
   | { type: 'folder-picker-back' }
   | { type: 'folder-picker-path'; path: string }
+  | { type: 'folder-filter-input'; value: string }
+  | { type: 'folder-filter-backspace' }
   | { type: 'folder-picker-select'; path?: string }
   | { type: 'folder-confirm' }
   | { type: 'folder-confirm-back' }
