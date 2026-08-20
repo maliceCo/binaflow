@@ -24,6 +24,7 @@ export function RecoveryConfirmScreen({
     >
       <SafeText>Type YES to confirm recovery. This only marks the run interrupted.</SafeText>
       <TextInput
+        key={error ? 'error' : 'clean'}
         defaultValue={sanitizeInkText(initialValue)}
         onChange={(value) => onChange(sanitizeInkText(value))}
         onSubmit={(value) => onSubmit(sanitizeInkText(value))}
@@ -54,6 +55,7 @@ export function RejectionFeedbackScreen({
     >
       <SafeText>Feedback for another research iteration:</SafeText>
       <TextInput
+        key={error ? 'error' : 'clean'}
         defaultValue={sanitizeInkText(initialValue)}
         onChange={(value) => onChange(sanitizeInkText(value))}
         onSubmit={(value) => onSubmit(sanitizeInkText(value))}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discoverWorkflows } from '../src/application/operations.js';
+import type { RunInspection } from '../src/application/operations.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
 import type { LaunchInputState } from '../src/tui/launch.js';
 import type { TuiEvent, TuiState } from '../src/tui/model.js';
@@ -186,6 +187,96 @@ const transitions: Transition[] = [
       expect(state.launchInput?.error).toBe('objective is required.');
     },
   },
+  {
+    name: 'setup save waits for a generated preview and stays in setup',
+    events: [diagnosed(missingConfig()), useFolder(), { type: 'setup-save' }],
+    expect: (state) => {
+      expect(state.overlay).toBe('setup');
+      expect(state.effect).toBe('discover-setup-models');
+      expect(state.error).toBe('Configuration preview is not ready yet.');
+    },
+  },
+  {
+    name: 'waiting completion stays in the approval detail',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      runStarted(),
+      { type: 'run-finished', status: 'waiting' },
+    ],
+    expect: (state) => {
+      expect(state.detail).toBe('approval');
+      expect(state.activeRunId).toBe('run-1');
+    },
+  },
+  {
+    name: 'an eligible failed run stays inspectable for recovery',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      runStarted(),
+      {
+        type: 'inspection-set',
+        inspection: {
+          ...inspectionSetInspection('failed'),
+        },
+        recovery: {
+          eligible: true,
+          reason: 'Retryable builder step',
+          completedStepIds: [],
+          retryableStepIds: ['build'],
+          workflowVersionCompatible: true,
+        },
+        clarifications: [],
+      },
+      { type: 'run-finished', status: 'failed' },
+    ],
+    expect: (state) => {
+      expect(state.detail).toBe('inspect');
+      expect(state.activeRunId).toBe('run-1');
+      expect(state.recovery?.eligible).toBe(true);
+    },
+  },
+  {
+    name: 'folder picker Space can confirm the selected child directory',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      { type: 'open-folder-picker' },
+      {
+        type: 'folder-listed',
+        entries: [
+          { path: '/workspaces/child', name: 'child', isParent: false, hasBinaflow: false },
+        ],
+      },
+      { type: 'move', direction: 1, visibleRows: 5 },
+      { type: 'folder-picker-select', path: '/workspaces/child' },
+    ],
+    expect: (state) => {
+      expect(state.overlay).toBe('folder-confirm');
+      expect(state.folderPickerPath).toBe('/workspaces/child');
+    },
+  },
+  {
+    name: 'workflow movement keeps a separate viewport offset',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      {
+        type: 'workflows-loaded',
+        workflows: Array.from({ length: 4 }, (_, index) => ({
+          ...discoverWorkflows()[0]!,
+          id: `workflow-${index}`,
+        })),
+      },
+      { type: 'move', direction: 1, visibleRows: 2 },
+      { type: 'move', direction: 1, visibleRows: 2 },
+    ],
+    expect: (state) => {
+      expect(state.workflowSelected).toBe(2);
+      expect(state.workflowOffset).toBe(1);
+    },
+  },
 ];
 
 describe('TUI transitions', () => {
@@ -215,32 +306,36 @@ function nextToReview(): TuiEvent[] {
 function inspectionSet(): TuiEvent {
   return {
     type: 'inspection-set',
-    inspection: {
-      run: {
-        id: 'run-9',
-        workflowId: 'plan-build',
-        workflowVersion: 1,
-        objective: 'Build the CLI',
-        status: 'completed',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T01:00:00Z',
-      },
-      steps: [],
-      artifacts: [
-        {
-          id: 'artifact-1',
-          runId: 'run-9',
-          stepId: 'build',
-          name: 'output.txt',
-          kind: 'text',
-          path: 'artifacts/run-9/build/output.txt',
-          mediaType: 'text/plain',
-          sizeBytes: 10,
-        },
-      ],
-      eventCount: 0,
-    },
+    inspection: inspectionSetInspection('completed'),
     clarifications: [],
+  };
+}
+
+function inspectionSetInspection(status: 'completed' | 'failed'): RunInspection {
+  return {
+    run: {
+      id: 'run-9',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Build the CLI',
+      status,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T01:00:00Z',
+    },
+    steps: [],
+    artifacts: [
+      {
+        id: 'artifact-1',
+        runId: 'run-9',
+        stepId: 'build',
+        name: 'output.txt',
+        kind: 'text',
+        path: 'artifacts/run-9/build/output.txt',
+        mediaType: 'text/plain',
+        sizeBytes: 10,
+      },
+    ],
+    eventCount: 0,
   };
 }
 

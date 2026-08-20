@@ -186,10 +186,11 @@ export function createSnapshotInspectionController(options: {
   const intervalMs = options.intervalMs ?? LIVE_UI_FLUSH_MS;
   const schedule = options.schedule ?? setTimeout;
   const clearSchedule = options.clearSchedule ?? clearTimeout;
-  let inFlight = false;
+  let inFlight: Promise<void> | undefined;
   let pending = false;
   let disposed = false;
   let generation = 0;
+  let inFlightGeneration: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const clearTimer = (): void => {
@@ -199,30 +200,38 @@ export function createSnapshotInspectionController(options: {
     }
   };
 
-  const runInspection = async (): Promise<void> => {
-    if (disposed || inFlight) return;
+  const runInspection = (): Promise<void> => {
+    if (disposed) return Promise.resolve();
+    if (inFlight) return inFlight;
     const runId = options.getRunId();
     if (!runId) {
       pending = false;
-      return;
+      return Promise.resolve();
     }
-    inFlight = true;
     pending = false;
     const token = ++generation;
-    try {
-      const steps = await options.inspect(runId);
-      if (!disposed) options.apply(steps, token);
-    } catch {
-      // Snapshot inspection is supplemental; live events remain authoritative.
-    } finally {
-      inFlight = false;
-      if (!disposed && pending) void runInspection();
-    }
+    inFlightGeneration = token;
+    const inspection = (async () => {
+      try {
+        const steps = await options.inspect(runId);
+        if (!disposed) options.apply(steps, token);
+      } catch {
+        // Snapshot inspection is supplemental; live events remain authoritative.
+      } finally {
+        if (inFlightGeneration === token) {
+          inFlightGeneration = undefined;
+          inFlight = undefined;
+        }
+        if (!disposed && pending) void runInspection();
+      }
+    })();
+    inFlight = inspection;
+    return inspection;
   };
 
   return {
     get inFlight() {
-      return inFlight;
+      return inFlight !== undefined;
     },
     get generation() {
       return generation;
@@ -253,10 +262,11 @@ export function createSnapshotInspectionController(options: {
       if (inFlight) {
         pending = true;
         while (inFlight || pending) {
-          await Promise.resolve();
-          if (!inFlight && pending) await runInspection();
-          else if (inFlight) await Promise.resolve();
-          else break;
+          if (inFlight) {
+            await inFlight;
+          } else if (pending) {
+            await runInspection();
+          }
         }
         return;
       }

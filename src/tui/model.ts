@@ -51,7 +51,9 @@ export interface TuiState {
   folderPickerOrigin: 'welcome' | 'studio';
   setupValues: SetupValues;
   workflowSelected: number;
+  workflowOffset: number;
   runSelected: number;
+  runOffset: number;
   diagnosis?: ConfigurationDiagnosis;
   workflows?: WorkflowContract[];
   runs?: WorkflowRun[];
@@ -80,6 +82,7 @@ export interface TuiState {
   artifactContentOffset: number;
   generated?: GeneratedConfiguration;
   showFullConfig: boolean;
+  setupPreviewOffset: number;
 }
 
 export interface TuiModelOptions {
@@ -101,7 +104,9 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     folderPickerOrigin: 'welcome',
     setupValues: {},
     workflowSelected: 0,
+    workflowOffset: 0,
     runSelected: 0,
+    runOffset: 0,
     cancellationRequested: false,
     pendingFolderDiagnosis: false,
     quitRequested: false,
@@ -115,6 +120,7 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     artifactOffset: 0,
     artifactContentOffset: 0,
     showFullConfig: false,
+    setupPreviewOffset: 0,
   };
 }
 
@@ -127,7 +133,7 @@ export type TuiEvent =
   | { type: 'open-folder-picker' }
   | { type: 'folder-picker-back' }
   | { type: 'folder-picker-path'; path: string }
-  | { type: 'folder-picker-select' }
+  | { type: 'folder-picker-select'; path?: string }
   | { type: 'folder-confirm' }
   | { type: 'folder-confirm-back' }
   | { type: 'setup-next' }
@@ -136,6 +142,8 @@ export type TuiEvent =
   | { type: 'setup-values'; values: SetupValues }
   | { type: 'setup-models'; models: AgentModel[] }
   | { type: 'setup-save' }
+  | { type: 'setup-written' }
+  | { type: 'setup-save-failed'; message: string }
   | { type: 'refresh-diagnosis' }
   | { type: 'focus-pane'; pane: FocusPane }
   | { type: 'move'; direction: -1 | 1; visibleRows: number }

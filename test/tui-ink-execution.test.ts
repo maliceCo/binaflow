@@ -138,6 +138,23 @@ describe('Ink execution state', () => {
     publisher.dispose();
   });
 
+  it('flush waits for an inspection that completes through a timer', async () => {
+    const applied: number[] = [];
+    const controller = createSnapshotInspectionController({
+      inspect: async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        return [];
+      },
+      getRunId: () => 'run-1',
+      apply: (_steps, generation) => applied.push(generation),
+    });
+
+    await controller.flush();
+
+    expect(applied).toEqual([1]);
+    controller.dispose();
+  });
+
   it('applies persisted step state and aggregates usage and cost', () => {
     const state = createLiveState(run('running'), workflow());
     const steps: StepRun[] = [

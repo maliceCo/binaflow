@@ -10,11 +10,14 @@ export interface AttachedExecutionLifecycle<Context extends ClosableContext> {
   readonly forceSignal: NodeJS.Signals | undefined;
   beginOperation(): AbortController;
   trackOperation(operation: Promise<void>): void;
+  trackRequest(request: Promise<unknown>): void;
   subscribe(unsubscribe: (() => void) | undefined): void;
   unsubscribe(): void;
   openContext(create: () => Promise<Context>): Promise<Context>;
   /** Close an owned context and open a fresh one so execution uses current config. */
   replaceOwnedContext(create: () => Promise<Context>): Promise<Context>;
+  /** Detach any current context and open a fresh context for a changed workspace. */
+  replaceContext(create: () => Promise<Context>): Promise<Context>;
   requestCancellation(signal: NodeJS.Signals): CancellationRequest;
   shutdown(): Promise<void>;
 }
@@ -31,6 +34,7 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
   let forceSignal: NodeJS.Signals | undefined;
   let shutdown: Promise<void> | undefined;
   let openingContext: Promise<Context> | undefined;
+  const requests = new Set<Promise<unknown>>();
   let stopping = false;
 
   const releaseSubscription = (): void => {
@@ -58,6 +62,12 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
     return opening;
   };
 
+  const drainRequests = async (): Promise<void> => {
+    while (requests.size > 0) {
+      await Promise.all([...requests].map((request) => request.catch(() => undefined)));
+    }
+  };
+
   return {
     get context() {
       return context;
@@ -82,6 +92,13 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
       });
       operation = tracked;
     },
+    trackRequest(request) {
+      const tracked = request.finally(() => {
+        requests.delete(tracked);
+      });
+      requests.add(tracked);
+      void tracked.catch(() => undefined);
+    },
     subscribe(nextUnsubscribe) {
       releaseSubscription();
       unsubscribe = nextUnsubscribe;
@@ -94,6 +111,7 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
     async replaceOwnedContext(create) {
       if (stopping) throw new Error('Application context is closing.');
       releaseSubscription();
+      await drainRequests();
       await openingContext?.catch(() => undefined);
       openingContext = undefined;
       if (ownsContext) {
@@ -107,6 +125,20 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
         // Injected (test) context is not closed; reuse it.
         return context;
       }
+      return openFresh(create);
+    },
+    async replaceContext(create) {
+      if (stopping) throw new Error('Application context is closing.');
+      releaseSubscription();
+      await drainRequests();
+      await openingContext?.catch(() => undefined);
+      openingContext = undefined;
+      const previous = context;
+      context = undefined;
+      const wasOwned = ownsContext;
+      ownsContext = false;
+      if (wasOwned) await previous?.close?.();
+      // Injected contexts belong to the caller and are detached without closing.
       return openFresh(create);
     },
     requestCancellation(signal) {
@@ -125,6 +157,7 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
         releaseSubscription();
         controller?.abort();
         await operation?.catch(() => undefined);
+        await drainRequests();
         await openingContext?.catch(() => undefined);
         if (ownsContext) await context?.close?.();
       })();

@@ -34,7 +34,7 @@ describe('Ink setup and launch safety', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.input.waitUntilReady();
+    await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 2 of 4: planner');
@@ -48,9 +48,13 @@ describe('Ink setup and launch safety', () => {
     ];
     for (let index = 0; index < answers.length; index += 1) {
       const answer = answers[index]!;
+      await terminal.input.waitUntilReady();
+      terminal.input.push('\x7f'.repeat(100));
       terminal.input.push(answer);
       await terminal.output.waitFor(answer);
       terminal.input.push('\r');
+      await settleInput();
+      await terminal.input.waitUntilReady();
       await terminal.output.waitFor(nextFields[index]!);
     }
     await terminal.output.waitFor('Step 4 of 4');
@@ -81,8 +85,9 @@ describe('Ink setup and launch safety', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.input.waitUntilReady();
+    await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
+    await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 2 of 4: planner');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
@@ -94,21 +99,28 @@ describe('Ink setup and launch safety', () => {
       'Step 4 of 4',
     ];
     for (let index = 0; index < answers.length; index += 1) {
+      await terminal.input.waitUntilReady();
+      terminal.input.push('\x7f'.repeat(100));
       terminal.input.push(answers[index]!);
       await terminal.output.waitFor(answers[index]!);
       terminal.input.push('\r');
+      await settleInput();
+      await terminal.input.waitUntilReady();
       await terminal.output.waitFor(nextFields[index]!);
     }
     const configPath = join(directory, '.binaflow', 'config.json');
     const original = '{"profiles":{},"piCommand":"pi"}';
     await mkdir(join(directory, '.binaflow'), { recursive: true });
     await writeFile(configPath, original);
+    await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('Configuration already exists at');
     expect(await readFile(configPath, 'utf8')).toBe(original);
     terminal.input.push('q');
+    await terminal.output.waitFor('BINAFLOW');
+    terminal.input.push('q');
     await running;
-  });
+  }, 10_000);
 
   it('uses manual text input when Pi discovery has no models', async () => {
     const directory = await temporaryDirectory('binaflow-ink-setup-fallback-');
@@ -121,7 +133,7 @@ describe('Ink setup and launch safety', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.input.waitUntilReady();
+    await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 2 of 4: planner');
@@ -143,11 +155,12 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('Builder permissions');
     terminal.input.push('no');
     await terminal.output.waitFor('no');
+    await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 4 of 4');
     expect(terminal.output.text()).toContain('Nothing has been written yet.');
     terminal.input.push('q');
-    await terminal.output.waitFor('j/k or arrows move');
+    await terminal.output.waitFor('BINAFLOW');
     terminal.input.push('q');
     await running;
   });
@@ -169,13 +182,13 @@ describe('Ink setup and launch safety', () => {
       applicationContext: applicationContext(execute),
     });
 
-    await terminal.output.waitFor('New workflow');
-    await terminal.output.waitFor('Status: Ready');
+    await waitForStudio(terminal);
+    terminal.input.push('n');
+    await terminal.output.waitFor('plan-build');
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
-    await terminal.output.waitFor('plan-build');
-    terminal.input.push('\r');
     await terminal.output.waitFor('plan-build input');
+    await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('objective is required');
     terminal.input.push('Implement the change');
@@ -183,12 +196,8 @@ describe('Ink setup and launch safety', () => {
     terminal.input.push('\r');
     await terminal.output.waitFor('WARNING: this workflow can modify');
     expect(execute).not.toHaveBeenCalled();
-    terminal.input.push('j');
-    await terminal.output.waitFor('Edit objective');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Cancel');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Workflow launch cancelled.');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Configuration readiness');
     expect(execute).not.toHaveBeenCalled();
     terminal.input.push('q');
     await running;
@@ -208,13 +217,13 @@ describe('Ink setup and launch safety', () => {
       applicationContext: applicationContext(execute),
     });
 
-    await terminal.output.waitFor('New workflow');
-    await terminal.output.waitFor('Status: Ready');
+    await waitForStudio(terminal);
+    terminal.input.push('n');
+    await terminal.output.waitFor('plan-build');
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
-    await terminal.output.waitFor('plan-build');
-    terminal.input.push('\r');
     await terminal.output.waitFor('plan-build input');
+    await terminal.input.waitUntilReady();
     terminal.input.push('Implement the change');
     await terminal.output.waitFor('Implement the change');
     terminal.input.push('\r');
@@ -229,7 +238,7 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('Profile permissions or settings changed');
     expect(execute).not.toHaveBeenCalled();
     terminal.input.push('q');
-    await terminal.output.waitFor('> New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   });
@@ -282,6 +291,18 @@ class FakeInput extends EventEmitter {
   }
 }
 
+async function acceptWelcome(terminal: ReturnType<typeof createTerminal>): Promise<void> {
+  await terminal.output.waitFor('BINAFLOW');
+  await terminal.input.waitUntilReady();
+  terminal.input.push('\r');
+  await terminal.input.waitUntilReady();
+}
+
+async function waitForStudio(terminal: ReturnType<typeof createTerminal>): Promise<void> {
+  await acceptWelcome(terminal);
+  await terminal.output.waitFor('Configuration readiness');
+}
+
 class FakeOutput extends EventEmitter {
   isTTY = true;
   columns = 80;
@@ -306,6 +327,10 @@ class FakeOutput extends EventEmitter {
 
 function createTerminal(): { input: FakeInput; output: FakeOutput } {
   return { input: new FakeInput(), output: new FakeOutput() };
+}
+
+async function settleInput(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 async function temporaryDirectory(prefix: string): Promise<string> {

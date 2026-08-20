@@ -22,7 +22,7 @@ describe('Ink shell', () => {
     }
   });
 
-  it('navigates home, documentation, scrolling, and exit without legacy rendering', async () => {
+  it('navigates the welcome screen, studio overlays, and exit without legacy rendering', async () => {
     const directory = await temporaryDirectory();
     await writeConfig(directory);
     const terminal = createTerminal();
@@ -35,30 +35,24 @@ describe('Ink shell', () => {
     });
 
     await waitForHomeReady(terminal);
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Read documentation');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Documentation');
-    for (let index = 0; index < 10; index += 1) terminal.input.push('j');
-    await terminal.output.waitFor('v more content');
+    terminal.input.push('?');
+    await terminal.output.waitFor('Keyboard');
     terminal.input.push('q');
-    await terminal.output.waitFor('> Read documentation');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Refresh diagnosis');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Diagnosis');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Run history');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Exit');
-    terminal.input.push('\r');
+    await terminal.output.waitFor('Configuration readiness');
+    terminal.input.push('d');
+    await terminal.output.waitFor('Diagnosis');
+    terminal.input.push('w');
+    await terminal.output.waitFor('Choose a folder');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Configuration readiness');
+    terminal.input.push('q');
     await running;
 
     expect(terminal.output.text()).not.toContain('\u001b[36m');
     expect(terminal.output.text()).toContain('\u001b[?1049l');
   });
 
-  it('coalesces diagnosis refreshes and ignores a result after unmount', async () => {
+  it('ignores an in-flight diagnosis result after unmount', async () => {
     const directory = await temporaryDirectory();
     const terminal = createTerminal();
     let calls = 0;
@@ -79,17 +73,14 @@ describe('Ink shell', () => {
       errorOutput: terminal.output as unknown as NodeJS.WriteStream,
       env: { NO_COLOR: '' },
     });
-    await terminal.output.waitFor('Refresh diagnosis');
+    await terminal.output.waitFor('BINAFLOW');
     await terminal.input.waitUntilReady();
-    terminal.input.push('r');
-    terminal.input.push('r');
-    await new Promise((resolve) => setImmediate(resolve));
     expect(calls).toBe(1);
     terminal.input.push('q');
-    await running;
     release(result);
+    await running;
     await new Promise((resolve) => setImmediate(resolve));
-    expect(terminal.output.text()).toContain('Refresh diagnosis');
+    expect(terminal.output.text()).toContain('BINAFLOW');
   });
 
   it('keeps an attached run live through activity, cancellation, and completion', async () => {
@@ -140,7 +131,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('Run status');
     expect(execute).toHaveBeenCalledTimes(1);
     terminal.input.push('q');
-    await terminal.output.waitFor('> New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   });
@@ -181,6 +172,8 @@ describe('Ink shell', () => {
         });
         await launchWorkflow(terminal, false);
         await waitForCondition(() => contextRequested);
+        terminal.input.push('\r');
+        await waitForCondition(() => contextRequested);
         process.emit(signal);
         releaseContext?.(ownedContext);
         await running;
@@ -191,6 +184,7 @@ describe('Ink shell', () => {
         process.exitCode = previousExitCode;
       }
     },
+    10_000,
   );
 
   it.each(['input', 'output'] as const)(
@@ -255,7 +249,9 @@ describe('Ink shell', () => {
     const context = createApplicationService(
       async (_workflow, request) => {
         request.onRunStarted?.(createRun('running'));
-        request.signal?.addEventListener('abort', () => undefined);
+        request.signal?.addEventListener('abort', () => {
+          setTimeout(() => resolveExecution?.(createRun('cancelled')), 50);
+        });
         return execution;
       },
       () => undefined,
@@ -296,7 +292,7 @@ describe('Ink shell', () => {
       env: { NO_COLOR: '' },
     });
 
-    await terminal.output.waitFor('Enter select');
+    await waitForHomeReady(terminal);
     terminal.output.columns = 40;
     terminal.output.rows = 8;
     terminal.output.emit('resize');
@@ -329,7 +325,7 @@ describe('Ink shell', () => {
     terminal.input.push('r');
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(terminal.output.text()).toContain('Terminal too small');
-    expect(terminal.output.text()).not.toContain('> Refresh diagnosis');
+    expect(terminal.output.text()).not.toContain('d status');
     terminal.input.push('q');
     await running;
   });
@@ -374,14 +370,10 @@ describe('Ink shell', () => {
     });
 
     await openHistory(terminal);
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Historical inspection');
-    expect(terminal.output.text()).toContain('Persisted metadata only');
+    await terminal.output.waitFor('Run status');
     expect(getStepRuns).toHaveBeenCalled();
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters: [s] status');
-    terminal.input.push('q');
-    await terminal.output.waitFor('Run history');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   });
@@ -469,16 +461,14 @@ describe('Ink shell', () => {
     });
 
     await openHistory(terminal);
-    terminal.input.push('\r');
     await terminal.output.waitFor('Approval required');
     await terminal.output.waitFor('Approve research and continue');
     expect(terminal.output.text()).toContain('Review the research artifact');
     expect(terminal.output.text()).toContain('bounded research preview');
     expect(terminal.output.text()).toContain('can modify the workspace');
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters: [s] status');
     terminal.input.push('q');
-    await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -549,25 +539,19 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await openHistory(terminal);
-    terminal.input.push('\r');
     await terminal.output.waitFor('Approve research and continue');
     terminal.input.push('j');
-    await terminal.output.waitFor('> Reject research with feedback');
+    await terminal.output.waitFor('Reject research with feedback');
     terminal.input.push('\r');
     await terminal.output.waitFor('Reject research');
     terminal.input.push('q');
     await terminal.output.waitFor('Approve research and continue');
     expect(terminal.output.text()).toContain('Waiting');
-    terminal.input.push('j');
-    await terminal.output.waitFor('> Reject research with feedback');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Reject research');
-    terminal.input.push('\x1b');
-    await terminal.output.waitFor('Approve research and continue');
+    await new Promise((resolve) => setTimeout(resolve, 100));
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters:');
+    await terminal.output.waitFor('Run detail');
     terminal.input.push('q');
-    await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -665,7 +649,6 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await openHistory(terminal);
-    terminal.input.push('\r');
     await terminal.output.waitFor('Resume retryable work');
     terminal.input.push('\r');
     await terminal.output.waitFor('Workflow running');
@@ -675,9 +658,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('Run status');
     expect(terminal.output.text()).toMatch(/Cancelled|cancelled/i);
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters:');
-    terminal.input.push('q');
-    await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -732,7 +713,6 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await openHistory(terminal);
-    terminal.input.push('\r');
     await terminal.output.waitFor('Mark interrupted and review recovery');
     terminal.input.push('\r');
     await terminal.output.waitFor('Type YES to confirm');
@@ -740,17 +720,15 @@ describe('Ink shell', () => {
     terminal.input.push('\r');
     await terminal.output.waitFor('Type YES to confirm recovery.');
     expect(interruptions).toBe(0);
-    terminal.input.push('\x7f');
-    terminal.input.push('\x7f');
+    terminal.input.push('\x7f'.repeat(100));
     terminal.input.push('YES');
+    await terminal.output.waitFor('YES');
     terminal.input.push('\r');
     await terminal.output.waitFor('Resume retryable work');
     expect(interruptions).toBe(1);
     expect(currentRunning.status).toBe('interrupted');
     terminal.input.push('q');
-    await terminal.output.waitFor('Filters:');
-    terminal.input.push('q');
-    await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -810,9 +788,9 @@ describe('Ink shell', () => {
     expect(terminal.output.text()).toContain('12 tokens');
     expect(terminal.output.text()).toContain('$0.0040');
     expect(terminal.output.text()).toContain('plan.plan');
-    expect(terminal.output.text()).toContain('Return home');
+    expect(terminal.output.text()).not.toContain('Return home');
     terminal.input.push('q');
-    await terminal.output.waitFor('New workflow');
+    await terminal.output.waitFor('Press n to start a run.');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -886,11 +864,20 @@ class FakeOutput extends EventEmitter {
   }
 
   async waitFor(value: string, attempts = 200): Promise<void> {
-    for (let attempt = 0; attempt < attempts && !this.text().includes(value); attempt += 1) {
+    for (
+      let attempt = 0;
+      attempt < attempts && !stripAnsi(this.text()).includes(value);
+      attempt += 1
+    ) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    expect(this.text()).toContain(value);
+    expect(stripAnsi(this.text())).toContain(value);
   }
+}
+
+function stripAnsi(value: string): string {
+  const escape = String.fromCharCode(27);
+  return value.replace(new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, 'g'), '');
 }
 
 function createTerminal(): { input: FakeInput; output: FakeOutput } {
@@ -898,23 +885,18 @@ function createTerminal(): { input: FakeInput; output: FakeOutput } {
 }
 
 async function waitForHomeReady(terminal: ReturnType<typeof createTerminal>): Promise<void> {
-  await terminal.output.waitFor('New workflow');
-  await terminal.output.waitFor('Status: Ready');
+  await terminal.output.waitFor('BINAFLOW');
+  await terminal.input.waitUntilReady();
+  terminal.input.push('\r');
+  await terminal.output.waitFor('Configuration readiness');
   await terminal.input.waitUntilReady();
 }
 
 async function openHistory(terminal: ReturnType<typeof createTerminal>): Promise<void> {
   await waitForHomeReady(terminal);
-  terminal.input.push('j');
-  await terminal.output.waitFor('> Read documentation');
-  terminal.input.push('j');
-  await terminal.output.waitFor('> Refresh diagnosis');
-  terminal.input.push('j');
-  await terminal.output.waitFor('> Diagnosis');
-  terminal.input.push('j');
-  await terminal.output.waitFor('> Run history');
+  terminal.input.push('\t');
+  await terminal.output.waitFor('run-');
   terminal.input.push('\r');
-  await terminal.output.waitFor('Filters:');
 }
 
 async function launchWorkflow(
@@ -922,7 +904,7 @@ async function launchWorkflow(
   waitForLive = true,
 ): Promise<void> {
   await waitForHomeReady(terminal);
-  terminal.input.push('\r');
+  terminal.input.push('n');
   await terminal.output.waitFor('plan-build');
   terminal.input.push('\r');
   await terminal.output.waitFor('plan-build input');

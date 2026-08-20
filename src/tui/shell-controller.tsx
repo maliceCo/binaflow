@@ -90,7 +90,11 @@ export function InkShellController({
   const [liveOffset, setLiveOffset] = useState(0);
   const [launching, setLaunching] = useState(false);
   const active = useRef(true);
-  const refreshPromise = useRef<Promise<void> | undefined>(undefined);
+  const diagnosisRequest = useRef(0);
+  const runsRequest = useRef(0);
+  const folderRequest = useRef(0);
+  const inspectionRequest = useRef(0);
+  const artifactRequest = useRef(0);
   const activeRunId = useRef<string | undefined>(undefined);
   const liveRef = useRef<LiveState | undefined>(undefined);
   const activityBufferRef = useRef<LiveActivityBuffer | undefined>(undefined);
@@ -169,74 +173,129 @@ export function InkShellController({
   const ensureContext = async (): Promise<ApplicationService & { close?(): void }> => {
     if (lifecycle.context) return lifecycle.context;
     const createContext = await resolveContextFactory();
-    return lifecycle.openContext(async () => createContext(configPath, cwd));
+    const current = stateRef.current;
+    return lifecycle.openContext(async () => createContext(current.configPath, current.cwd));
   };
 
   const openExecutionContext = async (): Promise<ApplicationService & { close?(): void }> => {
     const createContext = await resolveContextFactory();
-    return lifecycle.replaceOwnedContext(async () => createContext(configPath, cwd));
+    const current = stateRef.current;
+    return lifecycle.replaceOwnedContext(async () =>
+      createContext(current.configPath, current.cwd),
+    );
+  };
+
+  const replaceWorkspaceContext = async (): Promise<void> => {
+    const createContext = await resolveContextFactory();
+    const current = stateRef.current;
+    await lifecycle.replaceContext(async () => createContext(current.configPath, current.cwd));
   };
 
   const runDiagnose = async (): Promise<void> => {
-    if (refreshPromise.current) return;
-    const promise = diagnoseConfigurationFile(stateRef.current.configPath, stateRef.current.cwd)
+    const requestId = ++diagnosisRequest.current;
+    const requestCwd = stateRef.current.cwd;
+    const requestConfigPath = stateRef.current.configPath;
+    const promise = diagnoseConfigurationFile(requestConfigPath, requestCwd)
       .then((result) => {
-        if (active.current) dispatch({ type: 'diagnosed', diagnosis: result });
+        if (
+          active.current &&
+          requestId === diagnosisRequest.current &&
+          stateRef.current.cwd === requestCwd &&
+          stateRef.current.configPath === requestConfigPath
+        ) {
+          dispatch({ type: 'diagnosed', diagnosis: result });
+        }
       })
       .catch((reason: unknown) => {
-        if (active.current) {
+        if (
+          active.current &&
+          requestId === diagnosisRequest.current &&
+          stateRef.current.cwd === requestCwd &&
+          stateRef.current.configPath === requestConfigPath
+        ) {
           dispatch({
             type: 'error-set',
             message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
           });
         }
-      })
-      .finally(() => {
-        refreshPromise.current = undefined;
       });
-    refreshPromise.current = promise;
+    lifecycle.trackRequest(promise);
+    await promise;
   };
 
   const loadRuns = async (): Promise<void> => {
-    try {
-      const application = await ensureContext();
-      const page = await application.listRuns({ limit: 50 });
-      if (active.current) dispatch({ type: 'runs-loaded', runs: page.runs });
-    } catch {
-      if (active.current) dispatch({ type: 'runs-loaded', runs: [] });
-    }
+    const requestId = ++runsRequest.current;
+    const requestCwd = stateRef.current.cwd;
+    const request = (async () => {
+      try {
+        const application = await ensureContext();
+        const page = await application.listRuns({ limit: 50 });
+        if (
+          active.current &&
+          requestId === runsRequest.current &&
+          stateRef.current.cwd === requestCwd
+        )
+          dispatch({ type: 'runs-loaded', runs: page.runs });
+      } catch {
+        if (
+          active.current &&
+          requestId === runsRequest.current &&
+          stateRef.current.cwd === requestCwd
+        )
+          dispatch({ type: 'runs-loaded', runs: [] });
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
   };
 
   const listFolder = async (path: string): Promise<void> => {
-    try {
-      const dirents = await readdir(path, { withFileTypes: true });
-      const dirs = dirents
-        .filter((entry) => entry.isDirectory())
-        .sort((a, b) => a.name.localeCompare(b.name));
-      const entries: FolderEntry[] = [
-        { path: dirname(path), name: '..', isParent: true, hasBinaflow: false },
-      ];
-      for (const entry of dirs) {
-        const full = join(path, entry.name);
-        let hasBinaflow = false;
-        try {
-          hasBinaflow = await configurationExists('.binaflow/config.json', full);
-        } catch {
-          hasBinaflow = false;
+    const requestId = ++folderRequest.current;
+    const request = (async () => {
+      try {
+        const dirents = await readdir(path, { withFileTypes: true });
+        const dirs = dirents
+          .filter((entry) => entry.isDirectory())
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const entries: FolderEntry[] = [
+          { path: dirname(path), name: '..', isParent: true, hasBinaflow: false },
+        ];
+        for (const entry of dirs) {
+          const full = join(path, entry.name);
+          let hasBinaflow = false;
+          try {
+            hasBinaflow = await configurationExists('.binaflow/config.json', full);
+          } catch {
+            hasBinaflow = false;
+          }
+          entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
         }
-        entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
+        if (
+          active.current &&
+          requestId === folderRequest.current &&
+          stateRef.current.overlay === 'folder-picker' &&
+          stateRef.current.folderPickerPath === path
+        )
+          dispatch({ type: 'folder-listed', entries });
+      } catch (reason) {
+        if (
+          !active.current ||
+          requestId !== folderRequest.current ||
+          stateRef.current.overlay !== 'folder-picker' ||
+          stateRef.current.folderPickerPath !== path
+        )
+          return;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        dispatch({
+          type: 'folder-listed',
+          entries: [
+            { path: dirname(path), name: '..', isParent: true, hasBinaflow: false, error: message },
+          ],
+        });
       }
-      if (active.current) dispatch({ type: 'folder-listed', entries });
-    } catch (reason) {
-      if (!active.current) return;
-      const message = reason instanceof Error ? reason.message : String(reason);
-      dispatch({
-        type: 'folder-listed',
-        entries: [
-          { path: dirname(path), name: '..', isParent: true, hasBinaflow: false, error: message },
-        ],
-      });
-    }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
   };
 
   const prepareLaunch = async (next: TuiState): Promise<void> => {
@@ -299,88 +358,124 @@ export function InkShellController({
   };
 
   const writeSetupConfig = async (next: TuiState): Promise<void> => {
-    if (!next.generated) return;
+    if (!next.generated) {
+      dispatch({ type: 'setup-save-failed', message: 'Configuration preview is not ready yet.' });
+      return;
+    }
     try {
       if (await configurationExists(next.configPath, next.cwd)) {
         dispatch({
-          type: 'status-set',
+          type: 'setup-save-failed',
           message: `Configuration already exists at ${next.generated.configPath}; nothing was overwritten.`,
         });
         return;
       }
       await writeConfigurationAtomically(next.generated);
-      dispatch({
-        type: 'status-set',
-        message: 'Configuration written. Review diagnosis before launching.',
-      });
+      dispatch({ type: 'setup-written' });
     } catch (reason) {
       dispatch({
-        type: 'status-set',
+        type: 'setup-save-failed',
         message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
       });
     }
   };
 
   const loadInspection = async (runId: string): Promise<void> => {
-    try {
-      const application = await ensureContext();
-      const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
-      const [recovery, clarifications] = await Promise.all([
-        application.explainRunRecovery(runId),
-        application.clarificationQuestions(inspection),
-      ]);
-      if (!active.current) return;
-      const workflow = discoverWorkflows().find(
-        (candidate) => candidate.id === inspection.run.workflowId,
-      );
-      const approvalWaiting =
-        inspection.run.status === 'waiting' &&
-        workflow?.approval !== undefined &&
-        inspection.steps.some(
-          (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
+    const requestId = ++inspectionRequest.current;
+    const request = (async () => {
+      try {
+        const application = await ensureContext();
+        const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
+        const [recovery, clarifications] = await Promise.all([
+          application.explainRunRecovery(runId),
+          application.clarificationQuestions(inspection),
+        ]);
+        if (
+          !active.current ||
+          requestId !== inspectionRequest.current ||
+          stateRef.current.activeRunId !== runId
+        )
+          return;
+        const workflow = discoverWorkflows().find(
+          (candidate) => candidate.id === inspection.run.workflowId,
         );
-      if (approvalWaiting && workflow?.approval) {
-        const previews = await application.loadResearchApprovalPreviews(inspection);
-        if (!active.current) return;
-        dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
-        dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
-      } else {
-        dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
-        if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
+        const approvalWaiting =
+          inspection.run.status === 'waiting' &&
+          workflow?.approval !== undefined &&
+          inspection.steps.some(
+            (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
+          );
+        if (approvalWaiting && workflow?.approval) {
+          const previews = await application.loadResearchApprovalPreviews(inspection);
+          if (
+            !active.current ||
+            requestId !== inspectionRequest.current ||
+            stateRef.current.activeRunId !== runId
+          )
+            return;
+          dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
+          dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
+        } else {
+          dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
+          if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
+        }
+      } catch (reason) {
+        if (
+          active.current &&
+          requestId === inspectionRequest.current &&
+          stateRef.current.activeRunId === runId
+        ) {
+          dispatch({
+            type: 'error-set',
+            message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+          });
+        }
       }
-    } catch (reason) {
-      if (active.current) {
-        dispatch({
-          type: 'error-set',
-          message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
-        });
-      }
-    }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
   };
 
   const loadArtifact = async (): Promise<void> => {
     const current = stateRef.current;
     const artifact = current.inspection?.artifacts[current.artifactSelected];
     if (!artifact || !lifecycle.context || !current.inspection) return;
-    try {
-      const content = await lifecycle.context.readArtifact(
-        current.inspection.run.id,
-        `${artifact.stepId}.${artifact.name}`,
-      );
-      if (active.current) dispatch({ type: 'artifact-content-set', content });
-    } catch (reason) {
-      if (active.current) {
-        dispatch({
-          type: 'artifact-content-set',
-          content: {
-            artifact,
-            truncated: false,
-            formatted: false,
-            error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
-          },
-        });
+    const requestId = ++artifactRequest.current;
+    const runId = current.inspection.run.id;
+    const artifactKey = `${artifact.stepId}.${artifact.name}`;
+    const application = lifecycle.context;
+    if (!application) return;
+    const request = (async () => {
+      try {
+        const content = await application.readArtifact(runId, artifactKey);
+        if (
+          active.current &&
+          requestId === artifactRequest.current &&
+          stateRef.current.inspection?.run.id === runId &&
+          stateRef.current.artifactSelected === current.artifactSelected
+        )
+          dispatch({ type: 'artifact-content-set', content });
+      } catch (reason) {
+        if (
+          active.current &&
+          requestId === artifactRequest.current &&
+          stateRef.current.inspection?.run.id === runId &&
+          stateRef.current.artifactSelected === current.artifactSelected
+        ) {
+          dispatch({
+            type: 'artifact-content-set',
+            content: {
+              artifact,
+              truncated: false,
+              formatted: false,
+              error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+            },
+          });
+        }
       }
-    }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
   };
 
   const presentApproval = async (
@@ -388,15 +483,22 @@ export function InkShellController({
     inspection?: RunInspection,
   ): Promise<boolean> => {
     const workflow = discoverWorkflows().find((candidate) => candidate.id === run.workflowId);
-    if (run.status !== 'waiting' || !workflow?.approval || !lifecycle.context) return false;
+    const application = lifecycle.context;
+    if (run.status !== 'waiting' || !workflow?.approval || !application) return false;
     try {
-      const detailInspection =
-        inspection ?? (await lifecycle.context.inspectRun(run.id, { includeStepResults: false }));
+      let detailInspection = inspection;
+      if (!detailInspection) {
+        const inspectionRequest = application.inspectRun(run.id, { includeStepResults: false });
+        lifecycle.trackRequest(inspectionRequest);
+        detailInspection = await inspectionRequest;
+      }
       const waiting = detailInspection.steps.some(
         (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
       );
       if (!waiting) return false;
-      const previews = await lifecycle.context.loadResearchApprovalPreviews(detailInspection);
+      const previewRequest = application.loadResearchApprovalPreviews(detailInspection);
+      lifecycle.trackRequest(previewRequest);
+      const previews = await previewRequest;
       if (!active.current) return true;
       dispatch({ type: 'inspection-set', inspection: detailInspection, clarifications: [] });
       dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
@@ -413,14 +515,19 @@ export function InkShellController({
     let inspection: RunInspection | undefined;
     let recovery: RunRecoveryExplanation | undefined;
     let clarifications: string[] = [];
-    if (lifecycle.context) {
+    const application = lifecycle.context;
+    if (application) {
       try {
-        inspection = await lifecycle.context.inspectRun(run.id, { includeStepResults: 'usage' });
+        const inspectionRequest = application.inspectRun(run.id, { includeStepResults: 'usage' });
+        lifecycle.trackRequest(inspectionRequest);
+        inspection = await inspectionRequest;
         const current = inspection;
-        [recovery, clarifications] = await Promise.all([
-          lifecycle.context.explainRunRecovery(run.id),
-          lifecycle.context.clarificationQuestions(current),
+        const metadataRequest = Promise.all([
+          application.explainRunRecovery(run.id),
+          application.clarificationQuestions(current),
         ]);
+        lifecycle.trackRequest(metadataRequest);
+        [recovery, clarifications] = await metadataRequest;
         run = current.run;
       } catch {
         if (!inspection && current) {
@@ -605,6 +712,11 @@ export function InkShellController({
         case 'folder-picker-path':
           if (next.overlay === 'folder-picker') await listFolder(next.folderPickerPath);
           break;
+        case 'folder-confirm':
+          if (next !== previous && next.cwd !== previous.cwd) {
+            await replaceWorkspaceContext();
+          }
+          break;
         case 'new-run':
           if (next.detail === 'launch') await prepareLaunch(next);
           break;
@@ -618,12 +730,15 @@ export function InkShellController({
           }
           break;
         case 'setup-save':
-          await writeSetupConfig(next);
+          if (next !== previous && next.status === 'Writing configuration...') {
+            await writeSetupConfig(next);
+          }
           break;
         case 'open-run':
           await loadInspection(event.runId);
           break;
         case 'resume-run': {
+          if (next === previous) break;
           const runId = next.inspection?.run.id;
           if (runId) {
             startContinuation(
@@ -637,6 +752,7 @@ export function InkShellController({
           break;
         }
         case 'approval-approve': {
+          if (next === previous) break;
           const runId = next.inspection?.run.id;
           if (runId) {
             startContinuation(
@@ -648,6 +764,7 @@ export function InkShellController({
           break;
         }
         case 'rejection-submitted': {
+          if (next === previous) break;
           const runId = next.inspection?.run.id;
           if (runId) {
             startContinuation(
@@ -665,9 +782,13 @@ export function InkShellController({
           break;
         }
         case 'recovery-confirmed': {
+          if (next === previous) break;
           const runId = next.inspection?.run.id;
-          if (runId && lifecycle.context) {
-            await lifecycle.context.markRunInterrupted(runId);
+          const application = lifecycle.context;
+          if (runId && application) {
+            const request = application.markRunInterrupted(runId);
+            lifecycle.trackRequest(request);
+            await request;
             await loadInspection(runId);
           }
           break;
@@ -727,7 +848,7 @@ export function InkShellController({
       if (request === 'inactive') return false;
       if (request === 'forced') return false;
       dispatch({ type: 'cancel-requested' });
-      return true;
+      return false;
     });
   }, [lifecycle, registerSignalHandler, belowMinimumSize]);
 
@@ -740,7 +861,7 @@ export function InkShellController({
       return;
     }
     if (input === 'c' && key.ctrl) {
-      if (liveRef.current) requestCancellation();
+      if (liveRef.current || launching) requestCancellation();
       else exit(130);
       return;
     }
@@ -778,8 +899,11 @@ export function InkShellController({
           else if (input === 'h') {
             dispatch({ type: 'folder-picker-path', path: dirname(current.folderPickerPath) });
           } else if (input === '/') dispatch({ type: 'folder-picker-path', path: '/' });
-          else if (input === ' ') dispatch({ type: 'folder-picker-select' });
-          else if (direction !== 0) {
+          else if (input === ' ') {
+            const entries = current.folderEntries ?? [];
+            const entry = entries[current.selection];
+            dispatch({ type: 'folder-picker-select', ...(entry ? { path: entry.path } : {}) });
+          } else if (direction !== 0) {
             dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 7) });
           } else if (input === '\r' || key.return) {
             const entries = current.folderEntries ?? [];
@@ -886,11 +1010,16 @@ export function InkShellController({
       const fields = current.launchInput ? workflowInputFields(current.launchInput.workflow) : [];
       const confirming = !!current.launchInput && current.launchInput.field >= fields.length;
       if (!confirming) {
-        if (input === 'q' || key.escape) dispatch({ type: 'launch-cancel' });
+        if (input === 'q' || key.escape) {
+          if (launching) requestCancellation();
+          dispatch({ type: 'launch-cancel' });
+        }
         return;
       }
-      if (input === 'q' || key.escape) dispatch({ type: 'launch-cancel' });
-      else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 3 });
+      if (input === 'q' || key.escape) {
+        if (launching) requestCancellation();
+        dispatch({ type: 'launch-cancel' });
+      } else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 3 });
       else if (input === '\r' || key.return) {
         if (current.selection === 0) dispatch({ type: 'launch-confirm' });
         else if (current.selection === 1) dispatch({ type: 'launch-edit' });
@@ -1001,7 +1130,7 @@ export function InkShellController({
             choices={setupChoices(state.setupField, state.setupModels ?? [], state.setupValues)}
             {...(state.error ? { error: state.error } : {})}
             selected={state.selection}
-            offset={state.offset}
+            setupPreviewOffset={state.setupPreviewOffset}
             value={state.inputValue}
             onChange={(value) => dispatch({ type: 'input-change', value })}
             onSubmit={(value) => {
@@ -1089,10 +1218,10 @@ export function InkShellController({
       } else if (state.launchInput) {
         right = (
           <LaunchInputScreen
-            key={`${state.launchInput.workflow.id}-${state.launchInput.field}-${state.inputValue}`}
+            key={`${state.launchInput.workflow.id}-${state.launchInput.field}`}
             colors={colors}
             launchInput={state.launchInput}
-            error={state.error}
+            error={state.error ?? state.launchInput.error}
             value={state.inputValue}
             onChange={(value) => dispatch({ type: 'input-change', value })}
             onSubmit={(value) => {
@@ -1124,7 +1253,7 @@ export function InkShellController({
             message={state.approvalMessage}
             previews={state.approvalPreviews}
             previewOffset={state.approvalPreviewOffset}
-            error={state.error}
+            error={state.error ?? state.launchInput?.error}
             selected={state.selection}
             offset={state.offset}
             visibleRows={Math.max(1, size.rows - 16)}

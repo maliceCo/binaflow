@@ -46,9 +46,9 @@ export function StudioLayout({
     const status = humanRunStatus(run.status);
     return `${run.id} ${run.workflowId} ${status}  ${truncateDisplay(run.objective, 24)}`;
   });
-  const paneRows = Math.max(1, size.rows - 9);
-  const workflowsRows = Math.max(1, Math.floor(paneRows / 2));
-  const runsRows = Math.max(1, paneRows - workflowsRows);
+  const paneRows = Math.max(2, size.rows - 12);
+  const workflowsRows = Math.max(1, Math.floor((paneRows - 2) / 2));
+  const runsRows = Math.max(1, paneRows - workflowsRows - 2);
   const footer =
     state.detail === 'live'
       ? 'q cancel   Ctrl-C cancel   d activity   j/k scroll'
@@ -71,7 +71,7 @@ export function StudioLayout({
             <SelectionList
               items={workflowLabels}
               selected={state.workflowSelected}
-              offset={0}
+              offset={state.workflowOffset}
               visibleRows={workflowsRows}
             />
           ) : (
@@ -82,7 +82,7 @@ export function StudioLayout({
             <SelectionList
               items={runLabels}
               selected={state.runSelected}
-              offset={0}
+              offset={state.runOffset}
               visibleRows={runsRows}
             />
           ) : (

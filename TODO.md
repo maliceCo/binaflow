@@ -142,16 +142,16 @@ Leftover UI to delete when nothing imports it:
 
 ## 2. Where new behavior lives
 
-| Behavior | Lives in | Why |
-|---|---|---|
-| Screen / overlay / focus transitions | `src/tui/model.ts` + `src/tui/reduce.ts` | Pure, testable |
-| Key -> event mapping | `shell-controller.tsx` `useInput` only | No logic in the hook |
-| Diagnose, write config, discover models | existing `config-operations.ts` | Do not duplicate |
-| listRuns, inspect, run, resume, approval, artifacts | existing `ApplicationService` | Do not duplicate |
-| Folder listing (`readdir` dirs only) | TUI effects, not core | One consumer |
-| Active cwd change | TUI state + lifecycle context replace | Close old context only when idle |
-| ASCII logo | `src/tui/brand.ts` | Static, no dependency |
-| Colors / borders / chrome | `src/tui/layout.tsx` | Presentation only |
+| Behavior                                            | Lives in                                 | Why                              |
+| --------------------------------------------------- | ---------------------------------------- | -------------------------------- |
+| Screen / overlay / focus transitions                | `src/tui/model.ts` + `src/tui/reduce.ts` | Pure, testable                   |
+| Key -> event mapping                                | `shell-controller.tsx` `useInput` only   | No logic in the hook             |
+| Diagnose, write config, discover models             | existing `config-operations.ts`          | Do not duplicate                 |
+| listRuns, inspect, run, resume, approval, artifacts | existing `ApplicationService`            | Do not duplicate                 |
+| Folder listing (`readdir` dirs only)                | TUI effects, not core                    | One consumer                     |
+| Active cwd change                                   | TUI state + lifecycle context replace    | Close old context only when idle |
+| ASCII logo                                          | `src/tui/brand.ts`                       | Static, no dependency            |
+| Colors / borders / chrome                           | `src/tui/layout.tsx`                     | Presentation only                |
 
 Nothing new belongs in `src/core`.
 
@@ -233,14 +233,7 @@ type Overlay =
   | 'rejection-feedback';
 
 type DetailMode =
-  | 'empty'
-  | 'diagnosis'
-  | 'launch'
-  | 'live'
-  | 'approval'
-  | 'result'
-  | 'inspect'
-  | 'artifacts';
+  'empty' | 'diagnosis' | 'launch' | 'live' | 'approval' | 'result' | 'inspect' | 'artifacts';
 
 interface TuiState {
   cwd: string;
@@ -898,36 +891,36 @@ About / help must still say:
 
 Global, when no text field owns input and no blocking overlay is open:
 
-| Key | Action |
-|---|---|
-| `n` | new run |
-| `w` | folder picker if idle |
-| `d` | diagnosis in the right panel and refresh |
-| `r` | same as `d` (keep `r` working; do not advertise both if footer is full) |
-| `?` | help |
-| `Tab` / `h` / `l` | change focused pane |
-| `j` / `k` / arrows | move or scroll in focused pane |
-| `Enter` | activate selection |
-| `q` / `Esc` | quit if studio idle; cancel if live; close overlay otherwise |
-| `Ctrl-C` | same as live cancel, or quit 130 if idle |
+| Key                | Action                                                                  |
+| ------------------ | ----------------------------------------------------------------------- |
+| `n`                | new run                                                                 |
+| `w`                | folder picker if idle                                                   |
+| `d`                | diagnosis in the right panel and refresh                                |
+| `r`                | same as `d` (keep `r` working; do not advertise both if footer is full) |
+| `?`                | help                                                                    |
+| `Tab` / `h` / `l`  | change focused pane                                                     |
+| `j` / `k` / arrows | move or scroll in focused pane                                          |
+| `Enter`            | activate selection                                                      |
+| `q` / `Esc`        | quit if studio idle; cancel if live; close overlay otherwise            |
+| `Ctrl-C`           | same as live cancel, or quit 130 if idle                                |
 
 Welcome:
 
-| Key | Action |
-|---|---|
-| `Enter` | selected action |
-| `j` / `k` | move |
-| `q` | quit |
+| Key       | Action          |
+| --------- | --------------- |
+| `Enter`   | selected action |
+| `j` / `k` | move            |
+| `q`       | quit            |
 
 Picker:
 
-| Key | Action |
-|---|---|
-| `Enter` | open directory |
+| Key     | Action                        |
+| ------- | ----------------------------- |
+| `Enter` | open directory                |
 | `Space` | use selected / current folder |
-| `h` | parent |
-| `/` | root |
-| `q` | back |
+| `h`     | parent                        |
+| `/`     | root                          |
+| `q`     | back                          |
 
 ---
 

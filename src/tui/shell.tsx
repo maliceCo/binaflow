@@ -59,8 +59,8 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
   }
   const signal = lifecycle.forceSignal;
   if (signal) {
-    (options.forceExit ?? ((value) => process.kill(process.pid, value)))(signal);
     await lifecycle.shutdown();
+    (options.forceExit ?? ((value) => process.kill(process.pid, value)))(signal);
   }
 }
 

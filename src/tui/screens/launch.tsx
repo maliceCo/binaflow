@@ -38,6 +38,7 @@ export function LaunchInputScreen({
       </SafeText>
       <SafeText>&gt; </SafeText>
       <TextInput
+        key={`${launchInput.workflow.id}-${launchInput.field}`}
         defaultValue={sanitizeInkText(value)}
         onChange={(next) => onChange(sanitizeInkText(next))}
         onSubmit={(next) => onSubmit(sanitizeInkText(next))}

@@ -52,7 +52,7 @@ export function ResultScreen({
       title="Run status"
       subtitle={`Run ${run.id}`}
       status={error}
-      footer="j/k move | Enter browse artifacts | q back"
+      footer={artifactItems.length > 0 ? 'j/k move | Enter browse artifacts | q back' : 'q back'}
       colors={colors}
     >
       <SafeText>Status: {humanRunStatus(run.status)}</SafeText>

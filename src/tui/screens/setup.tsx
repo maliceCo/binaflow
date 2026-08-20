@@ -13,7 +13,7 @@ export function SetupWizardScreen({
   error,
   value,
   selected,
-  offset,
+  setupPreviewOffset,
   generated,
   showFullConfig,
   onChange,
@@ -27,7 +27,7 @@ export function SetupWizardScreen({
   error?: string;
   value: string;
   selected: number;
-  offset: number;
+  setupPreviewOffset: number;
   generated?: GeneratedConfiguration;
   showFullConfig: boolean;
   onChange: (value: string) => void;
@@ -64,7 +64,7 @@ export function SetupWizardScreen({
         generated={generated}
         error={error}
         selected={selected}
-        offset={offset}
+        setupPreviewOffset={setupPreviewOffset}
         showFullConfig={showFullConfig}
       />
     );
@@ -91,6 +91,7 @@ export function SetupWizardScreen({
       ) : null}
       {choices.length === 0 ? (
         <TextInput
+          key={`${step}-${field?.key ?? 'input'}`}
           defaultValue={sanitizeInkText(value)}
           onChange={(next) => onChange(sanitizeInkText(next))}
           onSubmit={(next) => onSubmit(sanitizeInkText(next))}
@@ -104,14 +105,14 @@ export function SetupPreviewScreen({
   generated,
   error,
   selected,
-  offset,
+  setupPreviewOffset,
   showFullConfig,
 }: {
   colors: boolean;
   generated: GeneratedConfiguration;
   error?: string | undefined;
   selected: number;
-  offset: number;
+  setupPreviewOffset: number;
   showFullConfig: boolean;
 }) {
   const summary = [
@@ -128,12 +129,16 @@ export function SetupPreviewScreen({
       footer="j/k move | Enter select | q cancel"
       colors={colors}
     >
-      <TextViewport lines={lines} offset={offset} visibleRows={Math.min(8, lines.length)} />
+      <TextViewport
+        lines={lines}
+        offset={showFullConfig ? setupPreviewOffset : 0}
+        visibleRows={Math.min(8, lines.length)}
+      />
       <SafeText>Nothing has been written yet.</SafeText>
       <SelectionList
         items={['Save', 'Show full config', 'Go back', 'Cancel']}
         selected={selected}
-        offset={offset}
+        offset={0}
         visibleRows={4}
       />
     </ScreenFrame>

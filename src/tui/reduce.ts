@@ -9,6 +9,7 @@ import {
   validateWorkflowValue,
   validateWorkflowValues,
   workflowInputFields,
+  generatedConfigurationPreview,
 } from './launch.js';
 import type { TuiEvent, TuiState } from './model.js';
 import { APPROVAL_ACTIONS } from './screens/approval.js';
@@ -37,6 +38,14 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return withoutError;
     }
     case 'use-folder':
+      if (!state.diagnosis) {
+        return {
+          ...state,
+          detail: 'diagnosis',
+          pendingFolderDiagnosis: true,
+          effect: 'diagnose-cwd',
+        };
+      }
       return enterFolder(state, state.diagnosis);
     case 'open-about':
       return { ...state, overlay: 'about' };
@@ -68,7 +77,13 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...state, folderPickerPath: event.path, selection: 0, offset: 0 };
     case 'folder-picker-select':
       if (state.overlay !== 'folder-picker') return state;
-      return { ...state, overlay: 'folder-confirm', selection: 0, offset: 0 };
+      return {
+        ...state,
+        ...(event.path ? { folderPickerPath: event.path } : {}),
+        overlay: 'folder-confirm',
+        selection: 0,
+        offset: 0,
+      };
     case 'folder-confirm':
       if (state.overlay !== 'folder-confirm') return state;
       return {
@@ -127,17 +142,28 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...clearField(state, 'effect'), setupModels: event.models };
     case 'setup-save':
       if (state.overlay !== 'setup') return state;
+      if (!state.generated) return { ...state, error: 'Configuration preview is not ready yet.' };
       return {
         ...state,
+        status: 'Writing configuration...',
+      };
+    case 'setup-written':
+      if (state.overlay !== 'setup') return state;
+      return {
+        ...clearField(state, 'error'),
         overlay: 'none',
         detail: 'diagnosis',
         effect: 'diagnose-cwd',
         selection: 0,
         offset: 0,
+        status: 'Configuration written. Review diagnosis before launching.',
       };
+    case 'setup-save-failed':
+      if (state.overlay !== 'setup') return state;
+      return { ...clearField(state, 'status'), error: event.message };
     case 'setup-toggle-config':
       if (state.overlay !== 'setup') return state;
-      return { ...state, showFullConfig: !state.showFullConfig };
+      return { ...state, showFullConfig: !state.showFullConfig, setupPreviewOffset: 0 };
     case 'setup-retry':
       if (state.overlay !== 'setup') return state;
       return { ...clearField(state, 'error'), effect: 'diagnose-cwd' };
@@ -165,6 +191,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
           offset: 0,
           inputValue: '',
           showFullConfig: false,
+          setupPreviewOffset: 0,
         };
       }
       if (!diagnosis.configValid) {
@@ -245,7 +272,18 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         cancellationRequested: false,
       };
     case 'run-finished':
-      return { ...state, detail: 'result', cancellationRequested: false };
+      return {
+        ...state,
+        detail:
+          event.status === 'waiting'
+            ? 'approval'
+            : event.status === 'failed' || event.status === 'interrupted'
+              ? state.detail === 'inspect'
+                ? 'inspect'
+                : 'result'
+              : 'result',
+        cancellationRequested: false,
+      };
     case 'cancel-requested':
       if (state.detail !== 'live') return state;
       return { ...state, cancellationRequested: true };
@@ -295,6 +333,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         ...state,
         inspection: event.inspection,
         clarifications: event.clarifications,
+        detail:
+          (event.inspection.run.status === 'failed' ||
+            event.inspection.run.status === 'interrupted') &&
+          event.recovery?.eligible
+            ? 'inspect'
+            : state.detail,
         selection: 0,
         offset: 0,
         artifactSelected: 0,
@@ -347,10 +391,10 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...clearField(state, 'error'), overlay: 'none', inputValue: '' };
     case 'resume-run':
       if (state.detail !== 'inspect' || !state.recovery?.eligible) return state;
-      return state;
+      return { ...clearField(state, 'error'), status: 'Resuming workflow...' };
     case 'approval-approve':
       if (state.detail !== 'approval') return state;
-      return state;
+      return { ...clearField(state, 'error'), status: 'Approving workflow...' };
     case 'approval-reject':
       if (state.detail !== 'approval') return state;
       return {
@@ -384,6 +428,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'runs-loaded':
       return { ...state, runs: event.runs };
     case 'input-change':
+      if (state.inputValue === event.value) return state;
       return { ...state, inputValue: event.value };
     case 'error-set':
       return { ...clearField(state, 'status'), error: event.message };
@@ -417,8 +462,20 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
           if (count === 0) return state;
           return moveList(state, count, direction, visibleRows);
         }
-        case 4:
-          return moveList(state, REVIEW_ACTIONS.length, direction, visibleRows);
+        case 4: {
+          const next = moveList(state, REVIEW_ACTIONS.length, direction, visibleRows);
+          if (!state.showFullConfig || !state.generated) return next;
+          const lines = generatedConfigurationPreview(state.generated).split('\n');
+          return {
+            ...next,
+            setupPreviewOffset: scrollText(
+              state.setupPreviewOffset,
+              direction,
+              lines.length,
+              Math.max(1, visibleRows),
+            ),
+          };
+        }
       }
       return state;
     }
@@ -437,12 +494,23 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     return {
       ...state,
       workflowSelected: clamp(state.workflowSelected + direction, count),
+      workflowOffset: selectionOffset(
+        state.workflowSelected,
+        state.workflowOffset,
+        direction,
+        count,
+        visibleRows,
+      ),
     };
   }
   if (state.focus === 'runs') {
     const count = state.runs?.length ?? 0;
     if (count === 0) return state;
-    return { ...state, runSelected: clamp(state.runSelected + direction, count) };
+    return {
+      ...state,
+      runSelected: clamp(state.runSelected + direction, count),
+      runOffset: selectionOffset(state.runSelected, state.runOffset, direction, count, visibleRows),
+    };
   }
 
   switch (state.detail) {
@@ -632,6 +700,18 @@ function isTerminalStatus(status: string): boolean {
 
 function clamp(selected: number, count: number): number {
   return Math.max(0, Math.min(count - 1, selected));
+}
+
+function selectionOffset(
+  selected: number,
+  offset: number,
+  direction: -1 | 1,
+  count: number,
+  visibleRows: number,
+): number {
+  const next = clamp(selected + direction, count);
+  const rows = Math.max(1, visibleRows);
+  return Math.max(0, Math.min(Math.max(0, count - rows), Math.max(offset, next - rows + 1)));
 }
 
 function clearField<T extends object, K extends keyof T>(state: T, key: K): T {
