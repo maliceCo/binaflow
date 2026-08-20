@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { discoverWorkflows } from '../src/application/operations.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
+import type { LaunchInputState } from '../src/tui/launch.js';
 import type { TuiEvent, TuiState } from '../src/tui/model.js';
 import { createInitialTuiState } from '../src/tui/model.js';
 import { reduce } from '../src/tui/reduce.js';
@@ -127,6 +129,63 @@ const transitions: Transition[] = [
       expect(state.error).toContain('config file is invalid');
     },
   },
+  {
+    name: 'j/k moves the welcome selection',
+    events: [{ type: 'move', direction: 1, visibleRows: 10 }],
+    expect: (state) => {
+      expect(state.overlay).toBe('welcome');
+      expect(state.selection).toBe(1);
+    },
+  },
+  {
+    name: 'opening artifacts shows the artifact browser in the detail pane',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      { type: 'open-run', runId: 'run-9', status: 'completed' },
+      inspectionSet(),
+      { type: 'open-artifacts' },
+    ],
+    expect: (state) => {
+      expect(state.detail).toBe('artifacts');
+      expect(state.inspection?.run.id).toBe('run-9');
+    },
+  },
+  {
+    name: 'new run with revised objective pre-fills the launch input',
+    events: [diagnosed(validConfig()), useFolder(), inspectionSet(), { type: 'open-launch' }],
+    expect: (state) => {
+      expect(state.detail).toBe('launch');
+      expect(state.launchInput?.values.objective).toBe('Build the CLI');
+      expect(state.launchInput?.field).toBe(0);
+    },
+  },
+  {
+    name: 'finishing a live run keeps the same run in the result panel',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      runStarted(),
+      { type: 'run-finished', status: 'completed' },
+    ],
+    expect: (state) => {
+      expect(state.detail).toBe('result');
+      expect(state.activeRunId).toBe('run-1');
+    },
+  },
+  {
+    name: 'a required launch input rejects an empty objective',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      { type: 'launch-set', input: launchInput() },
+      { type: 'launch-input', value: ' ' },
+    ],
+    expect: (state) => {
+      expect(state.launchInput?.field).toBe(0);
+      expect(state.launchInput?.error).toBe('objective is required.');
+    },
+  },
 ];
 
 describe('TUI transitions', () => {
@@ -151,6 +210,44 @@ function runStarted(): TuiEvent {
 
 function nextToReview(): TuiEvent[] {
   return Array.from({ length: 6 }, () => ({ type: 'setup-next' }));
+}
+
+function inspectionSet(): TuiEvent {
+  return {
+    type: 'inspection-set',
+    inspection: {
+      run: {
+        id: 'run-9',
+        workflowId: 'plan-build',
+        workflowVersion: 1,
+        objective: 'Build the CLI',
+        status: 'completed',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T01:00:00Z',
+      },
+      steps: [],
+      artifacts: [
+        {
+          id: 'artifact-1',
+          runId: 'run-9',
+          stepId: 'build',
+          name: 'output.txt',
+          kind: 'text',
+          path: 'artifacts/run-9/build/output.txt',
+          mediaType: 'text/plain',
+          sizeBytes: 10,
+        },
+      ],
+      eventCount: 0,
+    },
+    clarifications: [],
+  };
+}
+
+function launchInput(): LaunchInputState {
+  const workflow = discoverWorkflows().find((workflow) => workflow.id === 'plan-build');
+  if (!workflow) throw new Error('plan-build workflow missing');
+  return { workflow, values: {}, field: 0, reviewedProfiles: {} };
 }
 
 function missingConfig(): ConfigurationDiagnosis {

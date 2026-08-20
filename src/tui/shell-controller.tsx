@@ -1,68 +1,64 @@
+import { readdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { useApp, useInput } from 'ink';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  diagnoseConfigurationFile,
   configurationExists,
+  diagnoseConfigurationFile,
+  discoverSetupModels,
   generateConfiguration,
   writeConfigurationAtomically,
-  discoverSetupModels,
-  type GeneratedConfiguration,
-  type ConfigurationDiagnosis,
 } from '../application/config-operations.js';
-import type { AgentModel } from '../core/agent.js';
-import type {
-  ArtifactContentView,
-  RunInspection,
-  RunRecoveryExplanation,
-} from '../application/operations.js';
+import type { NormalizedEvent } from '../core/events.js';
 import { discoverWorkflows } from '../application/operations.js';
+import type { RunInspection, RunRecoveryExplanation } from '../application/operations.js';
+import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationService } from '../application/service.js';
-import { useApp, useInput } from 'ink';
-import type { RunStatus, WorkflowRun } from '../core/run.js';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { MinimumSizeFallback } from './components.js';
-import { moveSelection, scrollText } from './viewport.js';
-import {
-  missingProfiles,
-  orderedWorkflows,
-  profileReview,
-  sameProfileReview,
-  SETUP_FIELDS,
-  setupValuesToGeneration,
-  setupChoices,
-  validateSetupValue,
-  validateWorkflowValue,
-  validateWorkflowValues,
-  workflowInputFields,
-  type LaunchInputState,
-  type SetupValues,
-  type SetupStep,
-} from './launch.js';
+import { explainUserError } from '../presentation/format.js';
+import { MinimumSizeFallback, SafeText } from './components.js';
 import {
   applyStepSnapshot,
   createLiveActivityBuffer,
   createLiveState,
   createLiveUiPublisher,
   createSnapshotInspectionController,
-  type CompletionState,
   type LiveActivityBuffer,
   type LiveState,
   type SnapshotInspectionController,
 } from './execution.js';
+import {
+  SETUP_FIELDS,
+  missingProfiles,
+  orderedWorkflows,
+  profileReview,
+  sameProfileReview,
+  setupChoices,
+  setupValuesToGeneration,
+  workflowInputFields,
+  type LaunchInputState,
+} from './launch.js';
+import {
+  AboutOverlay,
+  FolderConfirmScreen,
+  FolderPickerScreen,
+  HelpOverlay,
+  StudioLayout,
+  WelcomeScreen,
+} from './layout.js';
 import type { AttachedExecutionLifecycle } from './lifecycle.js';
-import { explainUserError } from '../presentation/format.js';
-import { HOME_ACTIONS, MINIMUM_HEIGHT, MINIMUM_WIDTH, type Screen } from './screens.js';
-import { HomeScreen } from './screens/home.js';
-import { DocumentationScreen, documentationLines } from './screens/documentation.js';
-import { DiagnosisScreen, diagnosisLines } from './screens/diagnosis.js';
-import { SetupWizardScreen } from './screens/setup.js';
-import { WorkflowsScreen, workflowItems } from './screens/workflows.js';
+import { createInitialTuiState, type FolderEntry, type TuiEvent, type TuiState } from './model.js';
+import { reduce } from './reduce.js';
+import { ArtifactsScreen } from './screens/artifacts.js';
+import { APPROVAL_ACTIONS, ApprovalScreen } from './screens/approval.js';
+import { DetailScreen, detailActions } from './screens/detail.js';
+import { DiagnosisScreen } from './screens/diagnosis.js';
+import { RejectionFeedbackScreen, RecoveryConfirmScreen } from './screens/feedback.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
 import { LiveScreen } from './screens/live.js';
-import { ApprovalScreen, APPROVAL_ACTIONS } from './screens/approval.js';
-import { CompletionScreen, completionNextAction } from './screens/completion.js';
-import { HistoryScreen } from './screens/history.js';
-import { DetailScreen, detailActions } from './screens/detail.js';
-import { ArtifactsScreen } from './screens/artifacts.js';
-import { RecoveryConfirmScreen, RejectionFeedbackScreen } from './screens/feedback.js';
+import { ResultScreen } from './screens/result.js';
+import { SetupWizardScreen } from './screens/setup.js';
+import { MINIMUM_HEIGHT, MINIMUM_WIDTH } from './screens.js';
+import { scrollText } from './viewport.js';
 
 interface InkShellControllerProps {
   colors: boolean;
@@ -85,54 +81,14 @@ export function InkShellController({
   lifecycle,
   openApplicationContext: openContext,
   registerSignalHandler,
-  hasInjectedContext = false,
 }: InkShellControllerProps): ReactNode {
   const { exit } = useApp();
-  const [screen, setScreen] = useState<Screen>('home');
-  const [diagnosis, setDiagnosis] = useState<ConfigurationDiagnosis>();
-  const [homeSelected, setHomeSelected] = useState(0);
-  const [homeOffset, setHomeOffset] = useState(0);
-  const [recentRuns, setRecentRuns] = useState<WorkflowRun[]>([]);
-  const [documentOffset, setDocumentOffset] = useState(0);
-  const [diagnosisOffset, setDiagnosisOffset] = useState(0);
-  const [selection, setSelection] = useState(0);
-  const [listOffset, setListOffset] = useState(0);
-  const [setupField, setSetupField] = useState(0);
-  const [setupStep, setSetupStep] = useState<SetupStep>(1);
-  const [setupModels, setSetupModels] = useState<AgentModel[]>([]);
-  const [setupValues, setSetupValues] = useState<SetupValues>({});
-  const [generated, setGenerated] = useState<GeneratedConfiguration>();
-  const [workflows, setWorkflows] = useState(() => discoverWorkflows());
-  const [launchInput, setLaunchInput] = useState<LaunchInputState>();
-  const [inputValue, setInputValue] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string>();
-  const [launching, setLaunching] = useState(false);
-  const [status, setStatus] = useState<string>();
+  const [state, setState] = useState<TuiState>(() => createInitialTuiState({ cwd, configPath }));
+  const stateRef = useRef(state);
   const [live, setLive] = useState<LiveState>();
-  const [completion, setCompletion] = useState<CompletionState>();
   const [liveDetail, setLiveDetail] = useState(false);
   const [liveOffset, setLiveOffset] = useState(0);
-  const [historyRuns, setHistoryRuns] = useState<WorkflowRun[]>([]);
-  const [historySelected, setHistorySelected] = useState(0);
-  const [historyOffset, setHistoryOffset] = useState(0);
-  const [historyStatus, setHistoryStatus] = useState<RunStatus | undefined>(undefined);
-  const [historyWorkflow, setHistoryWorkflow] = useState<string | undefined>(undefined);
-  const [historyCursor, setHistoryCursor] = useState<string | undefined>(undefined);
-  const [historyHasNext, setHistoryHasNext] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [detail, setDetail] = useState<RunInspection>();
-  const [recovery, setRecovery] = useState<RunRecoveryExplanation>();
-  const [clarifications, setClarifications] = useState<string[]>([]);
-  const [approvalMessage, setApprovalMessage] = useState<string>();
-  const [approvalPreviews, setApprovalPreviews] = useState<ArtifactContentView[]>([]);
-  const [approvalPreviewOffset, setApprovalPreviewOffset] = useState(0);
-  const [artifactSelected, setArtifactSelected] = useState(0);
-  const [artifactOffset, setArtifactOffset] = useState(0);
-  const [artifactContent, setArtifactContent] = useState<ArtifactContentView>();
-  const [artifactContentOffset, setArtifactContentOffset] = useState(0);
-  const [detailPrompt, setDetailPrompt] = useState<'recovery' | 'rejection'>();
-  const inputValueRef = useRef('');
+  const [launching, setLaunching] = useState(false);
   const active = useRef(true);
   const refreshPromise = useRef<Promise<void> | undefined>(undefined);
   const activeRunId = useRef<string | undefined>(undefined);
@@ -148,6 +104,11 @@ export function InkShellController({
     setLive(value);
   };
 
+  const publishLive = (value: LiveState): void => {
+    liveRef.current = value;
+    setLive(value);
+  };
+
   const disposeLiveControllers = (): void => {
     uiPublisherRef.current?.dispose();
     uiPublisherRef.current = undefined;
@@ -156,11 +117,6 @@ export function InkShellController({
     activityBufferRef.current?.clear();
     activityBufferRef.current = undefined;
     appliedSnapshotGeneration.current = 0;
-  };
-
-  const publishLive = (value: LiveState): void => {
-    liveRef.current = value;
-    setLive(value);
   };
 
   const attachLiveControllers = (application: ApplicationService): void => {
@@ -194,7 +150,7 @@ export function InkShellController({
     });
   };
 
-  const handleLiveEvent = (event: import('../core/events.js').NormalizedEvent): void => {
+  const handleLiveEvent = (event: NormalizedEvent): void => {
     if (event.runId !== activeRunId.current) return;
     if (!liveRef.current) return;
     const buffer = activityBufferRef.current;
@@ -204,57 +160,6 @@ export function InkShellController({
       snapshotControllerRef.current?.request(event.type);
     }
     uiPublisherRef.current?.markDirty();
-  };
-
-  const reportError = (message: string): void => {
-    setError(explainUserError(message));
-  };
-
-  const refresh = (): void => {
-    if (refreshPromise.current) return;
-    setRefreshing(true);
-    setError(undefined);
-    const promise = diagnoseConfigurationFile(configPath, cwd)
-      .then((result) => {
-        if (!active.current) return;
-        setDiagnosis(result);
-        setDiagnosisOffset(0);
-        if (!result.configExists && !hasInjectedContext) {
-          setSetupStep(1);
-          setSelection(0);
-          setListOffset(0);
-          setScreen('setup-wizard');
-        }
-      })
-      .catch((reason: unknown) => {
-        if (active.current) reportError(reason instanceof Error ? reason.message : String(reason));
-      })
-      .finally(() => {
-        refreshPromise.current = undefined;
-        if (active.current) setRefreshing(false);
-      });
-    refreshPromise.current = promise;
-  };
-
-  useEffect(() => {
-    active.current = true;
-    refresh();
-    return () => {
-      active.current = false;
-      disposeLiveControllers();
-    };
-  }, [configPath, cwd]);
-
-  const returnHome = (message?: string): void => {
-    setScreen('home');
-    setSelection(0);
-    setError(undefined);
-    setStatus(message);
-  };
-
-  const setPromptValue = (value: string): void => {
-    inputValueRef.current = value;
-    setInputValue(value);
   };
 
   const resolveContextFactory = async (): Promise<
@@ -267,57 +172,164 @@ export function InkShellController({
     return lifecycle.openContext(async () => createContext(configPath, cwd));
   };
 
-  useEffect(() => {
-    if (!diagnosis?.configValid) return;
-    void ensureContext()
-      .then((application) => application.listRuns({ limit: 3 }))
-      .then((page) => {
-        if (active.current) setRecentRuns(page.runs);
-      })
-      .catch(() => {
-        if (active.current) setRecentRuns([]);
-      });
-  }, [diagnosis?.configValid]);
-
   const openExecutionContext = async (): Promise<ApplicationService & { close?(): void }> => {
     const createContext = await resolveContextFactory();
     return lifecycle.replaceOwnedContext(async () => createContext(configPath, cwd));
   };
 
-  const loadHistory = async (
-    nextStatus = historyStatus,
-    nextWorkflow = historyWorkflow,
-    nextCursor = historyCursor,
-  ): Promise<void> => {
-    setHistoryLoading(true);
-    setError(undefined);
+  const runDiagnose = async (): Promise<void> => {
+    if (refreshPromise.current) return;
+    const promise = diagnoseConfigurationFile(stateRef.current.configPath, stateRef.current.cwd)
+      .then((result) => {
+        if (active.current) dispatch({ type: 'diagnosed', diagnosis: result });
+      })
+      .catch((reason: unknown) => {
+        if (active.current) {
+          dispatch({
+            type: 'error-set',
+            message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+          });
+        }
+      })
+      .finally(() => {
+        refreshPromise.current = undefined;
+      });
+    refreshPromise.current = promise;
+  };
+
+  const loadRuns = async (): Promise<void> => {
     try {
       const application = await ensureContext();
-      const page = await application.listRuns({
-        limit: 50,
-        ...(nextStatus ? { status: nextStatus } : {}),
-        ...(nextWorkflow ? { workflowId: nextWorkflow } : {}),
-        ...(nextCursor ? { cursor: nextCursor } : {}),
-      });
-      setHistoryRuns(page.runs);
-      setHistorySelected(0);
-      setHistoryOffset(0);
-      setHistoryCursor(page.nextCursor);
-      setHistoryHasNext(page.nextCursor !== undefined);
-      setScreen('history');
-    } catch (reason) {
-      reportError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setHistoryLoading(false);
+      const page = await application.listRuns({ limit: 50 });
+      if (active.current) dispatch({ type: 'runs-loaded', runs: page.runs });
+    } catch {
+      if (active.current) dispatch({ type: 'runs-loaded', runs: [] });
     }
   };
 
-  const openDetail = async (run: WorkflowRun): Promise<void> => {
+  const listFolder = async (path: string): Promise<void> => {
+    try {
+      const dirents = await readdir(path, { withFileTypes: true });
+      const dirs = dirents
+        .filter((entry) => entry.isDirectory())
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const entries: FolderEntry[] = [
+        { path: dirname(path), name: '..', isParent: true, hasBinaflow: false },
+      ];
+      for (const entry of dirs) {
+        const full = join(path, entry.name);
+        let hasBinaflow = false;
+        try {
+          hasBinaflow = await configurationExists('.binaflow/config.json', full);
+        } catch {
+          hasBinaflow = false;
+        }
+        entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
+      }
+      if (active.current) dispatch({ type: 'folder-listed', entries });
+    } catch (reason) {
+      if (!active.current) return;
+      const message = reason instanceof Error ? reason.message : String(reason);
+      dispatch({
+        type: 'folder-listed',
+        entries: [
+          { path: dirname(path), name: '..', isParent: true, hasBinaflow: false, error: message },
+        ],
+      });
+    }
+  };
+
+  const prepareLaunch = async (next: TuiState): Promise<void> => {
+    const workflow =
+      next.workflows?.[next.workflowSelected] ??
+      orderedWorkflows(discoverWorkflows())[next.workflowSelected];
+    const diagnosis = next.diagnosis;
+    if (!workflow || !diagnosis) {
+      dispatch({
+        type: 'error-set',
+        message: 'The config has not been checked yet. Press d to refresh.',
+      });
+      dispatch({ type: 'launch-cancel' });
+      return;
+    }
+    if (!diagnosis.configValid) {
+      dispatch({
+        type: 'error-set',
+        message:
+          'The config file is invalid. Edit .binaflow/config.json in your editor, then press d to refresh.',
+      });
+      dispatch({ type: 'launch-cancel' });
+      return;
+    }
+    const missing = missingProfiles(workflow, diagnosis);
+    if (missing.length > 0) {
+      dispatch({
+        type: 'error-set',
+        message: `Missing profiles: ${missing.join(', ')}. Fix agent profiles in configuration, then refresh diagnosis.`,
+      });
+      dispatch({ type: 'launch-cancel' });
+      return;
+    }
+    const input: LaunchInputState = {
+      workflow,
+      values: {},
+      field: 0,
+      reviewedProfiles: profileReview(workflow, diagnosis),
+    };
+    dispatch({ type: 'launch-set', input });
+  };
+
+  const buildGenerated = async (next: TuiState): Promise<void> => {
+    try {
+      const answers = setupValuesToGeneration(next.setupValues);
+      const generated = generateConfiguration({
+        configPath: next.configPath,
+        cwd: next.cwd,
+        ...answers,
+      });
+      if (active.current) dispatch({ type: 'generated-set', generated });
+    } catch (reason) {
+      if (active.current) {
+        dispatch({
+          type: 'error-set',
+          message: reason instanceof Error ? reason.message : String(reason),
+        });
+      }
+    }
+  };
+
+  const writeSetupConfig = async (next: TuiState): Promise<void> => {
+    if (!next.generated) return;
+    try {
+      if (await configurationExists(next.configPath, next.cwd)) {
+        dispatch({
+          type: 'status-set',
+          message: `Configuration already exists at ${next.generated.configPath}; nothing was overwritten.`,
+        });
+        return;
+      }
+      await writeConfigurationAtomically(next.generated);
+      dispatch({
+        type: 'status-set',
+        message: 'Configuration written. Review diagnosis before launching.',
+      });
+    } catch (reason) {
+      dispatch({
+        type: 'status-set',
+        message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+      });
+    }
+  };
+
+  const loadInspection = async (runId: string): Promise<void> => {
     try {
       const application = await ensureContext();
-      const inspection = await application.inspectRun(run.id, { includeStepResults: false });
-      const explanation = await application.explainRunRecovery(run.id);
-      const questions = await application.clarificationQuestions(inspection);
+      const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
+      const [recovery, clarifications] = await Promise.all([
+        application.explainRunRecovery(runId),
+        application.clarificationQuestions(inspection),
+      ]);
+      if (!active.current) return;
       const workflow = discoverWorkflows().find(
         (candidate) => candidate.id === inspection.run.workflowId,
       );
@@ -327,194 +339,48 @@ export function InkShellController({
         inspection.steps.some(
           (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
         );
-      setDetail(inspection);
-      setRecovery(explanation);
-      setClarifications(questions);
-      setArtifactContent(undefined);
-      setArtifactSelected(0);
-      setArtifactOffset(0);
-      setSelection(0);
-      setListOffset(0);
       if (approvalWaiting && workflow?.approval) {
-        setApprovalMessage(workflow.approval.message);
-        setApprovalPreviews(await application.loadResearchApprovalPreviews(inspection));
-        setApprovalPreviewOffset(0);
-        setError(undefined);
-        setScreen('approval');
-        return;
+        const previews = await application.loadResearchApprovalPreviews(inspection);
+        if (!active.current) return;
+        dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
+        dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
+      } else {
+        dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
+        if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
       }
-      setApprovalMessage(undefined);
-      setApprovalPreviews([]);
-      setApprovalPreviewOffset(0);
-      setScreen('detail');
     } catch (reason) {
-      reportError(reason instanceof Error ? reason.message : String(reason));
+      if (active.current) {
+        dispatch({
+          type: 'error-set',
+          message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+        });
+      }
     }
   };
 
   const loadArtifact = async (): Promise<void> => {
-    const artifact = detail?.artifacts[artifactSelected];
-    if (!artifact || !lifecycle.context || !detail) return;
+    const current = stateRef.current;
+    const artifact = current.inspection?.artifacts[current.artifactSelected];
+    if (!artifact || !lifecycle.context || !current.inspection) return;
     try {
-      setArtifactContent(
-        await lifecycle.context.readArtifact(detail.run.id, `${artifact.stepId}.${artifact.name}`),
+      const content = await lifecycle.context.readArtifact(
+        current.inspection.run.id,
+        `${artifact.stepId}.${artifact.name}`,
       );
+      if (active.current) dispatch({ type: 'artifact-content-set', content });
     } catch (reason) {
-      setArtifactContent({
-        artifact,
-        truncated: false,
-        formatted: false,
-        error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
-      });
-    }
-  };
-
-  const startSetup = (): void => {
-    setScreen('setup-wizard');
-    setSetupStep(1);
-    setSetupField(0);
-    setSetupValues({});
-    setPromptValue('');
-    setError(undefined);
-    void discoverSetupModels().then((models) => {
-      if (active.current) setSetupModels(models);
-    });
-  };
-
-  const selectHomeAction = (): void => {
-    const action = HOME_ACTIONS[homeSelected];
-    if (action === 'New workflow') {
-      if (!diagnosis) {
-        setError('Diagnosis is still running. Wait or press r to refresh.');
-      } else if (!diagnosis.configExists) {
-        startSetup();
-        setSelection(0);
-        setListOffset(0);
-      } else if (!diagnosis.configValid)
-        setError('Fix the invalid configuration before starting a workflow.');
-      else {
-        setWorkflows(orderedWorkflows(discoverWorkflows()));
-        setSelection(0);
-        setListOffset(0);
-        setScreen('workflows');
-      }
-    } else if (action === 'Diagnosis') setScreen('diagnosis');
-    else if (action === 'Read documentation') setScreen('documentation');
-    else if (action === 'Refresh diagnosis') refresh();
-    else if (action === 'Run history') void loadHistory();
-    else exit();
-  };
-
-  const submitSetup = (value: string): void => {
-    const field = SETUP_FIELDS[setupField]!;
-    const validation = validateSetupValue(field, value);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-    const next = { ...setupValues, [field.key]: value.trim() };
-    setSetupValues(next);
-    setError(undefined);
-    setPromptValue('');
-    setSelection(0);
-    if (setupField < SETUP_FIELDS.length - 1) {
-      setSetupField((fieldIndex) => fieldIndex + 1);
-      setSetupStep(setupField < 1 ? 2 : 3);
-    } else {
-      try {
-        const answers = setupValuesToGeneration(next);
-        setGenerated(generateConfiguration({ configPath, cwd, ...answers }));
-        setSetupStep(4);
-        setSelection(0);
-        setListOffset(0);
-        setSetupStep(4);
-        setScreen('setup-wizard');
-      } catch (reason) {
-        reportError(reason instanceof Error ? reason.message : String(reason));
+      if (active.current) {
+        dispatch({
+          type: 'artifact-content-set',
+          content: {
+            artifact,
+            truncated: false,
+            formatted: false,
+            error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+          },
+        });
       }
     }
-  };
-
-  const writeSetup = async (): Promise<void> => {
-    if (!generated) return;
-    try {
-      if (await configurationExists(configPath, cwd)) {
-        returnHome(
-          `Configuration already exists at ${generated.configPath}; nothing was overwritten.`,
-        );
-        return;
-      }
-      await writeConfigurationAtomically(generated);
-      await diagnoseConfigurationFile(configPath, cwd).then((result) => {
-        if (active.current) setDiagnosis(result);
-      });
-      returnHome('Configuration written. Review diagnosis before launching.');
-    } catch (reason) {
-      returnHome(explainUserError(reason instanceof Error ? reason.message : String(reason)));
-    }
-  };
-
-  const chooseWorkflow = (): void => {
-    const workflow = orderedWorkflows(workflows)[selection];
-    if (!workflow || !diagnosis) return;
-    if (!diagnosis.configValid) {
-      setError('Configuration is invalid; open Diagnosis or fix config before launching.');
-      return;
-    }
-    const missing = missingProfiles(workflow, diagnosis);
-    if (missing.length > 0) {
-      setError(
-        `Missing profiles: ${missing.join(', ')}. Fix agent profiles in configuration, then refresh diagnosis.`,
-      );
-      return;
-    }
-    const values: Record<string, string> = {};
-    const fields = workflowInputFields(workflow);
-    const nextLaunch: LaunchInputState = {
-      workflow,
-      values,
-      field: 0,
-      reviewedProfiles: profileReview(workflow, diagnosis),
-    };
-    setLaunchInput(nextLaunch);
-    setPromptValue('');
-    setError(undefined);
-    setScreen(fields.length > 0 ? 'launch-input' : 'launch-confirmation');
-  };
-
-  const submitLaunchInput = (value: string): void => {
-    if (!launchInput) return;
-    const field = workflowInputFields(launchInput.workflow)[launchInput.field];
-    if (!field) {
-      setScreen('launch-confirmation');
-      return;
-    }
-    const validation = validateWorkflowValue(launchInput.workflow, field, value);
-    if (validation) {
-      setError(validation);
-      return;
-    }
-    const values = { ...launchInput.values };
-    if (value.trim()) values[field] = value.trim();
-    else delete values[field];
-    const next = { ...launchInput, values, error: undefined };
-    const fields = workflowInputFields(launchInput.workflow);
-    setPromptValue('');
-    if (launchInput.field < fields.length - 1) {
-      setLaunchInput({ ...next, field: launchInput.field + 1 });
-      setError(undefined);
-      return;
-    }
-    const finalError = validateWorkflowValues(launchInput.workflow, values);
-    if (finalError) {
-      setError(finalError);
-      return;
-    }
-    setLaunchInput(next);
-    setError(undefined);
-    setSelection(0);
-    setListOffset(0);
-    setScreen('launch-confirmation');
   };
 
   const presentApproval = async (
@@ -530,17 +396,12 @@ export function InkShellController({
         (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
       );
       if (!waiting) return false;
-      setDetail(detailInspection);
-      setApprovalMessage(workflow.approval.message);
-      setApprovalPreviews(await lifecycle.context.loadResearchApprovalPreviews(detailInspection));
-      setApprovalPreviewOffset(0);
-      setSelection(0);
-      setListOffset(0);
-      setError(undefined);
-      setStatus(undefined);
+      const previews = await lifecycle.context.loadResearchApprovalPreviews(detailInspection);
+      if (!active.current) return true;
+      dispatch({ type: 'inspection-set', inspection: detailInspection, clarifications: [] });
+      dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
       disposeLiveControllers();
       setLiveValue(undefined);
-      setScreen('approval');
       return true;
     } catch {
       return false;
@@ -549,92 +410,82 @@ export function InkShellController({
 
   const finishRun = async (run: WorkflowRun): Promise<void> => {
     const current = liveRef.current;
-    let steps =
-      current?.steps.map((step) => ({
-        runId: run.id,
-        stepId: step.id,
-        profile: step.profile,
-        status: step.status,
-        attempt: 1,
-      })) ?? [];
-    let artifacts: string[] = [];
-    let finishedAt = run.updatedAt;
     let inspection: RunInspection | undefined;
+    let recovery: RunRecoveryExplanation | undefined;
+    let clarifications: string[] = [];
     if (lifecycle.context) {
       try {
-        inspection = await lifecycle.context.inspectRun(run.id, {
-          includeStepResults: 'usage',
-        });
-        steps = inspection.steps;
-        artifacts = inspection.artifacts.map((artifact) => `${artifact.stepId}.${artifact.name}`);
-        finishedAt = inspection.run.updatedAt;
-        run = inspection.run;
+        inspection = await lifecycle.context.inspectRun(run.id, { includeStepResults: 'usage' });
+        const current = inspection;
+        [recovery, clarifications] = await Promise.all([
+          lifecycle.context.explainRunRecovery(run.id),
+          lifecycle.context.clarificationQuestions(current),
+        ]);
+        run = current.run;
       } catch {
-        // Completion remains available when an injected context only supports execution.
+        if (!inspection && current) {
+          inspection = {
+            run,
+            steps: current.steps.map((step) => ({
+              runId: run.id,
+              stepId: step.id,
+              profile: step.profile,
+              status: step.status,
+              attempt: 1,
+            })),
+            artifacts: [],
+            eventCount: 0,
+          };
+        }
       }
     }
     if (await presentApproval(run, inspection)) return;
-    setCompletion({
-      run,
-      steps,
-      artifacts,
-      startedAt: current?.startedAt ?? run.createdAt,
-      finishedAt,
-    });
     disposeLiveControllers();
     setLiveValue(undefined);
-    setStatus(undefined);
-    setSelection(0);
-    setListOffset(0);
-    setScreen('completion');
+    dispatch({
+      type: 'inspection-set',
+      inspection: inspection ?? { run, steps: [], artifacts: [], eventCount: 0 },
+      ...(recovery ? { recovery } : {}),
+      clarifications,
+    });
+    dispatch({ type: 'run-finished', status: run.status });
   };
 
-  const requestCancellation = (signal?: NodeJS.Signals): void => {
-    const current = liveRef.current;
-    const request = lifecycle.requestCancellation(signal ?? 'SIGINT');
+  const requestCancellation = (): void => {
+    const request = lifecycle.requestCancellation('SIGINT');
     if (request === 'inactive') return;
     if (request === 'forced') {
       exit();
       return;
     }
-    if (current) setLiveValue({ ...current, cancellationRequested: true });
-    setStatus('Cancellation requested. Workflow is still running; press q again to force-cancel.');
+    dispatch({ type: 'cancel-requested' });
   };
 
-  useEffect(() => {
-    return registerSignalHandler((signal) => {
-      const request = lifecycle.requestCancellation(signal);
-      if (request === 'inactive') return false;
-      if (liveRef.current) setLiveValue({ ...liveRef.current, cancellationRequested: true });
-      setStatus(
-        'Cancellation requested. Workflow is still running; press q again to force-cancel.',
-      );
-      exit();
-      return true;
-    });
-  }, [lifecycle, registerSignalHandler]);
-
   const startLaunch = (): void => {
+    const launchInput = stateRef.current.launchInput;
+    const diagnosis = stateRef.current.diagnosis;
     if (!launchInput || !diagnosis || launching) return;
     setLaunching(true);
     const controller = lifecycle.beginOperation();
     lifecycle.trackOperation(
       (async () => {
         try {
-          const refreshed = await diagnoseConfigurationFile(configPath, cwd);
+          const refreshed = await diagnoseConfigurationFile(
+            stateRef.current.configPath,
+            stateRef.current.cwd,
+          );
           const currentReview = profileReview(launchInput.workflow, refreshed);
           if (
             !refreshed.configValid ||
             !sameProfileReview(launchInput.reviewedProfiles, currentReview)
           ) {
-            setDiagnosis(refreshed);
-            setLaunchInput({ ...launchInput, reviewedProfiles: currentReview });
-            setError(
-              !refreshed.configValid
+            dispatch({ type: 'diagnosed', diagnosis: refreshed });
+            dispatch({
+              type: 'error-set',
+              message: !refreshed.configValid
                 ? 'Configuration changed or became invalid; review it before launching.'
                 : 'Profile permissions or settings changed; confirm the workflow again before launching.',
-            );
-            setScreen('launch-confirmation');
+            });
             return;
           }
           const application = await openExecutionContext();
@@ -643,7 +494,7 @@ export function InkShellController({
           lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
           const objective = launchInput.values.objective;
           if (!objective) throw new Error('Workflow objective must be a non-empty string');
-          setStatus(`Starting ${launchInput.workflow.id}...`);
+          dispatch({ type: 'status-set', message: `Starting ${launchInput.workflow.id}...` });
           const run = await application.runWorkflow({
             workflowId: launchInput.workflow.id,
             objective,
@@ -652,10 +503,9 @@ export function InkShellController({
             onRunStarted: (startedRun) => {
               activeRunId.current = startedRun.id;
               setLiveValue(createLiveState(startedRun, launchInput.workflow));
-              setCompletion(undefined);
               setLiveDetail(false);
               setLiveOffset(0);
-              setScreen('live');
+              dispatch({ type: 'run-started', runId: startedRun.id });
             },
           });
           uiPublisherRef.current?.flush();
@@ -670,10 +520,10 @@ export function InkShellController({
               updatedAt: new Date().toISOString(),
             });
           } else {
-            reportError(
-              `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
-            );
-            setScreen('launch-confirmation');
+            dispatch({
+              type: 'error-set',
+              message: `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
+            });
           }
         } finally {
           lifecycle.unsubscribe();
@@ -692,10 +542,11 @@ export function InkShellController({
     ) => Promise<WorkflowRun>,
     workflowId: string,
   ): void => {
-    if (!detail || launching) return;
+    const inspection = stateRef.current.inspection;
+    if (!inspection || launching) return;
     const workflow = discoverWorkflows().find((candidate) => candidate.id === workflowId);
     if (!workflow) {
-      setError(`Workflow ${workflowId} is unavailable.`);
+      dispatch({ type: 'error-set', message: `Workflow ${workflowId} is unavailable.` });
       return;
     }
     setLaunching(true);
@@ -709,10 +560,10 @@ export function InkShellController({
           lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
           const run = await operation(application, controller.signal, (startedRun) => {
             activeRunId.current = startedRun.id;
-            setLiveValue(createLiveState(startedRun, workflow, detail.steps));
+            setLiveValue(createLiveState(startedRun, workflow, inspection.steps));
             setLiveDetail(false);
             setLiveOffset(0);
-            setScreen('live');
+            dispatch({ type: 'run-started', runId: startedRun.id });
           });
           uiPublisherRef.current?.flush();
           await snapshotControllerRef.current?.flush();
@@ -725,7 +576,12 @@ export function InkShellController({
               status: current.cancellationRequested ? 'cancelled' : 'failed',
               updatedAt: new Date().toISOString(),
             });
-          } else reportError(reason instanceof Error ? reason.message : String(reason));
+          } else {
+            dispatch({
+              type: 'error-set',
+              message: reason instanceof Error ? reason.message : String(reason),
+            });
+          }
         } finally {
           lifecycle.unsubscribe();
           activeRunId.current = undefined;
@@ -735,58 +591,263 @@ export function InkShellController({
     );
   };
 
-  const submitDetailPrompt = async (value: string): Promise<void> => {
-    if (!detail || !detailPrompt || !lifecycle.context) return;
-    const normalized = value.trim();
-    if (detailPrompt === 'recovery') {
-      if (normalized.toLowerCase() !== 'yes') {
-        setError('Type YES to confirm recovery.');
-        return;
+  const runEffects = async (previous: TuiState, next: TuiState, event: TuiEvent): Promise<void> => {
+    try {
+      switch (event.type) {
+        case 'quit':
+          exit();
+          return;
+        case 'diagnosed':
+        case 'use-folder':
+          if (next.overlay === 'none' && next.diagnosis?.configValid) await loadRuns();
+          break;
+        case 'open-folder-picker':
+        case 'folder-picker-path':
+          if (next.overlay === 'folder-picker') await listFolder(next.folderPickerPath);
+          break;
+        case 'new-run':
+          if (next.detail === 'launch') await prepareLaunch(next);
+          break;
+        case 'launch-confirm':
+          startLaunch();
+          break;
+        case 'setup-next':
+        case 'setup-submit':
+          if (next.overlay === 'setup' && next.setupStep === 4 && previous.setupStep !== 4) {
+            await buildGenerated(next);
+          }
+          break;
+        case 'setup-save':
+          await writeSetupConfig(next);
+          break;
+        case 'open-run':
+          await loadInspection(event.runId);
+          break;
+        case 'resume-run': {
+          const runId = next.inspection?.run.id;
+          if (runId) {
+            startContinuation(
+              (application, signal, onRunStarted) =>
+                application
+                  .resumeWorkflow({ runId, signal, onRunStarted })
+                  .then((result) => result.run),
+              next.inspection!.run.workflowId,
+            );
+          }
+          break;
+        }
+        case 'approval-approve': {
+          const runId = next.inspection?.run.id;
+          if (runId) {
+            startContinuation(
+              (application, signal, onRunStarted) =>
+                application.decideApproval({ runId, decision: 'approved', signal, onRunStarted }),
+              next.inspection!.run.workflowId,
+            );
+          }
+          break;
+        }
+        case 'rejection-submitted': {
+          const runId = next.inspection?.run.id;
+          if (runId) {
+            startContinuation(
+              (application, signal, onRunStarted) =>
+                application.decideApproval({
+                  runId,
+                  decision: 'rejected',
+                  feedback: event.feedback,
+                  signal,
+                  onRunStarted,
+                }),
+              next.inspection!.run.workflowId,
+            );
+          }
+          break;
+        }
+        case 'recovery-confirmed': {
+          const runId = next.inspection?.run.id;
+          if (runId && lifecycle.context) {
+            await lifecycle.context.markRunInterrupted(runId);
+            await loadInspection(runId);
+          }
+          break;
+        }
+        case 'run-finished':
+          await loadRuns();
+          break;
+        case 'cancel-requested':
+          if (liveRef.current) publishLive({ ...liveRef.current, cancellationRequested: true });
+          dispatch({
+            type: 'status-set',
+            message:
+              'Cancellation requested. Workflow is still running; press q again to force-cancel.',
+          });
+          break;
+        default:
+          break;
       }
-      try {
-        await lifecycle.context.markRunInterrupted(detail.run.id);
-        setDetailPrompt(undefined);
-        setPromptValue('');
-        await openDetail({ ...detail.run, status: 'interrupted' });
-      } catch (reason) {
-        reportError(reason instanceof Error ? reason.message : String(reason));
+      if (next.effect === 'discover-setup-models') {
+        const models = await discoverSetupModels();
+        if (active.current) dispatch({ type: 'setup-models', models });
+      } else if (next.effect === 'diagnose-cwd') {
+        await runDiagnose();
       }
-      return;
+    } catch (reason) {
+      if (active.current) {
+        dispatch({
+          type: 'error-set',
+          message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+        });
+      }
     }
-    if (!normalized) {
-      setError('Feedback must be non-empty.');
-      return;
-    }
-    setDetailPrompt(undefined);
-    setPromptValue('');
-    void startContinuation(
-      (application, signal, onRunStarted) =>
-        application.decideApproval({
-          runId: detail.run.id,
-          decision: 'rejected',
-          feedback: normalized,
-          signal,
-          onRunStarted,
-        }),
-      detail.run.workflowId,
-    );
   };
 
+  const dispatch = (event: TuiEvent): void => {
+    const previous = stateRef.current;
+    const next = reduce(previous, event);
+    stateRef.current = next;
+    setState(next);
+    void runEffects(previous, next, event);
+  };
+
+  useEffect(() => {
+    active.current = true;
+    dispatch({ type: 'workflows-loaded', workflows: discoverWorkflows() });
+    void runDiagnose();
+    return () => {
+      active.current = false;
+      disposeLiveControllers();
+    };
+  }, [cwd, configPath]);
+
+  useEffect(() => {
+    return registerSignalHandler((signal) => {
+      if (belowMinimumSize) return false;
+      const request = lifecycle.requestCancellation(signal);
+      if (request === 'inactive') return false;
+      if (request === 'forced') return false;
+      dispatch({ type: 'cancel-requested' });
+      return true;
+    });
+  }, [lifecycle, registerSignalHandler, belowMinimumSize]);
+
   useInput((input, key) => {
+    const current = stateRef.current;
     if (belowMinimumSize) {
       if (input === 'q' || key.escape || (input === 'c' && key.ctrl)) {
         exit(input === 'c' ? 130 : undefined);
       }
       return;
     }
-
     if (input === 'c' && key.ctrl) {
       if (liveRef.current) requestCancellation();
       else exit(130);
       return;
     }
 
-    if (screen === 'live') {
+    if (current.overlay !== 'none') {
+      const direction = input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
+      switch (current.overlay) {
+        case 'welcome':
+          if (input === 'q' || key.escape) dispatch({ type: 'quit' });
+          else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 4 });
+          else if (input === '\r' || key.return) {
+            switch (current.selection) {
+              case 0:
+                dispatch({ type: 'use-folder' });
+                break;
+              case 1:
+                dispatch({ type: 'open-folder-picker' });
+                break;
+              case 2:
+                dispatch({ type: 'open-about' });
+                break;
+              default:
+                dispatch({ type: 'quit' });
+            }
+          }
+          break;
+        case 'about':
+          if (input === 'q' || key.escape) dispatch({ type: 'close-about' });
+          break;
+        case 'help':
+          if (input === 'q' || key.escape) dispatch({ type: 'close-help' });
+          break;
+        case 'folder-picker':
+          if (input === 'q' || key.escape) dispatch({ type: 'folder-picker-back' });
+          else if (input === 'h') {
+            dispatch({ type: 'folder-picker-path', path: dirname(current.folderPickerPath) });
+          } else if (input === '/') dispatch({ type: 'folder-picker-path', path: '/' });
+          else if (input === ' ') dispatch({ type: 'folder-picker-select' });
+          else if (direction !== 0) {
+            dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 7) });
+          } else if (input === '\r' || key.return) {
+            const entries = current.folderEntries ?? [];
+            if (current.selection < entries.length) {
+              const entry = entries[current.selection];
+              dispatch({
+                type: 'folder-picker-path',
+                path: entry?.path ?? current.folderPickerPath,
+              });
+            } else {
+              dispatch({ type: 'folder-picker-select' });
+            }
+          }
+          break;
+        case 'folder-confirm':
+          if (input === 'q' || key.escape) dispatch({ type: 'folder-confirm-back' });
+          else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 2 });
+          else if (input === '\r' || key.return || input === ' ') {
+            if (current.selection === 0) dispatch({ type: 'folder-confirm' });
+            else dispatch({ type: 'folder-confirm-back' });
+          }
+          break;
+        case 'setup': {
+          const choices = setupChoices(
+            current.setupField,
+            current.setupModels ?? [],
+            current.setupValues,
+          );
+          if (current.setupStep === 1) {
+            if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
+            else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 3 });
+            else if (input === '\r' || key.return) {
+              if (current.selection === 0) dispatch({ type: 'setup-next' });
+              else if (current.selection === 1) dispatch({ type: 'setup-retry' });
+              else dispatch({ type: 'setup-cancel' });
+            }
+          } else if (current.setupStep === 4) {
+            if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
+            else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 4 });
+            else if (input === '\r' || key.return) {
+              if (current.selection === 0) dispatch({ type: 'setup-save' });
+              else if (current.selection === 1) dispatch({ type: 'setup-toggle-config' });
+              else if (current.selection === 2) dispatch({ type: 'setup-back' });
+              else dispatch({ type: 'setup-cancel' });
+            }
+          } else if (choices.length > 0) {
+            if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
+            else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 5 });
+            else if (input === '\r' || key.return) {
+              const choice = choices[current.selection];
+              if (choice) dispatch({ type: 'setup-submit', value: choice });
+            }
+          } else if (input === 'q' || key.escape) {
+            dispatch({ type: 'setup-cancel' });
+          }
+          break;
+        }
+        case 'recovery-confirm':
+        case 'rejection-feedback':
+          if (input === 'q' || key.escape) dispatch({ type: 'close-detail-prompt' });
+          break;
+        default:
+          break;
+      }
+      return;
+    }
+
+    if (current.detail === 'live') {
       if (input === 'q' || key.escape) requestCancellation();
       else if (input === 'd') setLiveDetail((detail) => !detail);
       else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
@@ -806,503 +867,325 @@ export function InkShellController({
       return;
     }
 
-    if (screen === 'completion' && completion) {
-      if (input === 'q' || key.escape || input === '\r' || key.return) {
-        const action = completionNextAction(completion.run.status);
-        if (action === 'Review in history' || action === 'Review recovery in history') {
-          void loadHistory();
-        } else if (action === 'Open waiting run') {
-          void openDetail(completion.run);
-        } else {
-          returnHome();
-        }
+    const direction = input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
+
+    if (current.detail === 'approval') {
+      if (input === 'q' || key.escape) dispatch({ type: 'leave-waiting' });
+      else if (direction !== 0) {
+        dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
+      } else if (input === '\r' || key.return) {
+        const action = APPROVAL_ACTIONS[current.selection];
+        if (action === 'Approve research and continue') dispatch({ type: 'approval-approve' });
+        else if (action === 'Reject research with feedback') dispatch({ type: 'approval-reject' });
+        else dispatch({ type: 'leave-waiting' });
       }
       return;
     }
 
-    if (screen === 'approval' && detail) {
-      if (input === 'q' || key.escape) {
-        setScreen('history');
+    if (current.detail === 'launch') {
+      const fields = current.launchInput ? workflowInputFields(current.launchInput.workflow) : [];
+      const confirming = !!current.launchInput && current.launchInput.field >= fields.length;
+      if (!confirming) {
+        if (input === 'q' || key.escape) dispatch({ type: 'launch-cancel' });
         return;
       }
-      if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const visibleRows = Math.max(1, size.rows - 16);
-        const next = moveSelection(
-          { offset: listOffset, selected: selection },
-          input === 'j' || key.downArrow ? 1 : -1,
-          APPROVAL_ACTIONS.length,
-          visibleRows,
-        );
-        setSelection(next.selected);
-        setListOffset(next.offset);
-        return;
-      }
-      if (input === '\r' || key.return) {
-        const action = APPROVAL_ACTIONS[selection];
-        if (action === 'Approve research and continue') {
-          void startContinuation(
-            (application, signal, onRunStarted) =>
-              application.decideApproval({
-                runId: detail.run.id,
-                decision: 'approved',
-                signal,
-                onRunStarted,
-              }),
-            detail.run.workflowId,
-          );
-        } else if (action === 'Reject research with feedback') {
-          setDetailPrompt('rejection');
-          setPromptValue('');
-          setError(undefined);
-          setScreen('rejection-feedback');
-        } else {
-          setScreen('history');
-        }
+      if (input === 'q' || key.escape) dispatch({ type: 'launch-cancel' });
+      else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 3 });
+      else if (input === '\r' || key.return) {
+        if (current.selection === 0) dispatch({ type: 'launch-confirm' });
+        else if (current.selection === 1) dispatch({ type: 'launch-edit' });
+        else dispatch({ type: 'launch-cancel' });
       }
       return;
     }
 
-    if (screen === 'recovery-confirm' || screen === 'rejection-feedback') {
-      if (input === 'q' || key.escape) {
-        setDetailPrompt(undefined);
-        setPromptValue('');
-        setScreen(
-          screen === 'rejection-feedback' && detail?.run.status === 'waiting'
-            ? 'approval'
-            : 'detail',
-        );
-      }
-      return;
-    }
-
-    if (screen === 'history') {
-      if (input === 'q' || key.escape) returnHome();
-      else if (input === 's') {
-        const statuses: Array<RunStatus | undefined> = [
-          undefined,
-          'failed',
-          'interrupted',
-          'waiting',
-          'completed',
-          'running',
-          'cancelled',
-        ];
-        const index = statuses.indexOf(historyStatus);
-        const nextStatus = statuses[(index + 1) % statuses.length];
-        setHistoryStatus(nextStatus);
-        setHistoryCursor(undefined);
-        void loadHistory(nextStatus, historyWorkflow, undefined);
-      } else if (input === 'w') {
-        const workflows = [
-          undefined,
-          ...orderedWorkflows(discoverWorkflows()).map((workflow) => workflow.id),
-        ];
-        const index = workflows.indexOf(historyWorkflow);
-        const nextWorkflow = workflows[(index + 1) % workflows.length];
-        setHistoryWorkflow(nextWorkflow);
-        setHistoryCursor(undefined);
-        void loadHistory(historyStatus, nextWorkflow, undefined);
-      } else if (input === 'n' && historyHasNext) {
-        void loadHistory(historyStatus, historyWorkflow, historyCursor);
-      } else if (input === 'r') void loadHistory();
-      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const visibleRows = Math.max(1, size.rows - 10);
-        const next = moveSelection(
-          { offset: historyOffset, selected: historySelected },
-          input === 'j' || key.downArrow ? 1 : -1,
-          historyRuns.length,
-          visibleRows,
-        );
-        setHistorySelected(next.selected);
-        setHistoryOffset(next.offset);
-      } else if ((input === '\r' || key.return) && historyRuns[historySelected])
-        void openDetail(historyRuns[historySelected]!);
-      return;
-    }
-
-    if (screen === 'detail' && detail) {
-      const actions = detailActions(detail, recovery, clarifications);
-      if (input === 'q' || key.escape) setScreen('history');
-      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const visibleRows = Math.max(1, size.rows - 16);
-        const next = moveSelection(
-          { offset: listOffset, selected: selection },
-          input === 'j' || key.downArrow ? 1 : -1,
-          actions.length,
-          visibleRows,
-        );
-        setSelection(next.selected);
-        setListOffset(next.offset);
+    if (current.detail === 'inspect') {
+      if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+      else if (direction !== 0) {
+        dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
       } else if (input === '\r' || key.return) {
-        const action = actions[selection];
-        if (action === 'Resume retryable work') {
-          void startContinuation(
-            (application, signal, onRunStarted) =>
-              application
-                .resumeWorkflow({ runId: detail.run.id, signal, onRunStarted })
-                .then((result) => result.run),
-            detail.run.workflowId,
-          );
-        } else if (action === 'Mark interrupted and review recovery') {
-          setDetailPrompt('recovery');
-          setPromptValue('');
-          setError(undefined);
-          setScreen('recovery-confirm');
-        } else if (action === 'New run with revised objective') {
-          const workflow = discoverWorkflows().find(
-            (candidate) => candidate.id === detail.run.workflowId,
-          );
-          if (workflow && diagnosis) {
-            setLaunchInput({
-              workflow,
-              values: { objective: detail.run.objective },
-              field: Math.max(0, workflowInputFields(workflow).indexOf('objective')),
-              reviewedProfiles: profileReview(workflow, diagnosis),
-            });
-            setPromptValue(detail.run.objective);
-            setScreen('launch-input');
-          }
-        } else if (action === 'Browse artifacts') {
-          setArtifactSelected(0);
-          setArtifactContent(undefined);
-          setScreen('artifacts');
-        } else setScreen('history');
+        if (!current.inspection) return;
+        const actions = detailActions(current.inspection, current.recovery, current.clarifications);
+        const action = actions[current.selection];
+        if (action === 'Resume retryable work') dispatch({ type: 'resume-run' });
+        else if (action === 'Mark interrupted and review recovery') {
+          dispatch({ type: 'open-recovery-confirm' });
+        } else if (action === 'New run with revised objective') dispatch({ type: 'open-launch' });
+        else if (action === 'Browse artifacts') dispatch({ type: 'open-artifacts' });
+        else dispatch({ type: 'inspect-back' });
       }
       return;
     }
 
-    if (screen === 'artifacts' && detail) {
-      if (input === 'q' || key.escape) setScreen('detail');
-      else if (
-        artifactContent &&
-        (input === 'j' || key.downArrow || input === 'k' || key.upArrow)
-      ) {
-        const lines = artifactContent.error
-          ? [`ERROR: ${artifactContent.error}`]
-          : (artifactContent.content ?? 'No readable content.').split('\n');
-        const visibleRows = Math.max(1, size.rows - 12);
-        setArtifactContentOffset((offset) =>
-          scrollText(offset, input === 'j' || key.downArrow ? 1 : -1, lines.length, visibleRows),
-        );
-      } else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const visibleRows = Math.max(1, size.rows - 12);
-        const next = moveSelection(
-          { offset: artifactOffset, selected: artifactSelected },
-          input === 'j' || key.downArrow ? 1 : -1,
-          detail.artifacts.length,
-          visibleRows,
-        );
-        setArtifactSelected(next.selected);
-        setArtifactOffset(next.offset);
-      } else if (input === '\r' || key.return) {
-        setArtifactContentOffset(0);
-        void loadArtifact();
+    if (current.detail === 'result') {
+      if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+      else if (direction !== 0) {
+        dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
+      } else if (input === '\r' || key.return) dispatch({ type: 'open-artifacts' });
+      return;
+    }
+
+    if (current.detail === 'artifacts') {
+      if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+      else if (direction !== 0) {
+        dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 12) });
+      } else if (input === '\r' || key.return) void loadArtifact();
+      return;
+    }
+
+    if (input === 'n') dispatch({ type: 'new-run' });
+    else if (input === 'w') dispatch({ type: 'open-folder-picker' });
+    else if (input === 'd' || input === 'r') dispatch({ type: 'refresh-diagnosis' });
+    else if (input === '?') dispatch({ type: 'open-help' });
+    else if (key.tab) {
+      dispatch({
+        type: 'focus-pane',
+        pane:
+          current.focus === 'workflows'
+            ? 'runs'
+            : current.focus === 'runs'
+              ? 'detail'
+              : 'workflows',
+      });
+    } else if (input === 'h') dispatch({ type: 'focus-pane', pane: 'workflows' });
+    else if (input === 'l') dispatch({ type: 'focus-pane', pane: 'detail' });
+    else if (direction !== 0) {
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 9) });
+    } else if (input === '\r' || key.return) {
+      if (current.focus === 'workflows') {
+        dispatch({ type: 'new-run' });
+      } else if (current.focus === 'runs') {
+        const run = current.runs?.[current.runSelected];
+        if (run) dispatch({ type: 'open-run', runId: run.id, status: run.status });
       }
-      return;
-    }
-
-    if (
-      screen === 'launch-input' ||
-      (screen === 'setup-wizard' && setupStep === 2) ||
-      (screen === 'setup-wizard' && setupStep === 3)
-    ) {
-      if (input === 'q' || key.escape) {
-        returnHome('Cancelled.');
-      }
-      if (screen === 'setup-wizard') {
-        const choices = setupChoices(setupField, setupModels, setupValues);
-        if (choices.length > 0) {
-          if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-            const next = moveSelection(
-              { offset: 0, selected: selection },
-              input === 'j' || key.downArrow ? 1 : -1,
-              choices.length,
-              choices.length,
-            );
-            setSelection(next.selected);
-          } else if (input === '\r' || key.return) {
-            const choice = choices[selection];
-            if (choice) submitSetup(choice);
-          }
-        }
-      }
-      return;
-    }
-
-    if (screen === 'home') {
-      if (input === 'q' || key.escape) {
-        exit();
-      } else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const next = moveSelection(
-          { offset: homeOffset, selected: homeSelected },
-          input === 'j' || key.downArrow ? 1 : -1,
-          HOME_ACTIONS.length,
-          5,
-        );
-        setHomeSelected(next.selected);
-        setHomeOffset(next.offset);
-      } else if (input === 'r') refresh();
-      else if (input === '\r' || key.return) selectHomeAction();
-      return;
-    }
-
-    if (
-      (screen === 'setup-wizard' && (setupStep === 1 || setupStep === 4)) ||
-      screen === 'workflows' ||
-      screen === 'launch-confirmation'
-    ) {
-      const items =
-        screen === 'setup-wizard' && setupStep === 1
-          ? ['Continue', 'Retry diagnosis', 'Exit']
-          : screen === 'setup-wizard' && setupStep === 4
-            ? ['Write configuration', 'Cancel']
-            : screen === 'workflows'
-              ? workflowItems(workflows)
-              : ['Confirm and launch', 'Edit objective', 'Cancel'];
-      if (input === 'q' || key.escape) returnHome('Cancelled.');
-      else if (input === 'j' || key.downArrow || input === 'k' || key.upArrow) {
-        const next = moveSelection(
-          { offset: listOffset, selected: selection },
-          input === 'j' || key.downArrow ? 1 : -1,
-          items.length,
-          Math.max(1, Math.min(5, items.length)),
-        );
-        setSelection(next.selected);
-        setListOffset(next.offset);
-      } else if (input === '\r' || key.return) {
-        if (screen === 'setup-wizard' && setupStep === 1) {
-          if (selection === 0) {
-            setSetupStep(2);
-            setSetupField(0);
-            setSelection(0);
-            setPromptValue('');
-          } else if (selection === 1) refresh();
-          else returnHome('Cancelled.');
-        } else if (screen === 'setup-wizard' && setupStep === 4) {
-          if (selection === 0) void writeSetup();
-          else returnHome('Configuration creation cancelled.');
-        } else if (screen === 'workflows') chooseWorkflow();
-        else if (selection === 0) void startLaunch();
-        else if (selection === 1 && launchInput) {
-          const objectiveField = workflowInputFields(launchInput.workflow).indexOf('objective');
-          setLaunchInput({ ...launchInput, field: Math.max(0, objectiveField) });
-          setPromptValue(launchInput.values.objective ?? '');
-          setScreen('launch-input');
-        } else returnHome('Workflow launch cancelled.');
-      }
-      return;
-    }
-
-    if (input === 'q' || key.escape) {
-      setScreen('home');
-      return;
-    }
-
-    const lines = screen === 'documentation' ? documentationLines : diagnosisLines(diagnosis);
-    const visibleRows = Math.max(1, size.rows - 7);
-    const setOffset = screen === 'documentation' ? setDocumentOffset : setDiagnosisOffset;
-    if (input === 'j' || key.downArrow)
-      setOffset((offset) => scrollText(offset, 1, lines.length, visibleRows));
-    else if (input === 'k' || key.upArrow)
-      setOffset((offset) => scrollText(offset, -1, lines.length, visibleRows));
-    else if (key.pageDown)
-      setOffset((offset) => scrollText(offset, visibleRows - 1, lines.length, visibleRows));
-    else if (key.pageUp)
-      setOffset((offset) => scrollText(offset, -(visibleRows - 1), lines.length, visibleRows));
+    } else if (input === 'q' || key.escape) dispatch({ type: 'quit' });
   });
 
-  useEffect(() => {
-    if (screen !== 'documentation' && screen !== 'diagnosis') return;
-    const lines = screen === 'documentation' ? documentationLines : diagnosisLines(diagnosis);
-    const maximum = Math.max(0, lines.length - Math.max(1, size.rows - 7));
-    if (screen === 'documentation') setDocumentOffset((offset) => Math.min(offset, maximum));
-    else setDiagnosisOffset((offset) => Math.min(offset, maximum));
-  }, [diagnosis, screen, size.rows]);
+  if (belowMinimumSize) return <MinimumSizeFallback />;
 
-  if (size.columns < MINIMUM_WIDTH || size.rows < MINIMUM_HEIGHT) {
-    return <MinimumSizeFallback />;
+  if (state.overlay !== 'none') {
+    switch (state.overlay) {
+      case 'about':
+        return <AboutOverlay colors={colors} />;
+      case 'help':
+        return <HelpOverlay colors={colors} />;
+      case 'folder-picker':
+        return (
+          <FolderPickerScreen
+            colors={colors}
+            entries={state.folderEntries ?? []}
+            selected={state.selection}
+            offset={state.offset}
+            path={state.folderPickerPath}
+            visibleRows={Math.max(1, size.rows - 7)}
+          />
+        );
+      case 'folder-confirm':
+        return (
+          <FolderConfirmScreen
+            colors={colors}
+            path={state.folderPickerPath}
+            selected={state.selection}
+          />
+        );
+      case 'setup':
+        return (
+          <SetupWizardScreen
+            key={`${state.setupStep}-${state.setupField}`}
+            colors={colors}
+            step={state.setupStep}
+            {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})}
+            {...(state.setupStep === 2 || state.setupStep === 3
+              ? { field: SETUP_FIELDS[state.setupField]! }
+              : {})}
+            choices={setupChoices(state.setupField, state.setupModels ?? [], state.setupValues)}
+            {...(state.error ? { error: state.error } : {})}
+            selected={state.selection}
+            offset={state.offset}
+            value={state.inputValue}
+            onChange={(value) => dispatch({ type: 'input-change', value })}
+            onSubmit={(value) => {
+              setTimeout(() => dispatch({ type: 'setup-submit', value }), 0);
+            }}
+            {...(state.generated ? { generated: state.generated } : {})}
+            showFullConfig={state.showFullConfig}
+          />
+        );
+      case 'recovery-confirm':
+        return (
+          <RecoveryConfirmScreen
+            colors={colors}
+            error={state.error}
+            initialValue={state.inputValue}
+            onChange={(value) => dispatch({ type: 'input-change', value })}
+            onSubmit={(value) => {
+              setTimeout(() => {
+                if (value.trim().toLowerCase() === 'yes') dispatch({ type: 'recovery-confirmed' });
+                else dispatch({ type: 'error-set', message: 'Type YES to confirm recovery.' });
+              }, 0);
+            }}
+          />
+        );
+      case 'rejection-feedback':
+        return (
+          <RejectionFeedbackScreen
+            colors={colors}
+            error={state.error}
+            initialValue={state.inputValue}
+            onChange={(value) => dispatch({ type: 'input-change', value })}
+            onSubmit={(value) => {
+              setTimeout(() => {
+                const feedback = value.trim();
+                if (!feedback)
+                  dispatch({ type: 'error-set', message: 'Feedback must be non-empty.' });
+                else dispatch({ type: 'rejection-submitted', feedback });
+              }, 0);
+            }}
+          />
+        );
+      case 'welcome':
+      default:
+        return (
+          <WelcomeScreen
+            colors={colors}
+            cwd={state.cwd}
+            {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})}
+            selected={state.selection}
+          />
+        );
+    }
   }
 
-  if (screen === 'documentation')
-    return (
-      <DocumentationScreen
-        colors={colors}
-        offset={documentOffset}
-        visibleRows={Math.max(1, size.rows - 7)}
-      />
-    );
-  if (screen === 'setup-wizard')
-    return (
-      <SetupWizardScreen
-        key={`${setupStep}-${setupField}`}
-        colors={colors}
-        step={setupStep}
-        {...(diagnosis ? { diagnosis } : {})}
-        {...(SETUP_FIELDS[setupField] ? { field: SETUP_FIELDS[setupField] } : {})}
-        choices={setupChoices(setupField, setupModels, setupValues)}
-        {...(generated ? { generated } : {})}
-        {...(error ? { error } : {})}
-        selected={selection}
-        value={inputValue}
-        onChange={setPromptValue}
-        onSubmit={submitSetup}
-      />
-    );
-  if (screen === 'workflows')
-    return (
-      <WorkflowsScreen
-        colors={colors}
-        workflows={workflows}
-        diagnosis={diagnosis}
-        error={error}
-        selected={selection}
-        offset={listOffset}
-        visibleRows={Math.max(1, size.rows - 10)}
-      />
-    );
-  if (screen === 'launch-input' && launchInput)
-    return (
-      <LaunchInputScreen
-        key={`${launchInput.workflow.id}-${launchInput.field}-${inputValue}`}
-        colors={colors}
-        launchInput={launchInput}
-        error={error}
-        value={inputValue}
-        onChange={setPromptValue}
-        onSubmit={submitLaunchInput}
-      />
-    );
-  if (screen === 'launch-confirmation' && launchInput && diagnosis)
-    return (
-      <LaunchConfirmationScreen
-        colors={colors}
-        diagnosis={diagnosis}
-        launchInput={launchInput}
-        error={error ?? status}
-        launching={launching}
-        selected={selection}
-        offset={listOffset}
-      />
-    );
-  if (screen === 'live' && live)
-    return (
-      <LiveScreen
-        colors={colors}
-        live={live}
-        detail={liveDetail}
-        offset={liveOffset}
-        visibleRows={Math.max(1, size.rows - 13)}
-      />
-    );
-  if (screen === 'approval' && detail && approvalMessage)
-    return (
-      <ApprovalScreen
-        colors={colors}
-        run={detail.run}
-        message={approvalMessage}
-        previews={approvalPreviews}
-        previewOffset={approvalPreviewOffset}
-        error={error}
-        selected={selection}
-        offset={listOffset}
-        visibleRows={Math.max(1, size.rows - 16)}
-      />
-    );
-  if (screen === 'completion' && completion)
-    return (
-      <CompletionScreen
-        colors={colors}
-        completion={completion}
-        visibleRows={Math.max(1, size.rows - 15)}
-      />
-    );
-  if (screen === 'history')
-    return (
-      <HistoryScreen
-        colors={colors}
-        runs={historyRuns}
-        selected={historySelected}
-        offset={historyOffset}
-        visibleRows={Math.max(1, size.rows - 10)}
-        status={historyStatus}
-        workflow={historyWorkflow}
-        hasNext={historyHasNext}
-        loading={historyLoading}
-        error={error}
-        columns={size.columns}
-      />
-    );
-  if (screen === 'detail' && detail)
-    return (
-      <DetailScreen
-        colors={colors}
-        detail={detail}
-        recovery={recovery}
-        clarifications={clarifications}
-        approvalMessage={approvalMessage}
-        previews={approvalPreviews}
-        previewOffset={approvalPreviewOffset}
-        error={error}
-        selected={selection}
-        offset={listOffset}
-        visibleRows={Math.max(1, size.rows - 16)}
-      />
-    );
-  if (screen === 'artifacts' && detail)
-    return (
-      <ArtifactsScreen
-        colors={colors}
-        detail={detail}
-        selected={artifactSelected}
-        offset={artifactOffset}
-        content={artifactContent}
-        contentOffset={artifactContentOffset}
-        visibleRows={Math.max(1, size.rows - 12)}
-      />
-    );
-  if (screen === 'recovery-confirm' && detailPrompt === 'recovery')
-    return (
-      <RecoveryConfirmScreen
-        colors={colors}
-        error={error}
-        initialValue={inputValue}
-        onChange={setPromptValue}
-        onSubmit={() => {
-          setTimeout(() => void submitDetailPrompt(inputValueRef.current), 0);
-        }}
-      />
-    );
-  if (screen === 'rejection-feedback' && detailPrompt === 'rejection')
-    return (
-      <RejectionFeedbackScreen
-        colors={colors}
-        error={error}
-        initialValue={inputValue}
-        onChange={setPromptValue}
-        onSubmit={() => {
-          setTimeout(() => void submitDetailPrompt(inputValueRef.current), 0);
-        }}
-      />
-    );
-  if (screen === 'diagnosis')
-    return (
-      <DiagnosisScreen
-        colors={colors}
-        diagnosis={diagnosis}
-        offset={diagnosisOffset}
-        visibleRows={Math.max(1, size.rows - 7)}
-        refreshing={refreshing}
-        error={error}
-      />
-    );
+  let right: ReactNode;
+  switch (state.detail) {
+    case 'diagnosis':
+      right = (
+        <DiagnosisScreen
+          colors={colors}
+          diagnosis={state.diagnosis}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 7)}
+          refreshing={false}
+          error={state.error}
+        />
+      );
+      break;
+    case 'launch':
+      if (
+        state.launchInput &&
+        state.launchInput.field >= workflowInputFields(state.launchInput.workflow).length
+      ) {
+        right = state.diagnosis ? (
+          <LaunchConfirmationScreen
+            colors={colors}
+            diagnosis={state.diagnosis}
+            launchInput={state.launchInput}
+            error={state.error ?? state.status}
+            launching={launching}
+            selected={state.selection}
+            offset={state.offset}
+          />
+        ) : null;
+      } else if (state.launchInput) {
+        right = (
+          <LaunchInputScreen
+            key={`${state.launchInput.workflow.id}-${state.launchInput.field}-${state.inputValue}`}
+            colors={colors}
+            launchInput={state.launchInput}
+            error={state.error}
+            value={state.inputValue}
+            onChange={(value) => dispatch({ type: 'input-change', value })}
+            onSubmit={(value) => {
+              setTimeout(() => dispatch({ type: 'launch-input', value }), 0);
+            }}
+          />
+        );
+      } else {
+        right = <SafeText>Press n to start a run.</SafeText>;
+      }
+      break;
+    case 'live':
+      right = live ? (
+        <LiveScreen
+          colors={colors}
+          live={live}
+          detail={liveDetail}
+          offset={liveOffset}
+          visibleRows={Math.max(1, size.rows - 13)}
+        />
+      ) : null;
+      break;
+    case 'approval':
+      right =
+        state.inspection && state.approvalMessage ? (
+          <ApprovalScreen
+            colors={colors}
+            run={state.inspection.run}
+            message={state.approvalMessage}
+            previews={state.approvalPreviews}
+            previewOffset={state.approvalPreviewOffset}
+            error={state.error}
+            selected={state.selection}
+            offset={state.offset}
+            visibleRows={Math.max(1, size.rows - 16)}
+          />
+        ) : null;
+      break;
+    case 'result':
+      right = state.inspection ? (
+        <ResultScreen
+          colors={colors}
+          inspection={state.inspection}
+          selected={state.selection}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 16)}
+          {...(state.error ? { error: state.error } : {})}
+        />
+      ) : null;
+      break;
+    case 'inspect':
+      right = state.inspection ? (
+        <DetailScreen
+          colors={colors}
+          detail={state.inspection}
+          recovery={state.recovery}
+          clarifications={state.clarifications}
+          approvalMessage={state.approvalMessage}
+          previews={state.approvalPreviews}
+          previewOffset={state.approvalPreviewOffset}
+          error={state.error}
+          selected={state.selection}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 16)}
+        />
+      ) : null;
+      break;
+    case 'artifacts':
+      right = state.inspection ? (
+        <ArtifactsScreen
+          colors={colors}
+          detail={state.inspection}
+          selected={state.artifactSelected}
+          offset={state.artifactOffset}
+          content={state.artifactContent}
+          contentOffset={state.artifactContentOffset}
+          visibleRows={Math.max(1, size.rows - 12)}
+        />
+      ) : null;
+      break;
+    default:
+      right = <SafeText>Press n to start a run.</SafeText>;
+      break;
+  }
+
   return (
-    <HomeScreen
+    <StudioLayout
       colors={colors}
-      diagnosis={diagnosis}
-      status={status ?? error ?? (refreshing ? 'loading diagnosis...' : undefined)}
-      selected={homeSelected}
-      offset={homeOffset}
-      recentRuns={recentRuns}
+      state={state}
+      {...(live ? { live } : {})}
+      liveDetail={liveDetail}
+      size={size}
+      right={right}
     />
   );
 }
