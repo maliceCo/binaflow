@@ -463,9 +463,11 @@ describe('Ink shell', () => {
     await openHistory(terminal);
     await terminal.output.waitFor('Approval required');
     await terminal.output.waitFor('Approve research and continue');
-    expect(terminal.output.text()).toContain('Review the research artifact');
+    expect(stripAnsi(terminal.output.text())).toContain('Review the research');
+    expect(stripAnsi(terminal.output.text())).toContain('artifact');
     expect(terminal.output.text()).toContain('bounded research preview');
-    expect(terminal.output.text()).toContain('can modify the workspace');
+    expect(stripAnsi(terminal.output.text())).toContain('can modify the');
+    expect(stripAnsi(terminal.output.text())).toContain('workspace');
     terminal.input.push('q');
     terminal.input.push('q');
     await terminal.output.waitFor('Press n to start a run.');
@@ -713,7 +715,9 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await openHistory(terminal);
-    await terminal.output.waitFor('Mark interrupted and review recovery');
+    await terminal.output.waitFor('Mark interrupted and review');
+    expect(stripAnsi(terminal.output.text())).toContain('Mark interrupted and review');
+    expect(stripAnsi(terminal.output.text())).toContain('recovery');
     terminal.input.push('\r');
     await terminal.output.waitFor('Type YES to confirm');
     terminal.input.push('no');

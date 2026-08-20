@@ -7,6 +7,49 @@ export function SafeText({ children, ...props }: TextProps): ReactNode {
   return <Text {...props}>{sanitizeNode(children)}</Text>;
 }
 
+export function AppFrame({ children }: { children: ReactNode }): ReactNode {
+  return (
+    <Box flexDirection="column" width="100%" height="100%" borderStyle="single" paddingX={1}>
+      {children}
+    </Box>
+  );
+}
+
+export function Panel({
+  children,
+  focused = false,
+  colors,
+  width,
+  flexGrow,
+}: {
+  children: ReactNode;
+  focused?: boolean;
+  colors: boolean;
+  width?: number | string;
+  flexGrow?: number;
+}): ReactNode {
+  return (
+    <Box
+      flexDirection="column"
+      borderStyle="single"
+      {...(focused && colors ? { borderColor: 'cyan' as const } : {})}
+      {...(width !== undefined ? { width } : {})}
+      {...(flexGrow !== undefined ? { flexGrow } : {})}
+      paddingX={1}
+    >
+      {children}
+    </Box>
+  );
+}
+
+export function StatusBar({ children }: { children: ReactNode }): ReactNode {
+  return (
+    <Box borderStyle="single" flexDirection="column" paddingX={1}>
+      {children}
+    </Box>
+  );
+}
+
 export interface ScreenFrameProps {
   title: string;
   subtitle?: string;
@@ -25,7 +68,7 @@ export function ScreenFrame({
   children,
 }: ScreenFrameProps): ReactNode {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" borderStyle="single" paddingX={1}>
       {colors ? (
         <SafeText bold color="cyan">
           {title}

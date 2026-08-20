@@ -2,10 +2,11 @@ import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import type { ConfigurationDiagnosis } from '../application/config-operations.js';
 import { humanRunStatus, truncateDisplay } from '../presentation/format.js';
-import { SafeText, SelectionList } from './components.js';
+import { AppFrame, Panel, SafeText, SelectionList, StatusBar } from './components.js';
 import type { LiveState } from './execution.js';
 import type { FolderEntry, TuiState } from './model.js';
 import { workflowItems } from './screens/workflows.js';
+import { BRAND_LOGO } from './brand.js';
 
 const WELCOME_ACTIONS = [
   'Use this folder',
@@ -46,7 +47,7 @@ export function StudioLayout({
     const status = humanRunStatus(run.status);
     return `${run.id} ${run.workflowId} ${status}  ${truncateDisplay(run.objective, 24)}`;
   });
-  const paneRows = Math.max(2, size.rows - 12);
+  const paneRows = Math.max(2, size.rows - 14);
   const workflowsRows = Math.max(1, Math.floor((paneRows - 2) / 2));
   const runsRows = Math.max(1, paneRows - workflowsRows - 2);
   const footer =
@@ -54,7 +55,7 @@ export function StudioLayout({
       ? 'q cancel   Ctrl-C cancel   d activity   j/k scroll'
       : 'n new run   w folder   d status   ? help   Tab switch   q quit';
   return (
-    <Box flexDirection="column" width="100%" height="100%">
+    <AppFrame>
       <Box flexDirection="row" justifyContent="space-between">
         <Box>
           <SafeText bold>{'Binaflow  '}</SafeText>
@@ -62,10 +63,22 @@ export function StudioLayout({
             {ready ? 'Ready' : 'Needs attention'}
           </SafeText>
         </Box>
-        <SafeText dimColor>{truncateDisplay(state.cwd, Math.max(20, size.columns - 40))}</SafeText>
+        <Box>
+          <SafeText {...(colors ? { color: 'cyan' as const } : {})}>
+            {state.activeRunId ? `active ${state.activeRunId}` : 'idle'}
+          </SafeText>
+          <SafeText dimColor>
+            {' '}
+            {truncateDisplay(state.cwd, Math.max(20, size.columns - 60))}
+          </SafeText>
+        </Box>
       </Box>
       <Box flexDirection="row" flexGrow={1}>
-        <Box flexDirection="column" width={Math.max(24, Math.floor(size.columns * 0.4))}>
+        <Panel
+          colors={colors}
+          focused={state.focus !== 'detail'}
+          width={Math.max(24, Math.floor(size.columns * 0.4))}
+        >
           <SafeText bold>Workflows</SafeText>
           {workflowLabels.length > 0 ? (
             <SelectionList
@@ -88,22 +101,23 @@ export function StudioLayout({
           ) : (
             <SafeText> No runs yet.</SafeText>
           )}
-        </Box>
-        <Box
-          flexDirection="column"
+        </Panel>
+        <Panel
+          colors={colors}
+          focused={state.focus === 'detail'}
           flexGrow={1}
           width={`${Math.max(10, size.columns - Math.max(24, Math.floor(size.columns * 0.4)))}`}
         >
           {right}
-        </Box>
+        </Panel>
       </Box>
-      <Box flexDirection="column">
+      <StatusBar>
         {state.error ? <SafeText color="red">{state.error}</SafeText> : null}
         {state.status ? <SafeText color="cyan">{state.status}</SafeText> : null}
         {live && liveDetail ? <SafeText dimColor>Activity detail</SafeText> : null}
         <SafeText dimColor>{footer}</SafeText>
-      </Box>
-    </Box>
+      </StatusBar>
+    </AppFrame>
   );
 }
 
@@ -125,17 +139,22 @@ export function WelcomeScreen({
         ? 'New folder. Nothing has been written yet.'
         : 'This folder cannot be used yet.';
   return (
-    <Box flexDirection="column" padding={1}>
+    <AppFrame>
       <SafeText bold {...(colors ? { color: 'cyan' } : {})}>
         BINAFLOW
       </SafeText>
+      {BRAND_LOGO.map((line) => (
+        <SafeText key={line} bold {...(colors ? { color: 'cyan' } : {})}>
+          {line}
+        </SafeText>
+      ))}
       <SafeText>Local workflows for coding agents.</SafeText>
       <SafeText> </SafeText>
       <SafeText dimColor>{cwd}</SafeText>
       <SafeText>{status}</SafeText>
       <SafeText> </SafeText>
       <SelectionList items={WELCOME_ACTIONS} selected={selected} offset={0} visibleRows={4} />
-    </Box>
+    </AppFrame>
   );
 }
 
