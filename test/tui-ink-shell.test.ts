@@ -131,7 +131,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('Run status');
     expect(execute).toHaveBeenCalledTimes(1);
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   });
@@ -373,7 +373,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('Run status');
     expect(getStepRuns).toHaveBeenCalled();
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   });
@@ -470,7 +470,7 @@ describe('Ink shell', () => {
     expect(stripAnsi(terminal.output.text())).toContain('workspace');
     terminal.input.push('q');
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -553,7 +553,7 @@ describe('Ink shell', () => {
     terminal.input.push('q');
     await terminal.output.waitFor('Run detail');
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -660,7 +660,7 @@ describe('Ink shell', () => {
     await terminal.output.waitFor('Run status');
     expect(terminal.output.text()).toMatch(/Cancelled|cancelled/i);
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -732,7 +732,7 @@ describe('Ink shell', () => {
     expect(interruptions).toBe(1);
     expect(currentRunning.status).toBe('interrupted');
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   }, 15_000);
@@ -794,7 +794,7 @@ describe('Ink shell', () => {
     expect(terminal.output.text()).toContain('plan.plan');
     expect(terminal.output.text()).not.toContain('Return home');
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   }, 15_000);

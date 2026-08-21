@@ -12,7 +12,7 @@ import {
   runStatusColor,
 } from '../../presentation/format.js';
 import { Box } from 'ink';
-import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
+import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 
 export function detailActions(
   detail: RunInspection,
@@ -92,69 +92,73 @@ export function DetailScreen({
       status={error}
       footer="j/k move | Enter select | q back"
       colors={colors}
+      border={false}
     >
-      <SafeText bold>Summary</SafeText>
-      <Box>
-        <SafeText>Status: </SafeText>
-        {runTone === undefined ? (
-          <SafeText>{humanRunStatus(detail.run.status)}</SafeText>
+      <PaneSection title="Summary" colors={colors} first>
+        <Box>
+          <SafeText>Status: </SafeText>
+          {runTone === undefined ? (
+            <SafeText>{humanRunStatus(detail.run.status)}</SafeText>
+          ) : (
+            <SafeText color={runTone}>{humanRunStatus(detail.run.status)}</SafeText>
+          )}
+          <SafeText>{`  updated ${formatRelativeTime(detail.run.updatedAt)}`}</SafeText>
+        </Box>
+        <SafeText>{`Workflow: ${detail.run.workflowId} v${detail.run.workflowVersion}`}</SafeText>
+        <SafeText>{`Objective: ${detail.run.objective}`}</SafeText>
+        <SafeText>{`Run ID: ${detail.run.id}`}</SafeText>
+        <SafeText>{`Created: ${formatTimestamp(detail.run.createdAt)}`}</SafeText>
+        <SafeText>{`Events: ${detail.eventCount} persisted events`}</SafeText>
+        <SafeText>{`Recovery: ${recovery?.reason ?? 'Loading recovery explanation...'}`}</SafeText>
+        {clarifications.length > 0 ? (
+          <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
+        ) : null}
+        {approvalMessage ? <SafeText>{`Approval: ${approvalMessage}`}</SafeText> : null}
+        {previewLines.length > 0 ? (
+          <TextViewport
+            lines={previewLines}
+            offset={previewOffset}
+            visibleRows={Math.max(1, Math.min(8, visibleRows))}
+          />
+        ) : null}
+        <SafeText>
+          {`Artifacts: ${detail.artifacts.length} reference${detail.artifacts.length === 1 ? '' : 's'}${
+            detail.artifacts.length > 0 ? ` (${formatBytes(artifactBytes)})` : ''
+          }`}
+        </SafeText>
+      </PaneSection>
+
+      <PaneSection title="Steps" colors={colors}>
+        {detail.steps.length === 0 ? (
+          <SafeText dimColor>No step records for this run.</SafeText>
         ) : (
-          <SafeText color={runTone}>{humanRunStatus(detail.run.status)}</SafeText>
+          detail.steps.map((step) => {
+            const stepTone = colors ? runStatusColor(step.status) : undefined;
+            const suffix = step.error ? `  - ${step.error.message}` : '';
+            return (
+              <Box key={step.stepId}>
+                <SafeText>{`  ${step.stepId}  `}</SafeText>
+                {stepTone === undefined ? (
+                  <SafeText>{humanStepStatus(step.status)}</SafeText>
+                ) : (
+                  <SafeText color={stepTone}>{humanStepStatus(step.status)}</SafeText>
+                )}
+                {suffix ? <SafeText>{suffix}</SafeText> : null}
+              </Box>
+            );
+          })
         )}
-        <SafeText>{`  ·  updated ${formatRelativeTime(detail.run.updatedAt)}`}</SafeText>
-      </Box>
-      <SafeText>{`Workflow: ${detail.run.workflowId} v${detail.run.workflowVersion}`}</SafeText>
-      <SafeText>{`Objective: ${detail.run.objective}`}</SafeText>
-      <SafeText>{`Run ID: ${detail.run.id}`}</SafeText>
-      <SafeText>{`Created: ${formatTimestamp(detail.run.createdAt)}`}</SafeText>
-      <SafeText>{`Events: ${detail.eventCount} persisted events`}</SafeText>
-      <SafeText>{`Recovery: ${recovery?.reason ?? 'Loading recovery explanation...'}`}</SafeText>
-      {clarifications.length > 0 ? (
-        <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
-      ) : null}
-      {approvalMessage ? <SafeText>{`Approval: ${approvalMessage}`}</SafeText> : null}
-      {previewLines.length > 0 ? (
-        <TextViewport
-          lines={previewLines}
-          offset={previewOffset}
-          visibleRows={Math.max(1, Math.min(8, visibleRows))}
+      </PaneSection>
+
+      <PaneSection title="Actions" colors={colors}>
+        <SelectionList
+          items={actions}
+          selected={selected}
+          offset={offset}
+          visibleRows={visibleRows}
         />
-      ) : null}
-      <SafeText>
-        {`Artifacts: ${detail.artifacts.length} reference${detail.artifacts.length === 1 ? '' : 's'}${
-          detail.artifacts.length > 0 ? ` (${formatBytes(artifactBytes)})` : ''
-        }`}
-      </SafeText>
-
-      <SafeText bold>Steps</SafeText>
-      {detail.steps.length === 0 ? (
-        <SafeText dimColor>No step records for this run.</SafeText>
-      ) : (
-        detail.steps.map((step) => {
-          const stepTone = colors ? runStatusColor(step.status) : undefined;
-          const suffix = step.error ? `  — ${step.error.message}` : '';
-          return (
-            <Box key={step.stepId}>
-              <SafeText>{`  ${step.stepId}  `}</SafeText>
-              {stepTone === undefined ? (
-                <SafeText>{humanStepStatus(step.status)}</SafeText>
-              ) : (
-                <SafeText color={stepTone}>{humanStepStatus(step.status)}</SafeText>
-              )}
-              {suffix ? <SafeText>{suffix}</SafeText> : null}
-            </Box>
-          );
-        })
-      )}
-
-      <SafeText bold>Actions</SafeText>
-      <SelectionList
-        items={actions}
-        selected={selected}
-        offset={offset}
-        visibleRows={visibleRows}
-      />
-      {selectedAction ? <SafeText dimColor>{detailActionHelp(selectedAction)}</SafeText> : null}
+        {selectedAction ? <SafeText dimColor>{detailActionHelp(selectedAction)}</SafeText> : null}
+      </PaneSection>
     </ScreenFrame>
   );
 }

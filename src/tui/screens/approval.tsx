@@ -1,7 +1,7 @@
 import type { ArtifactContentView } from '../../application/operations.js';
 import type { WorkflowRun } from '../../core/run.js';
 import { humanRunStatus } from '../../presentation/format.js';
-import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
+import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 
 export const APPROVAL_ACTIONS = [
   'Approve research and continue',
@@ -48,28 +48,37 @@ export function ApprovalScreen({
       status={error}
       footer="j/k move | Enter select | q leave waiting"
       colors={colors}
+      border={false}
     >
-      <SafeText>{`Status: ${humanRunStatus(run.status)}`}</SafeText>
-      <SafeText>{`Workflow: ${run.workflowId} v${run.workflowVersion}`}</SafeText>
-      <SafeText>{`Objective: ${run.objective}`}</SafeText>
-      <SafeText>{`Run ID: ${run.id}`}</SafeText>
-      <SafeText>{`Approval: ${message}`}</SafeText>
-      <SafeText>WARNING: approving continues the workflow and can modify the workspace.</SafeText>
-      {previewLines.length > 0 ? (
-        <TextViewport
-          lines={previewLines}
-          offset={previewOffset}
-          visibleRows={Math.max(1, Math.min(8, visibleRows))}
+      <PaneSection title="Approval" colors={colors} first>
+        <SafeText>{`Status: ${humanRunStatus(run.status)}`}</SafeText>
+        <SafeText>{`Workflow: ${run.workflowId} v${run.workflowVersion}`}</SafeText>
+        <SafeText>{`Objective: ${run.objective}`}</SafeText>
+        <SafeText>{`Run ID: ${run.id}`}</SafeText>
+        <SafeText>{`Request: ${message}`}</SafeText>
+        <SafeText {...(colors ? { color: 'red' as const, bold: true } : { bold: true })}>
+          WARNING: approving continues the workflow and can modify the workspace.
+        </SafeText>
+      </PaneSection>
+      <PaneSection title="Preview" colors={colors}>
+        {previewLines.length > 0 ? (
+          <TextViewport
+            lines={previewLines}
+            offset={previewOffset}
+            visibleRows={Math.max(1, Math.min(8, visibleRows))}
+          />
+        ) : (
+          <SafeText dimColor>No approval previews available.</SafeText>
+        )}
+      </PaneSection>
+      <PaneSection title="Decision" colors={colors}>
+        <SelectionList
+          items={[...APPROVAL_ACTIONS]}
+          selected={selected}
+          offset={offset}
+          visibleRows={visibleRows}
         />
-      ) : (
-        <SafeText>No approval previews available.</SafeText>
-      )}
-      <SelectionList
-        items={[...APPROVAL_ACTIONS]}
-        selected={selected}
-        offset={offset}
-        visibleRows={visibleRows}
-      />
+      </PaneSection>
     </ScreenFrame>
   );
 }

@@ -1,6 +1,7 @@
 import { TextInput } from '@inkjs/ui';
+import { Box } from 'ink';
 import type { ConfigurationDiagnosis } from '../../application/config-operations.js';
-import { ScreenFrame, SafeText, SelectionList } from '../components.js';
+import { PaneSection, ScreenFrame, SafeText, SelectionList } from '../components.js';
 import {
   configuredProfiles,
   isWriteCapable,
@@ -31,18 +32,23 @@ export function LaunchInputScreen({
       status={error}
       footer="Type a value | Enter submit | q cancel"
       colors={colors}
+      border={false}
     >
-      <SafeText>
-        {field}
-        {launchInput.workflow.input.required.includes(field) ? ' (required)' : ' (optional)'}
-      </SafeText>
-      <SafeText>&gt; </SafeText>
-      <TextInput
-        key={`${launchInput.workflow.id}-${launchInput.field}`}
-        defaultValue={sanitizeInkText(value)}
-        onChange={(next) => onChange(sanitizeInkText(next))}
-        onSubmit={(next) => onSubmit(sanitizeInkText(next))}
-      />
+      <PaneSection title="Input" colors={colors} first>
+        <SafeText>
+          {field}
+          {launchInput.workflow.input.required.includes(field) ? ' (required)' : ' (optional)'}
+        </SafeText>
+        <Box>
+          <SafeText>&gt; </SafeText>
+          <TextInput
+            key={`${launchInput.workflow.id}-${launchInput.field}`}
+            defaultValue={sanitizeInkText(value)}
+            onChange={(next) => onChange(sanitizeInkText(next))}
+            onSubmit={(next) => onSubmit(sanitizeInkText(next))}
+          />
+        </Box>
+      </PaneSection>
     </ScreenFrame>
   );
 }
@@ -71,26 +77,38 @@ export function LaunchConfirmationScreen({
       status={error ?? (launching ? 'Launching...' : undefined)}
       footer="j/k move | Enter select | q cancel"
       colors={colors}
+      border={false}
     >
-      <SafeText>Workflow: {launchInput.workflow.id}</SafeText>
-      <SafeText>Description: {launchInput.workflow.description}</SafeText>
-      <SafeText>Objective: {launchInput.values.objective ?? '(missing)'}</SafeText>
-      {launchInput.workflow.experimental ? <SafeText>Experimental workflow</SafeText> : null}
-      {Object.values(profiles).some(isWriteCapable) ? (
-        <SafeText>WARNING: this workflow can modify the workspace.</SafeText>
-      ) : null}
-      {permissionLines.map((line) => (
-        <SafeText key={line}>{line}</SafeText>
-      ))}
-      <SafeText>
-        Steps: {launchInput.workflow.steps.map((step) => `${step.id} (${step.profile})`).join(', ')}
-      </SafeText>
-      <SelectionList
-        items={['Confirm and launch', 'Edit objective', 'Cancel']}
-        selected={selected}
-        offset={offset}
-        visibleRows={3}
-      />
+      <PaneSection title="Review" colors={colors} first>
+        <SafeText>Workflow: {launchInput.workflow.id}</SafeText>
+        <SafeText>Description: {launchInput.workflow.description}</SafeText>
+        <SafeText>Objective: {launchInput.values.objective ?? '(missing)'}</SafeText>
+        {launchInput.workflow.experimental ? (
+          <SafeText {...(colors ? { color: 'yellow' as const } : {})}>
+            Experimental workflow
+          </SafeText>
+        ) : null}
+        {Object.values(profiles).some(isWriteCapable) ? (
+          <SafeText {...(colors ? { color: 'red' as const, bold: true } : { bold: true })}>
+            WARNING: this workflow can modify the workspace.
+          </SafeText>
+        ) : null}
+        {permissionLines.map((line) => (
+          <SafeText key={line}>{line}</SafeText>
+        ))}
+        <SafeText>
+          Steps:{' '}
+          {launchInput.workflow.steps.map((step) => `${step.id} (${step.profile})`).join(', ')}
+        </SafeText>
+      </PaneSection>
+      <PaneSection title="Action" colors={colors}>
+        <SelectionList
+          items={['Confirm and launch', 'Edit objective', 'Cancel']}
+          selected={selected}
+          offset={offset}
+          visibleRows={3}
+        />
+      </PaneSection>
     </ScreenFrame>
   );
 }

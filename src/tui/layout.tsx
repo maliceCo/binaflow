@@ -2,8 +2,17 @@ import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import type { ConfigurationDiagnosis } from '../application/config-operations.js';
 import { humanRunStatus, truncateDisplay } from '../presentation/format.js';
-import { AppFrame, Panel, SafeText, SelectionList, StatusBar } from './components.js';
+import {
+  AppFrame,
+  Footer,
+  Panel,
+  PaneSection,
+  SafeText,
+  SelectionList,
+  StatusBar,
+} from './components.js';
 import type { LiveState } from './execution.js';
+import { workflowInputFields } from './launch.js';
 import { visibleFolderEntries, type FolderEntry, type TuiState } from './model.js';
 import { workflowItems } from './screens/workflows.js';
 import { BRAND_LOGO } from './brand.js';
@@ -48,12 +57,8 @@ export function StudioLayout({
     return `${run.id} ${run.workflowId} ${status}  ${truncateDisplay(run.objective, 24)}`;
   });
   const paneRows = Math.max(2, size.rows - 14);
-  const workflowsRows = Math.max(1, Math.floor((paneRows - 2) / 2));
-  const runsRows = Math.max(1, paneRows - workflowsRows - 2);
-  const footer =
-    state.detail === 'live'
-      ? 'q cancel   Ctrl-C cancel   d activity   j/k scroll'
-      : 'n new run   w folder   d status   ? help   Tab switch   q quit';
+  const workflowsRows = Math.max(1, Math.floor((paneRows - 4) / 2));
+  const runsRows = Math.max(1, paneRows - workflowsRows - 4);
   return (
     <AppFrame>
       <Box flexDirection="row" justifyContent="space-between">
@@ -74,33 +79,36 @@ export function StudioLayout({
         </Box>
       </Box>
       <Box flexDirection="row" flexGrow={1}>
-        <Panel
-          colors={colors}
-          focused={state.focus !== 'detail'}
-          width={Math.max(24, Math.floor(size.columns * 0.4))}
-        >
-          <SafeText bold>Workflows</SafeText>
-          {workflowLabels.length > 0 ? (
-            <SelectionList
-              items={workflowLabels}
-              selected={state.workflowSelected}
-              offset={state.workflowOffset}
-              visibleRows={workflowsRows}
-            />
-          ) : (
-            <SafeText> Loading workflows...</SafeText>
-          )}
-          <SafeText bold>Runs</SafeText>
-          {runLabels.length > 0 ? (
-            <SelectionList
-              items={runLabels}
-              selected={state.runSelected}
-              offset={state.runOffset}
-              visibleRows={runsRows}
-            />
-          ) : (
-            <SafeText> No runs yet.</SafeText>
-          )}
+        <Panel colors={colors} width={Math.max(24, Math.floor(size.columns * 0.4))}>
+          <PaneSection
+            title={state.focus === 'workflows' ? '> Workflows' : '  Workflows'}
+            colors={colors}
+            first
+          >
+            {workflowLabels.length > 0 ? (
+              <SelectionList
+                items={workflowLabels}
+                selected={state.workflowSelected}
+                offset={state.workflowOffset}
+                visibleRows={workflowsRows}
+              />
+            ) : (
+              <SafeText dimColor>Loading workflows...</SafeText>
+            )}
+          </PaneSection>
+          <SafeText dimColor>---</SafeText>
+          <PaneSection title={state.focus === 'runs' ? '> Runs' : '  Runs'} colors={colors}>
+            {runLabels.length > 0 ? (
+              <SelectionList
+                items={runLabels}
+                selected={state.runSelected}
+                offset={state.runOffset}
+                visibleRows={runsRows}
+              />
+            ) : (
+              <SafeText dimColor>No runs yet.</SafeText>
+            )}
+          </PaneSection>
         </Panel>
         <Panel
           colors={colors}
@@ -115,10 +123,67 @@ export function StudioLayout({
         {state.error ? <SafeText color="red">{state.error}</SafeText> : null}
         {state.status ? <SafeText color="cyan">{state.status}</SafeText> : null}
         {live && liveDetail ? <SafeText dimColor>Activity detail</SafeText> : null}
-        <SafeText dimColor>{footer}</SafeText>
+        <Footer colors={colors} hints={footerHints(state)} />
       </StatusBar>
     </AppFrame>
   );
+}
+
+function footerHints(state: TuiState): Array<[string, string]> {
+  if (state.detail === 'live')
+    return [
+      ['q', 'cancel'],
+      ['d', 'activity'],
+      ['j/k', 'scroll'],
+    ];
+  if (state.detail === 'launch') {
+    const inputActive =
+      state.launchInput &&
+      state.launchInput.field < workflowInputFields(state.launchInput.workflow).length;
+    return inputActive
+      ? [
+          ['Enter', 'submit'],
+          ['q', 'cancel'],
+        ]
+      : [
+          ['j/k', 'move'],
+          ['Enter', 'select'],
+          ['q', 'cancel'],
+        ];
+  }
+  if (state.detail === 'approval')
+    return [
+      ['j/k', 'move'],
+      ['Enter', 'select'],
+      ['q', 'leave waiting'],
+    ];
+  if (state.detail === 'artifacts')
+    return [
+      ['j/k', 'move'],
+      ['Enter', 'preview'],
+      ['q', 'back'],
+    ];
+  if (state.detail === 'diagnosis')
+    return [
+      ['j/k', 'scroll'],
+      ['r', 'refresh'],
+      ['q', 'back'],
+    ];
+  if (state.detail === 'result' || state.detail === 'inspect') {
+    return [
+      ['j/k', 'move'],
+      ['Enter', 'select'],
+      ['q', 'back'],
+    ];
+  }
+  return [
+    ['n', 'new run'],
+    ['w', 'folder'],
+    ['d', 'status'],
+    ['?', 'help'],
+    ['Tab', 'switch'],
+    ['q', 'quit'],
+  ];
 }
 
 export function WelcomeScreen({
@@ -258,6 +323,45 @@ export function AboutOverlay({ colors }: { colors: boolean }) {
       <SafeText>Research approval is experimental and explicit.</SafeText>
       <SafeText> </SafeText>
       <SafeText dimColor>Press q to return to the welcome screen.</SafeText>
+    </Box>
+  );
+}
+
+export function IdleDetail({
+  colors,
+  diagnosis,
+}: {
+  colors: boolean;
+  diagnosis?: ConfigurationDiagnosis;
+}) {
+  const ready = diagnosis?.ready === true;
+  const configValid = diagnosis?.configValid === true;
+  const launchable = diagnosis?.piCommandLaunchable === true;
+  const errors = diagnosis?.errors ?? [];
+  return (
+    <Box flexDirection="column">
+      <SafeText bold {...(colors ? { color: 'cyan' as const } : {})}>
+        Workspace status
+      </SafeText>
+      <SafeText dimColor>Run `d` for the full configuration diagnosis.</SafeText>
+      <SafeText>Config: {configValid ? 'valid' : 'needs attention'}</SafeText>
+      <SafeText {...(colors ? { color: ready ? ('green' as const) : ('yellow' as const) } : {})}>
+        Ready: {ready ? 'yes' : 'no'}
+      </SafeText>
+      <SafeText
+        {...(colors ? { color: launchable ? ('green' as const) : ('yellow' as const) } : {})}
+      >
+        Pi launchable: {launchable ? 'yes' : 'no'}
+      </SafeText>
+      {errors.slice(0, 2).map((error) => (
+        <SafeText key={error} {...(colors ? { color: 'red' as const } : {})}>
+          Error: {error}
+        </SafeText>
+      ))}
+      {!diagnosis ? <SafeText dimColor>Loading diagnosis...</SafeText> : null}
+      <Box marginTop={1}>
+        <SafeText dimColor>Select a workflow on the left, then press Enter to start.</SafeText>
+      </Box>
     </Box>
   );
 }

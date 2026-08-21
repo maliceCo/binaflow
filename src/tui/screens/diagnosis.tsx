@@ -45,6 +45,7 @@ export function DiagnosisScreen({
       status={refreshing ? 'refreshing diagnosis...' : (error ?? '')}
       footer="j/k or arrows scroll | PageUp/PageDown page | r refresh | q back"
       colors={colors}
+      border={false}
     >
       <TextViewport lines={diagnosisLines(diagnosis)} offset={offset} visibleRows={visibleRows} />
       {error ? <StatusMessage message={error} error /> : null}

@@ -9,7 +9,14 @@ export function SafeText({ children, ...props }: TextProps): ReactNode {
 
 export function AppFrame({ children }: { children: ReactNode }): ReactNode {
   return (
-    <Box flexDirection="column" width="100%" height="100%" borderStyle="single" paddingX={1}>
+    <Box
+      flexDirection="column"
+      width="100%"
+      height="100%"
+      borderStyle="single"
+      paddingX={1}
+      gap={1}
+    >
       {children}
     </Box>
   );
@@ -44,7 +51,7 @@ export function Panel({
 
 export function StatusBar({ children }: { children: ReactNode }): ReactNode {
   return (
-    <Box borderStyle="single" flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1}>
       {children}
     </Box>
   );
@@ -56,6 +63,7 @@ export interface ScreenFrameProps {
   status?: string | undefined;
   footer: string;
   colors: boolean;
+  border?: boolean;
   children: ReactNode;
 }
 
@@ -65,29 +73,75 @@ export function ScreenFrame({
   status,
   footer,
   colors,
+  border = true,
   children,
 }: ScreenFrameProps): ReactNode {
   return (
-    <Box flexDirection="column" borderStyle="single" paddingX={1}>
-      {colors ? (
-        <SafeText bold color="cyan">
-          {title}
-        </SafeText>
-      ) : (
-        <SafeText bold>{title}</SafeText>
-      )}
+    <Box
+      flexDirection="column"
+      {...(border ? { borderStyle: 'single' as const, paddingX: 1 } : {})}
+    >
+      <SafeText bold {...(colors ? { color: 'cyan' as const } : {})}>
+        {title}
+      </SafeText>
       {subtitle ? <SafeText dimColor>{subtitle}</SafeText> : null}
-      <Text> </Text>
-      {children}
+      <Box flexDirection="column" marginTop={1}>
+        {children}
+      </Box>
       {status ? (
-        colors ? (
-          <SafeText color="yellow">{`Status: ${status}`}</SafeText>
-        ) : (
-          <SafeText>{`Status: ${status}`}</SafeText>
-        )
+        <Box marginTop={1}>
+          <SafeText {...(colors ? { color: 'yellow' as const } : {})}>
+            {`Status: ${status}`}
+          </SafeText>
+        </Box>
       ) : null}
-      <Text> </Text>
-      <SafeText dimColor>{footer}</SafeText>
+      {border ? (
+        <Box marginTop={1}>
+          <SafeText dimColor>{footer}</SafeText>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+export function PaneSection({
+  title,
+  colors,
+  first = false,
+  children,
+}: {
+  title: string;
+  colors: boolean;
+  first?: boolean;
+  children: ReactNode;
+}): ReactNode {
+  return (
+    <Box flexDirection="column" {...(!first ? { marginTop: 1 } : {})}>
+      <SafeText bold {...(colors ? { color: 'cyan' as const } : {})}>
+        {title}
+      </SafeText>
+      {children}
+    </Box>
+  );
+}
+
+export function Footer({
+  colors,
+  hints,
+}: {
+  colors: boolean;
+  hints: Array<[string, string]>;
+}): ReactNode {
+  return (
+    <Box flexDirection="row" gap={2} flexWrap="wrap">
+      {hints.map(([key, label]) => (
+        <Box key={`${key}-${label}`}>
+          <SafeText bold {...(colors ? { color: 'cyan' as const } : {})}>
+            {key}
+          </SafeText>
+          <SafeText dimColor>{` ${label}`}</SafeText>
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -111,9 +165,10 @@ export function SelectionList({
       {offset > 0 ? <SafeText dimColor>^ previous items</SafeText> : null}
       {rows.map((item, index) => {
         const itemIndex = offset + index;
+        const selectedItem = itemIndex === selected;
         return (
-          <SafeText key={`${itemIndex}-${item}`}>
-            {`${itemIndex === selected ? '> ' : '  '}${item}`}
+          <SafeText key={`${itemIndex}-${item}`} inverse={selectedItem} bold={selectedItem}>
+            {`${selectedItem ? '> ' : '  '}${item}`}
           </SafeText>
         );
       })}
@@ -156,7 +211,7 @@ export function MinimumSizeFallback(): ReactNode {
     <Box flexDirection="column">
       <SafeText>Binaflow</SafeText>
       <SafeText>Terminal too small for this screen.</SafeText>
-      <SafeText>Resize to at least 56 columns x 12 rows.</SafeText>
+      <SafeText>Resize to at least 80 columns x 24 rows.</SafeText>
       <SafeText>Press q to quit.</SafeText>
     </Box>
   );

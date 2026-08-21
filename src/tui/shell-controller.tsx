@@ -15,7 +15,7 @@ import type { RunInspection, RunRecoveryExplanation } from '../application/opera
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationService } from '../application/service.js';
 import { explainUserError } from '../presentation/format.js';
-import { MinimumSizeFallback, SafeText } from './components.js';
+import { MinimumSizeFallback } from './components.js';
 import {
   applyStepSnapshot,
   createLiveActivityBuffer,
@@ -42,6 +42,7 @@ import {
   FolderConfirmScreen,
   FolderPickerScreen,
   HelpOverlay,
+  IdleDetail,
   StudioLayout,
   WelcomeScreen,
 } from './layout.js';
@@ -1258,7 +1259,12 @@ export function InkShellController({
           />
         );
       } else {
-        right = <SafeText>Press n to start a run.</SafeText>;
+        right = (
+          <IdleDetail
+            colors={colors}
+            {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})}
+          />
+        );
       }
       break;
     case 'live':
@@ -1331,7 +1337,9 @@ export function InkShellController({
       ) : null;
       break;
     default:
-      right = <SafeText>Press n to start a run.</SafeText>;
+      right = (
+        <IdleDetail colors={colors} {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})} />
+      );
       break;
   }
 

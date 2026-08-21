@@ -1,7 +1,7 @@
 import type { RunInspection } from '../../application/operations.js';
 import type { StepRun } from '../../core/run.js';
 import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
-import { ScreenFrame, SafeText, SelectionList } from '../components.js';
+import { PaneSection, ScreenFrame, SafeText, SelectionList } from '../components.js';
 import { sumStepCosts, sumStepTokens } from '../execution.js';
 
 function stepMarker(status: StepRun['status']): string {
@@ -54,30 +54,35 @@ export function ResultScreen({
       status={error}
       footer={artifactItems.length > 0 ? 'j/k move | Enter browse artifacts | q back' : 'q back'}
       colors={colors}
+      border={false}
     >
-      <SafeText>Status: {humanRunStatus(run.status)}</SafeText>
-      <SafeText>Workflow: {run.workflowId}</SafeText>
-      <SafeText>Duration: {duration}</SafeText>
-      <SafeText>Usage: {tokens === undefined ? '-' : `${tokens} tokens`}</SafeText>
-      <SafeText>Cost: {cost === undefined ? '-' : `$${cost.toFixed(4)}`}</SafeText>
-      <SafeText>Checklist:</SafeText>
-      {inspection.steps.map((step) => (
-        <SafeText key={step.stepId}>
-          {'  '}
-          {stepMarker(step.status)} {step.stepId} {step.profile}
-        </SafeText>
-      ))}
-      <SafeText>Artifacts:</SafeText>
-      {artifactItems.length > 0 ? (
-        <SelectionList
-          items={artifactItems}
-          selected={selected}
-          offset={offset}
-          visibleRows={Math.max(1, Math.min(visibleRows, artifactItems.length))}
-        />
-      ) : (
-        <SafeText> None</SafeText>
-      )}
+      <PaneSection title="Summary" colors={colors} first>
+        <SafeText>Status: {humanRunStatus(run.status)}</SafeText>
+        <SafeText>Workflow: {run.workflowId}</SafeText>
+        <SafeText>Duration: {duration}</SafeText>
+        <SafeText>Usage: {tokens === undefined ? '-' : `${tokens} tokens`}</SafeText>
+        <SafeText>Cost: {cost === undefined ? '-' : `$${cost.toFixed(4)}`}</SafeText>
+      </PaneSection>
+      <PaneSection title="Checklist" colors={colors}>
+        {inspection.steps.map((step) => (
+          <SafeText key={step.stepId}>
+            {'  '}
+            {stepMarker(step.status)} {step.stepId} {step.profile}
+          </SafeText>
+        ))}
+      </PaneSection>
+      <PaneSection title="Artifacts" colors={colors}>
+        {artifactItems.length > 0 ? (
+          <SelectionList
+            items={artifactItems}
+            selected={selected}
+            offset={offset}
+            visibleRows={Math.max(1, Math.min(visibleRows, artifactItems.length))}
+          />
+        ) : (
+          <SafeText dimColor>None</SafeText>
+        )}
+      </PaneSection>
     </ScreenFrame>
   );
 }

@@ -239,7 +239,7 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('Profile permissions or settings changed');
     expect(execute).not.toHaveBeenCalled();
     terminal.input.push('q');
-    await terminal.output.waitFor('Press n to start a run.');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   });

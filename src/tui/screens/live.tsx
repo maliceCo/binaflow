@@ -1,7 +1,7 @@
 import { Box } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
-import { ScreenFrame, SafeText, TextViewport } from '../components.js';
+import { PaneSection, ScreenFrame, SafeText, TextViewport } from '../components.js';
 import type { LiveState, LiveStep } from '../execution.js';
 
 function stepMarker(status: LiveStep['status']): string {
@@ -77,25 +77,31 @@ export function LiveScreen({
       }
       footer="q cancel | Ctrl-C cancel | d toggle activity detail | j/k scroll"
       colors={colors}
+      border={false}
     >
-      <SafeText>Run: {live.run.id}</SafeText>
-      <SafeText>Workflow: {live.workflow.id}</SafeText>
-      <SafeText>Status: {humanRunStatus(live.run.status)}</SafeText>
-      <SafeText>
-        Elapsed: {formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))}
-      </SafeText>
-      <SafeText>Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`}</SafeText>
-      <SafeText>Cost: {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}</SafeText>
-      <SafeText>Checklist:</SafeText>
-      {live.steps.map((step) => (
-        <StepChecklistRow key={step.id} step={step} colors={colors} />
-      ))}
-      <SafeText>Activity:</SafeText>
-      <TextViewport
-        lines={displayed.length > 0 ? displayed : ['Waiting for agent activity...']}
-        offset={offset}
-        visibleRows={visibleRows}
-      />
+      <PaneSection title="Run" colors={colors} first>
+        <SafeText>{`${live.run.id}  ${live.workflow.id}`}</SafeText>
+        <SafeText>
+          Status: {humanRunStatus(live.run.status)} Elapsed:{' '}
+          {formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))}
+        </SafeText>
+        <SafeText>
+          Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`} Cost:{' '}
+          {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}
+        </SafeText>
+      </PaneSection>
+      <PaneSection title="Checklist" colors={colors}>
+        {live.steps.map((step) => (
+          <StepChecklistRow key={step.id} step={step} colors={colors} />
+        ))}
+      </PaneSection>
+      <PaneSection title="Activity" colors={colors}>
+        <TextViewport
+          lines={displayed.length > 0 ? displayed : ['Waiting for agent activity...']}
+          offset={offset}
+          visibleRows={visibleRows}
+        />
+      </PaneSection>
     </ScreenFrame>
   );
 }
