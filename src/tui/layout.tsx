@@ -140,9 +140,6 @@ export function WelcomeScreen({
         : 'This folder cannot be used yet.';
   return (
     <AppFrame>
-      <SafeText bold {...(colors ? { color: 'cyan' } : {})}>
-        BINAFLOW
-      </SafeText>
       {BRAND_LOGO.map((line) => (
         <SafeText key={line} bold {...(colors ? { color: 'cyan' } : {})}>
           {line}
