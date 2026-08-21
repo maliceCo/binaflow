@@ -30,7 +30,7 @@ export function LaunchInputScreen({
     <ScreenFrame
       title={`${launchInput.workflow.id} input`}
       status={error}
-      footer="Type a value | Enter submit | q cancel"
+      footer="Type a value | Enter submit | Esc cancel"
       colors={colors}
       border={false}
     >

@@ -79,7 +79,7 @@ export function SetupWizardScreen({
       title="Setup wizard"
       subtitle={`Step ${step} of 4: ${step === 2 ? 'planner' : 'builder'}`}
       status={error}
-      footer="Type a value | Enter submit | q cancel"
+      footer="Type a value | Enter submit | Esc cancel"
       colors={colors}
     >
       <SafeText>{field?.title ?? ''}</SafeText>

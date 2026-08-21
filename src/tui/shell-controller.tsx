@@ -883,6 +883,28 @@ export function InkShellController({
       return;
     }
 
+    const launchInputActive =
+      current.detail === 'launch' &&
+      current.launchInput !== undefined &&
+      current.launchInput.field < workflowInputFields(current.launchInput.workflow).length;
+    const setupInputActive =
+      current.overlay === 'setup' &&
+      (current.setupStep === 2 || current.setupStep === 3) &&
+      setupChoices(current.setupField, current.setupModels ?? [], current.setupValues).length === 0;
+    const textInputActive =
+      launchInputActive ||
+      setupInputActive ||
+      current.overlay === 'recovery-confirm' ||
+      current.overlay === 'rejection-feedback';
+    if (textInputActive) {
+      if (key.escape) {
+        if (launchInputActive) dispatch({ type: 'launch-cancel' });
+        else if (setupInputActive) dispatch({ type: 'setup-cancel' });
+        else dispatch({ type: 'close-detail-prompt' });
+      }
+      return;
+    }
+
     if (current.overlay !== 'none') {
       const direction = input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
       switch (current.overlay) {
@@ -916,7 +938,8 @@ export function InkShellController({
           const parent = entries.find((entry) => entry.isParent);
           const directories = entries.filter((entry) => !entry.isParent);
           const useIndex = parent ? 1 : 0;
-          if (input === 'q' || key.escape) dispatch({ type: 'folder-picker-back' });
+          if (key.escape || (input === 'q' && current.folderFilter.length === 0))
+            dispatch({ type: 'folder-picker-back' });
           else if (input === 'h') {
             dispatch({ type: 'folder-picker-path', path: dirname(current.folderPickerPath) });
           } else if (input === '/') dispatch({ type: 'folder-picker-path', path: '/' });

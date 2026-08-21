@@ -10,5 +10,6 @@ describe('Ink text safety', () => {
     expect(sanitizeInkText(`model\u0007name`)).toBe('modelname');
     expect(sanitizeInkText(`error:\u001b[31mboom\u001b[0m`)).toBe('error:boom');
     expect(sanitizeInkText(`artifact\u001b]0;x\u0007 body`)).toBe('artifact body');
+    expect(sanitizeInkText('line one\nline two')).toBe('line one\nline two');
   });
 });

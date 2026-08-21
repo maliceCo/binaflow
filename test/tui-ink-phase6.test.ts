@@ -192,8 +192,8 @@ describe('Ink setup and launch safety', () => {
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
     await terminal.output.waitFor('objective is required');
-    terminal.input.push('Implement the change');
-    await terminal.output.waitFor('Implement the change');
+    terminal.input.push('qImplement the change');
+    await terminal.output.waitFor('qImplement the change');
     terminal.input.push('\r');
     await terminal.output.waitFor('WARNING: this workflow can modify');
     expect(execute).not.toHaveBeenCalled();

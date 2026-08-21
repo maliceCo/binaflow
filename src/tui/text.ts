@@ -7,7 +7,7 @@ export function sanitizeInkText(value: string): string {
   return Array.from(withoutSequences)
     .filter((character) => {
       const code = character.codePointAt(0) ?? 0;
-      return code >= 32 && code !== 127 && (code < 128 || code > 159);
+      return (code === 10 || code >= 32) && code !== 127 && (code < 128 || code > 159);
     })
     .join('');
 }

@@ -19,7 +19,7 @@ export function RecoveryConfirmScreen({
     <ScreenFrame
       title="Recover interrupted run"
       status={error}
-      footer="Type YES | Enter confirm | q cancel"
+      footer="Type YES | Enter confirm | Esc cancel"
       colors={colors}
     >
       <SafeText>Type YES to confirm recovery. This only marks the run interrupted.</SafeText>
@@ -50,7 +50,7 @@ export function RejectionFeedbackScreen({
     <ScreenFrame
       title="Reject research"
       status={error}
-      footer="Type feedback | Enter submit | q cancel"
+      footer="Type feedback | Enter submit | Esc cancel"
       colors={colors}
     >
       <SafeText>Feedback for another research iteration:</SafeText>

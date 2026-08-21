@@ -32,6 +32,7 @@ const KEYMAP = [
   'j / k / arrows  move the selection or scroll',
   'Enter  activate the selected item',
   'q / Esc  quit when idle, cancel while live, close an overlay',
+  'Esc  cancel text input; q is entered as text',
   'Ctrl-C  cancel while live, quit when idle',
 ];
 
@@ -143,7 +144,7 @@ function footerHints(state: TuiState): Array<[string, string]> {
     return inputActive
       ? [
           ['Enter', 'submit'],
-          ['q', 'cancel'],
+          ['Esc', 'cancel'],
         ]
       : [
           ['j/k', 'move'],
@@ -205,11 +206,9 @@ export function WelcomeScreen({
         : 'This folder cannot be used yet.';
   return (
     <AppFrame>
-      {BRAND_LOGO.map((line) => (
-        <SafeText key={line} bold {...(colors ? { color: 'cyan' } : {})}>
-          {line}
-        </SafeText>
-      ))}
+      <SafeText bold {...(colors ? { color: 'cyan' } : {})}>
+        {BRAND_LOGO.join('\n')}
+      </SafeText>
       <SafeText>Local workflows for coding agents.</SafeText>
       <SafeText> </SafeText>
       <SafeText dimColor>{cwd}</SafeText>
