@@ -73,14 +73,14 @@ describe('Ink shell', () => {
       errorOutput: terminal.output as unknown as NodeJS.WriteStream,
       env: { NO_COLOR: '' },
     });
-    await terminal.output.waitFor('BINAFLOW');
+    await terminal.output.waitFor('Use this folder');
     await terminal.input.waitUntilReady();
     expect(calls).toBe(1);
     terminal.input.push('q');
     release(result);
     await running;
     await new Promise((resolve) => setImmediate(resolve));
-    expect(terminal.output.text()).toContain('BINAFLOW');
+    expect(terminal.output.text()).toContain('Use this folder');
   });
 
   it('keeps an attached run live through activity, cancellation, and completion', async () => {
@@ -889,7 +889,7 @@ function createTerminal(): { input: FakeInput; output: FakeOutput } {
 }
 
 async function waitForHomeReady(terminal: ReturnType<typeof createTerminal>): Promise<void> {
-  await terminal.output.waitFor('BINAFLOW');
+  await terminal.output.waitFor('Use this folder');
   await terminal.input.waitUntilReady();
   terminal.input.push('\r');
   await terminal.output.waitFor('Configuration readiness');
@@ -962,8 +962,6 @@ function createApplicationService(
 ): ApplicationService {
   const profiles = { planner: profile('planner'), builder: profile('builder') };
   return {
-    profiles,
-    close: () => undefined,
     subscribeEvents: (listener: (event: NormalizedEvent) => void) => {
       subscribe(listener);
       return () => undefined;

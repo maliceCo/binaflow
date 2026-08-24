@@ -59,7 +59,7 @@ export function registerRunCommand(cli: Command): void {
       const removeSignalHandlers = installSignalHandlers(controller, runId);
       let started = false;
       try {
-        const run = await context.runWorkflow({
+        const run = await context.application.runWorkflow({
           workflowId: inputs.workflowId,
           objective: inputs.objective,
           input: inputs.input,
@@ -77,7 +77,9 @@ export function registerRunCommand(cli: Command): void {
         if (mode) {
           await printMachineRunResult('run', run, context, mode);
         } else {
-          const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+          const inspection = await context.application.inspectRun(run.id, {
+            includeStepResults: true,
+          });
           printRunSummary(run, inspection.steps);
         }
         if (run.status === 'failed' || run.status === 'cancelled') {

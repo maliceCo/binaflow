@@ -2,9 +2,10 @@ import type { Command } from 'commander';
 import {
   openApplicationContext,
   openApplicationStorage,
+  type ApplicationContext,
+  type ApplicationStorageContext,
   type ApplicationRuntimeContext,
 } from '../../application/runtime.js';
-import type { ApplicationService } from '../../application/service.js';
 import type { StepRun, WorkflowRun } from '../../core/run.js';
 import {
   formatDurationMs,
@@ -31,8 +32,8 @@ export interface RootOptions {
   jsonl?: boolean;
 }
 
-export type CliContext = ApplicationService;
-export type StorageContext = ApplicationService;
+export type CliContext = ApplicationContext;
+export type StorageContext = ApplicationStorageContext;
 
 export class CliEventPresenter {
   private textStep: string | undefined;
@@ -99,7 +100,7 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
     },
   });
   return {
-    ...application,
+    application: application.application,
     close: () => {
       presenter.flush();
       application.close();
@@ -188,7 +189,7 @@ export async function printMachineRunResult(
   context: ApplicationRuntimeContext,
   mode: MachineMode,
 ): Promise<void> {
-  const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+  const inspection = await context.application.inspectRun(run.id, { includeStepResults: true });
   if (mode === 'json') {
     writeJsonResult(command, {
       run: inspection.run,

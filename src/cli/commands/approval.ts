@@ -47,7 +47,7 @@ async function decide(
     const removeSignalHandlers = installSignalHandlers(controller, runId);
     let started = false;
     try {
-      const run = await context.decideApproval({
+      const run = await context.application.decideApproval({
         runId,
         decision,
         ...(feedback ? { feedback } : {}),
@@ -75,7 +75,9 @@ async function decide(
           mode,
         );
       } else {
-        const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+        const inspection = await context.application.inspectRun(run.id, {
+          includeStepResults: true,
+        });
         printRunSummary(run, inspection.steps);
       }
       if (run.status === 'failed' || run.status === 'cancelled') {

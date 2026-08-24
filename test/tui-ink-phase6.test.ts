@@ -118,7 +118,7 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('Configuration already exists at');
     expect(await readFile(configPath, 'utf8')).toBe(original);
     terminal.input.push('q');
-    await terminal.output.waitFor('BINAFLOW');
+    await terminal.output.waitFor('Use this folder');
     terminal.input.push('q');
     await running;
   }, 10_000);
@@ -161,7 +161,7 @@ describe('Ink setup and launch safety', () => {
     await terminal.output.waitFor('Step 4 of 4');
     expect(terminal.output.text()).toContain('Nothing has been written yet.');
     terminal.input.push('q');
-    await terminal.output.waitFor('BINAFLOW');
+    await terminal.output.waitFor('Use this folder');
     terminal.input.push('q');
     await running;
   });
@@ -293,7 +293,7 @@ class FakeInput extends EventEmitter {
 }
 
 async function acceptWelcome(terminal: ReturnType<typeof createTerminal>): Promise<void> {
-  await terminal.output.waitFor('BINAFLOW');
+  await terminal.output.waitFor('Use this folder');
   await terminal.input.waitUntilReady();
   terminal.input.push('\r');
   await terminal.input.waitUntilReady();
@@ -367,8 +367,6 @@ function profile(name: string, write = false): AgentProfile {
 function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationService {
   const profiles = { planner: profile('planner'), builder: profile('builder', true) };
   return {
-    profiles,
-    close: () => undefined,
     subscribeEvents: () => () => undefined,
     runWorkflow: async (request: {
       workflowId: string;

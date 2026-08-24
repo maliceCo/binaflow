@@ -13,7 +13,9 @@ import type { NormalizedEvent } from '../core/events.js';
 import { discoverWorkflows } from '../application/operations.js';
 import type { RunInspection, RunRecoveryExplanation } from '../application/operations.js';
 import type { WorkflowRun } from '../core/run.js';
+import type { ApplicationContext } from '../application/runtime.js';
 import type { ApplicationService } from '../application/service.js';
+import type { ApplicationContextInput } from './shell.js';
 import { explainUserError } from '../presentation/format.js';
 import { MinimumSizeFallback } from './components.js';
 import {
@@ -72,10 +74,9 @@ interface InkShellControllerProps {
   size: { columns: number; rows: number };
   cwd: string;
   configPath: string;
-  lifecycle: AttachedExecutionLifecycle<ApplicationService & { close?(): void }>;
+  lifecycle: AttachedExecutionLifecycle<ApplicationContext>;
   openApplicationContext?:
-    | ((configPath: string, cwd: string) => Promise<ApplicationService & { close?(): void }>)
-    | undefined;
+    ((configPath: string, cwd: string) => Promise<ApplicationContextInput>) | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
   hasInjectedContext?: boolean;
 }
@@ -174,22 +175,34 @@ export function InkShellController({
   };
 
   const resolveContextFactory = async (): Promise<
-    (configPath: string, cwd: string) => Promise<ApplicationService & { close?(): void }>
-  > => openContext ?? (await import('../application/runtime.js')).openApplicationContext;
-
-  const ensureContext = async (): Promise<ApplicationService & { close?(): void }> => {
-    if (lifecycle.context) return lifecycle.context;
-    const createContext = await resolveContextFactory();
-    const current = stateRef.current;
-    return lifecycle.openContext(async () => createContext(current.configPath, current.cwd));
+    (configPath: string, cwd: string) => Promise<ApplicationContext>
+  > => {
+    const factory =
+      openContext ?? (await import('../application/runtime.js')).openApplicationContext;
+    return async (configPath, workspaceCwd) => {
+      const context = await factory(configPath, workspaceCwd);
+      if ('application' in context) return context;
+      return { application: context, close: () => context.close?.() };
+    };
   };
 
-  const openExecutionContext = async (): Promise<ApplicationService & { close?(): void }> => {
+  const ensureContext = async (): Promise<ApplicationService> => {
+    if (lifecycle.context) return lifecycle.context.application;
     const createContext = await resolveContextFactory();
     const current = stateRef.current;
-    return lifecycle.replaceOwnedContext(async () =>
+    const context = await lifecycle.openContext(async () =>
       createContext(current.configPath, current.cwd),
     );
+    return context.application;
+  };
+
+  const openExecutionContext = async (): Promise<ApplicationService> => {
+    const createContext = await resolveContextFactory();
+    const current = stateRef.current;
+    const context = await lifecycle.replaceOwnedContext(async () =>
+      createContext(current.configPath, current.cwd),
+    );
+    return context.application;
   };
 
   const replaceWorkspaceContext = async (): Promise<void> => {
@@ -456,12 +469,12 @@ export function InkShellController({
   const loadArtifact = async (): Promise<void> => {
     const current = stateRef.current;
     const artifact = current.inspection?.artifacts[current.artifactSelected];
-    if (!artifact || !lifecycle.context || !current.inspection) return;
+    const context = lifecycle.context;
+    if (!artifact || !context || !current.inspection) return;
     const requestId = ++artifactRequest.current;
     const runId = current.inspection.run.id;
     const artifactKey = `${artifact.stepId}.${artifact.name}`;
-    const application = lifecycle.context;
-    if (!application) return;
+    const application = context.application;
     const request = (async () => {
       try {
         const content = await application.readArtifact(runId, artifactKey);
@@ -500,8 +513,9 @@ export function InkShellController({
     inspection?: RunInspection,
   ): Promise<boolean> => {
     const workflow = discoverWorkflows().find((candidate) => candidate.id === run.workflowId);
-    const application = lifecycle.context;
-    if (run.status !== 'waiting' || !workflow?.approval || !application) return false;
+    const context = lifecycle.context;
+    if (run.status !== 'waiting' || !workflow?.approval || !context) return false;
+    const application = context.application;
     try {
       let detailInspection = inspection;
       if (!detailInspection) {
@@ -532,8 +546,9 @@ export function InkShellController({
     let inspection: RunInspection | undefined;
     let recovery: RunRecoveryExplanation | undefined;
     let clarifications: string[] = [];
-    const application = lifecycle.context;
-    if (application) {
+    const context = lifecycle.context;
+    if (context) {
+      const application = context.application;
       try {
         const inspectionRequest = application.inspectRun(run.id, { includeStepResults: 'usage' });
         lifecycle.trackRequest(inspectionRequest);
@@ -801,7 +816,7 @@ export function InkShellController({
         case 'recovery-confirmed': {
           if (next === previous) break;
           const runId = next.inspection?.run.id;
-          const application = lifecycle.context;
+          const application = lifecycle.context?.application;
           if (runId && application) {
             const request = application.markRunInterrupted(runId);
             lifecycle.trackRequest(request);

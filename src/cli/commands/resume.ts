@@ -29,7 +29,7 @@ export function registerResumeCommand(cli: Command): void {
         const removeSignalHandlers = installSignalHandlers(controller, runId);
         let started = false;
         try {
-          const result = await context.resumeWorkflow({
+          const result = await context.application.resumeWorkflow({
             runId,
             signal: controller.signal,
             onRunStarted: (startedRun) => {
@@ -51,7 +51,9 @@ export function registerResumeCommand(cli: Command): void {
           }
           if (mode) await printMachineRunResult('resume', run, context, mode);
           else {
-            const inspection = await context.inspectRun(run.id, { includeStepResults: true });
+            const inspection = await context.application.inspectRun(run.id, {
+              includeStepResults: true,
+            });
             printRunSummary(run, inspection.steps);
           }
           if (run.status === 'failed' || run.status === 'cancelled') {

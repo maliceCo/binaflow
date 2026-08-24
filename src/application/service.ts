@@ -35,13 +35,7 @@ import {
 } from './operations.js';
 import { discoverAgentModels } from './config-operations.js';
 
-export interface ApplicationService {
-  readonly profiles: BinaflowConfig['profiles'];
-  close(): void;
-  subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
-  runWorkflow(request: RunWorkflowRequest): Promise<WorkflowRun>;
-  resumeWorkflow(request: ResumeWorkflowRequest): Promise<ResumeWorkflowResult>;
-  decideApproval(request: ApprovalDecisionRequest): Promise<WorkflowRun>;
+export interface ApplicationQueries {
   inspectRun(runId: string, options?: RunInspectionOptions): Promise<RunInspection>;
   listRuns(query?: RunListQuery): Promise<RunListPage>;
   readArtifact(
@@ -50,12 +44,22 @@ export interface ApplicationService {
     options?: ReadArtifactOptions,
   ): Promise<ArtifactContentView>;
   explainRunRecovery(runId: string): Promise<RunRecoveryExplanation>;
-  markRunInterrupted(runId: string): Promise<WorkflowRun>;
   clarificationQuestions(inspection: RunInspection): Promise<string[]>;
   loadResearchApprovalPreviews(inspection: RunInspection): Promise<ArtifactContentView[]>;
   discoverWorkflows(): WorkflowContract[];
   discoverModels(): Promise<AgentModel[]>;
   diagnoseConfiguration(): ConfigurationDiagnosis;
+}
+
+export interface ApplicationCommands {
+  runWorkflow(request: RunWorkflowRequest): Promise<WorkflowRun>;
+  resumeWorkflow(request: ResumeWorkflowRequest): Promise<ResumeWorkflowResult>;
+  decideApproval(request: ApprovalDecisionRequest): Promise<WorkflowRun>;
+  markRunInterrupted(runId: string): Promise<WorkflowRun>;
+}
+
+export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
+  subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
 }
 
 export interface CreateApplicationServiceOptions {
@@ -66,7 +70,36 @@ export interface CreateApplicationServiceOptions {
   researchCoordinator: ResearchPlanBuildCoordinator;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
-  close(): void;
+}
+
+export interface CreateApplicationQueriesOptions {
+  config: Pick<BinaflowConfig, 'profiles'>;
+  store: RunStore;
+  artifacts: ArtifactStore;
+  modelDiscovery: AgentModelDiscovery;
+}
+
+export function createApplicationQueries(
+  options: CreateApplicationQueriesOptions,
+): ApplicationQueries {
+  const context = {
+    config: options.config,
+    store: options.store,
+    artifacts: options.artifacts,
+  } satisfies Pick<ApplicationInternals, 'config' | 'store' | 'artifacts'>;
+
+  return {
+    inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
+    listRuns: (query) => listRuns(context, query),
+    readArtifact: (runId, artifactKey, readOptions) =>
+      readArtifact(context, runId, artifactKey, readOptions),
+    explainRunRecovery: (runId) => explainRunRecovery(context, runId),
+    clarificationQuestions: (inspection) => clarificationQuestions(context, inspection),
+    loadResearchApprovalPreviews: (inspection) => loadResearchApprovalPreviews(context, inspection),
+    discoverWorkflows,
+    discoverModels: () => discoverAgentModels(options.modelDiscovery),
+    diagnoseConfiguration: () => diagnoseConfiguration(options.config),
+  };
 }
 
 export function createApplicationService(
@@ -81,23 +114,11 @@ export function createApplicationService(
   };
 
   return {
-    profiles: options.config.profiles,
-    close: options.close,
+    ...createApplicationQueries(options),
     subscribeEvents: options.subscribeEvents,
     runWorkflow: (request) => runWorkflow(internals, request),
     resumeWorkflow: (request) => resumeWorkflow(internals, request),
     decideApproval: (request) => decideApproval(internals, request),
-    inspectRun: (runId, inspectionOptions) => inspectRun(internals, runId, inspectionOptions),
-    listRuns: (query) => listRuns(internals, query),
-    readArtifact: (runId, artifactKey, readOptions) =>
-      readArtifact(internals, runId, artifactKey, readOptions),
-    explainRunRecovery: (runId) => explainRunRecovery(internals, runId),
     markRunInterrupted: (runId) => markRunInterrupted(internals, runId),
-    clarificationQuestions: (inspection) => clarificationQuestions(internals, inspection),
-    loadResearchApprovalPreviews: (inspection) =>
-      loadResearchApprovalPreviews(internals, inspection),
-    discoverWorkflows,
-    discoverModels: () => discoverAgentModels(options.modelDiscovery),
-    diagnoseConfiguration: () => diagnoseConfiguration(options.config),
   };
 }

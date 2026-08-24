@@ -9,9 +9,24 @@ import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { RunStore } from '../storage/run-store.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
-import { createApplicationService, type ApplicationService } from './service.js';
+import {
+  createApplicationService,
+  createApplicationQueries,
+  type ApplicationQueries,
+  type ApplicationService,
+} from './service.js';
 
-export type ApplicationRuntimeContext = ApplicationService;
+export interface ApplicationContext {
+  readonly application: ApplicationService;
+  close(): void;
+}
+
+export interface ApplicationStorageContext {
+  readonly application: ApplicationQueries;
+  close(): void;
+}
+
+export type ApplicationRuntimeContext = ApplicationContext;
 
 export interface OpenApplicationOptions {
   configPath?: string;
@@ -52,7 +67,7 @@ export async function openApplicationContext(
     { interpretDisposition: interpretWorkflowDisposition },
   );
   const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime);
-  return createApplicationService({
+  const application = createApplicationService({
     config,
     store,
     artifacts,
@@ -65,42 +80,26 @@ export async function openApplicationContext(
         eventListeners.delete(listener);
       };
     },
-    close: () => store.close(),
   });
+  return { application, close: () => store.close() };
 }
 
 /** Storage-only open for read commands that do not execute workflows. */
 export async function openApplicationStorage(
   configPath = '.binaflow/config.json',
   cwd = process.cwd(),
-): Promise<ApplicationRuntimeContext> {
+): Promise<ApplicationStorageContext> {
   const dataDir = await loadDataDir(configPath, cwd);
   await mkdir(dataDir, { recursive: true });
   const store = new SqliteRunStore(`${dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
-  const config = { profiles: {} };
-  const engine = new WorkflowEngine(
+  const queries = createApplicationQueries({
+    config: { profiles: {} },
     store,
     artifacts,
-    {
-      async execute() {
-        throw new Error('Execution is unavailable in storage-only application context');
-      },
-    },
-    () => undefined,
-    { interpretDisposition: interpretWorkflowDisposition },
-  );
-  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime);
-  return createApplicationService({
-    config,
-    store,
-    artifacts,
-    engine,
-    researchCoordinator,
     modelDiscovery: { discoverModels: async () => [] },
-    subscribeEvents: () => () => undefined,
-    close: () => store.close(),
   });
+  return { application: queries, close: () => store.close() };
 }
 
 export function createRuntimeEventSink(

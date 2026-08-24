@@ -1,10 +1,15 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { NormalizedEvent } from '../src/core/events.js';
 import {
   createRuntimeEventSink,
   MAX_BUFFERED_TEXT_BYTES,
   MAX_BUFFERED_TEXT_EVENTS,
+  openApplicationStorage,
 } from '../src/application/runtime.js';
+import { createApplicationQueries, type ApplicationQueries } from '../src/application/service.js';
 import type { RunStore } from '../src/storage/run-store.js';
 
 describe('application runtime event buffering', () => {
@@ -49,6 +54,41 @@ describe('application runtime event buffering', () => {
     expect(saveEvents).toHaveBeenCalledTimes(2);
     expect(saveEvents.mock.calls[0]?.[0]).toHaveLength(2);
     expect(saveEvents.mock.calls[1]?.[0]).toHaveLength(2);
+  });
+});
+
+describe('application capability composition', () => {
+  it('builds query capabilities without execution commands', () => {
+    const queries: ApplicationQueries = createApplicationQueries({
+      config: { profiles: {} },
+      store: {} as RunStore,
+      artifacts: {} as never,
+      modelDiscovery: { discoverModels: async () => [] },
+    });
+
+    expect(queries).not.toHaveProperty('runWorkflow');
+    expect(queries).not.toHaveProperty('resumeWorkflow');
+    expect(queries).toHaveProperty('inspectRun');
+  });
+
+  it('closes storage resources on the context rather than the query service', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-context-'));
+    try {
+      mkdirSync(join(directory, '.binaflow'));
+      writeFileSync(
+        join(directory, '.binaflow', 'config.json'),
+        JSON.stringify({ dataDir: './data', profiles: {} }),
+      );
+      const context = await openApplicationStorage('.binaflow/config.json', directory);
+
+      expect(await context.application.listRuns()).toEqual({ runs: [] });
+      context.close();
+      await expect(context.application.listRuns()).rejects.toThrow(
+        /database connection is not open/i,
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 

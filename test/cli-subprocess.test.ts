@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { access, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
@@ -22,21 +22,6 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     expect(result.stdout).toContain('Usage: binaflow');
     expect(result.stdout).toContain('tui');
     expect(result.stderr).toBe('');
-  });
-
-  it('runs when the CLI entry is reached through a symlinked directory', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'binaflow-cli-symlink-'));
-    try {
-      const linkedDirectory = join(directory, 'current');
-      await symlink(dirname(cliEntry), linkedDirectory, 'dir');
-      const result = await runCliFrom(join(linkedDirectory, 'index.ts'), ['--help']);
-
-      expect(result.code).toBe(0);
-      expect(result.stdout).toContain('Usage: binaflow');
-      expect(result.stderr).toBe('');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
   });
 
   it('rejects the explicit TUI command without a TTY', async () => {

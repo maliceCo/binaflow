@@ -27,7 +27,7 @@ export function registerRunsCommand(cli: Command): void {
       const context = await openStorageContext(optionsAtRoot);
       try {
         const status = parseStatus(options.status);
-        const page = await context.listRuns({
+        const page = await context.application.listRuns({
           ...(options.limit !== undefined ? { limit: parseLimit(options.limit) } : {}),
           ...(status ? { status } : {}),
           ...(options.workflow !== undefined ? { workflowId: options.workflow } : {}),

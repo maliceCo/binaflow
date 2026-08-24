@@ -13,7 +13,7 @@ export function registerArtifactCommands(cli: Command): void {
       rejectUnsupportedJsonl(mode, 'artifacts');
       const context = await openStorageContext(options);
       try {
-        const inspection = await context.inspectRun(runId);
+        const inspection = await context.application.inspectRun(runId);
         const artifacts = inspection.artifacts;
         if (mode === 'json') {
           printMachineResult('artifacts', { runId, artifacts });
@@ -53,7 +53,7 @@ export function registerArtifactCommands(cli: Command): void {
         }
         const context = await openStorageContext(root);
         try {
-          const view = await context.readArtifact(runId, artifactKey, { mode: 'full' });
+          const view = await context.application.readArtifact(runId, artifactKey, { mode: 'full' });
           if (view.error && !view.content) throw new Error(view.error);
           const artifact = view.artifact;
           const content = view.content ?? '';

@@ -21,7 +21,7 @@ export function registerShowCommand(cli: Command): void {
         rejectUnsupportedJsonl(mode, 'show');
         const context = await openStorageContext(optionsAtRoot);
         try {
-          const inspection = await context.inspectRun(runId, {
+          const inspection = await context.application.inspectRun(runId, {
             includeEvents: options.events === true,
             includeStepResults: options.fullOutput === true,
           });

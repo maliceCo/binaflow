@@ -22,6 +22,7 @@ import {
 import { INSTALL_ROOT_ENV, managedInstallRoot } from '../src/update/paths.js';
 
 const temporaryDirectories: string[] = [];
+const symlinkIt = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0))
@@ -93,7 +94,7 @@ describe('release updates', () => {
     else process.env[INSTALL_ROOT_ENV] = savedRoot;
   });
 
-  it('leaves the active version untouched when an update archive is invalid', async () => {
+  symlinkIt('leaves the active version untouched when an update archive is invalid', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-update-'));
     temporaryDirectories.push(directory);
     const versions = join(directory, 'versions');
@@ -119,7 +120,7 @@ describe('release updates', () => {
     else process.env[INSTALL_ROOT_ENV] = currentRoot;
   });
 
-  it('rolls back only the installation pointers and respects the update lock', async () => {
+  symlinkIt('rolls back only the installation pointers and respects the update lock', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-update-'));
     temporaryDirectories.push(directory);
     const versions = join(directory, 'versions');
