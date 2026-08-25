@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { RunView } from '../../application/run-view.js';
 import {
   openApplicationContext,
   openApplicationStorage,
@@ -125,62 +126,51 @@ export function printHumanProgress(message: string): void {
   process.stderr.write(`${message}\n`);
 }
 
-export function printRunSummary(run: WorkflowRun, steps: StepRun[]): void {
+export function printRunSummary(view: RunView, stepResults: StepRun[] = []): void {
   console.log(
-    `Run ${run.id}  workflow=${workflowDisplayLabel(run.workflowId)}  status=${run.status}`,
+    `Run ${view.id}  workflow=${workflowDisplayLabel(view.workflow.id)}  status=${view.status}`,
   );
-  console.log(`  objective=${singleLine(run.objective, 240)}`);
-  console.log(`  state=${humanRunStatus(run.status)}`);
+  console.log(`  objective=${singleLine(view.objective, 240)}`);
+  console.log(`  state=${humanRunStatus(view.status)}`);
   console.log(
-    `  created=${formatTimestamp(run.createdAt)}  updated=${formatTimestamp(run.updatedAt)}`,
+    `  created=${formatTimestamp(view.createdAt)}  updated=${formatTimestamp(view.updatedAt)}`,
   );
-  let totalTokens = 0;
-  let totalCost = 0;
-  let hasTokens = false;
-  let hasCost = false;
-  for (const step of steps) {
-    const profile = step.profileSnapshot;
-    const duration = step.startedAt
-      ? formatDurationMs(durationMs(step.startedAt, step.finishedAt ?? new Date().toISOString()))
-      : '-';
+  const resultsByStep = new Map(stepResults.map((step) => [step.stepId, step]));
+  for (const phase of view.phases) {
+    const stepResult = resultsByStep.get(phase.id);
+    const profile = stepResult?.profileSnapshot;
+    const duration = phase.durationMs === undefined ? '-' : formatDurationMs(phase.durationMs);
     const usage =
-      step.result?.usage?.totalTokens === undefined
-        ? '-'
-        : `${step.result.usage.totalTokens} tokens`;
-    const cost = step.result?.costUsd === undefined ? '-' : `$${step.result.costUsd.toFixed(4)}`;
-    if (step.result?.usage?.totalTokens !== undefined) {
-      totalTokens += step.result.usage.totalTokens;
-      hasTokens = true;
-    }
-    if (step.result?.costUsd !== undefined) {
-      totalCost += step.result.costUsd;
-      hasCost = true;
-    }
+      phase.usage?.totalTokens === undefined ? '-' : `${phase.usage.totalTokens} tokens`;
+    const cost = phase.costUsd === undefined ? '-' : `$${phase.costUsd.toFixed(4)}`;
     console.log(
-      `  ${step.stepId}  profile=${step.profile}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${step.status} (${humanStepStatus(step.status)})  attempt=${step.attempt}  duration=${duration}  usage=${usage}  cost=${cost}`,
+      `  ${phase.id}  profile=${phase.profile ?? '-'}  driver=${profile?.driver ?? '-'}  model=${profile?.model ?? '-'}  status=${phase.status} (${humanStepStatus(phase.status)})  attempt=${phase.attempt ?? '-'}  duration=${duration}  usage=${usage}  cost=${cost}`,
     );
-    if (!profile && step.status !== 'skipped') {
+    if (stepResult && !profile && phase.status !== 'skipped') {
       console.log('    execution metadata=unavailable (legacy run)');
     }
-    if (step.error) {
+    if (phase.error) {
       console.log(
-        `    error=${step.error.code ?? 'UNKNOWN'}  retryable=${step.error.retryable}  ${step.error.message}`,
+        `    error=${phase.error.code ?? 'UNKNOWN'}  retryable=${phase.error.retryable}  ${phase.error.message}`,
       );
     }
-    if (step.skipReason) {
-      console.log(`    skipped=${step.skipReason.code}  ${step.skipReason.message}`);
+    if (phase.skipReason) {
+      console.log(`    skipped=${phase.skipReason.code}  ${phase.skipReason.message}`);
     }
-    if (step.approval?.decision) {
+    if (phase.approval?.decision) {
       console.log(
-        `    approval=${step.approval.decision}${step.approval.feedback ? `  ${step.approval.feedback}` : ''}`,
+        `    approval=${phase.approval.decision}${phase.approval.feedback ? `  ${phase.approval.feedback}` : ''}`,
       );
     }
-    if (step.result?.text?.trim()) printAgentResponse(step.result.text);
+    const result = stepResult?.result;
+    if (result?.text?.trim()) printAgentResponse(result.text);
   }
+  const totalUsage = view.metrics.usage?.totalTokens;
+  const totalCost = view.metrics.costUsd;
   console.log(
-    `  total  usage=${hasTokens ? `${totalTokens} tokens` : '-'}  cost=${hasCost ? `$${totalCost.toFixed(4)}` : '-'}`,
+    `  total  usage=${totalUsage === undefined ? '-' : `${totalUsage} tokens`}  cost=${totalCost === undefined ? '-' : `$${totalCost.toFixed(4)}`}`,
   );
-  printNextAction(run, steps);
+  printNextAction(view);
 }
 
 export async function printMachineRunResult(
@@ -233,10 +223,6 @@ export function installSignalHandlers(controller: AbortController, runId: string
   };
 }
 
-export function durationMs(startedAt: string, finishedAt: string): number {
-  return Math.max(0, new Date(finishedAt).getTime() - new Date(startedAt).getTime());
-}
-
 function friendlyEventMessage(message: string): string {
   const stepMessage = message.match(/^Step \S+ (.+)$/);
   if (stepMessage) return stepMessage[1]!;
@@ -252,40 +238,32 @@ function printAgentResponse(response: string): void {
   if (response.trim().length > 4_000) console.log('      [response truncated]');
 }
 
-function printNextAction(run: WorkflowRun, steps: StepRun[]): void {
-  if (run.status === 'failed' && steps.some((step) => step.error?.retryable)) {
-    console.log(`  next=binaflow resume ${run.id}`);
+function printNextAction(view: RunView): void {
+  if (view.availableActions.some((action) => action.kind === 'resume')) {
+    console.log(`  next=binaflow resume ${view.id}`);
     return;
   }
-  if (run.status === 'waiting') {
+  if (
+    view.availableActions.some((action) => action.kind === 'approve-research') &&
+    view.availableActions.some((action) => action.kind === 'reject-research')
+  ) {
     console.log(
-      `  next=binaflow approve ${run.id}  or  binaflow reject ${run.id} --feedback "..."`,
+      `  next=binaflow approve ${view.id}  or  binaflow reject ${view.id} --feedback "..."`,
     );
     return;
   }
-  if (
-    run.status === 'interrupted' &&
-    steps.some(
-      (step) =>
-        step.status === 'pending' ||
-        step.status === 'interrupted' ||
-        (step.status === 'failed' && step.error?.retryable === true),
-    )
-  ) {
-    console.log(`  next=binaflow resume ${run.id}`);
+  const markInterrupted = view.availableActions.find(
+    (action) => action.kind === 'mark-interrupted',
+  );
+  if (markInterrupted) {
+    console.log(`  action=${markInterrupted.label}`);
     return;
   }
-  if (run.status === 'failed' || run.status === 'interrupted' || run.status === 'cancelled') {
-    console.log(`  next=binaflow show ${run.id}`);
+  if (view.status === 'failed' || view.status === 'interrupted' || view.status === 'cancelled') {
+    console.log(`  next=binaflow show ${view.id}`);
     return;
   }
-  if (
-    run.status === 'completed' &&
-    steps.some(
-      (step) =>
-        step.disposition?.kind === 'stop' && step.disposition.code === 'PLAN_NEEDS_CLARIFICATION',
-    )
-  ) {
+  if (view.followUp?.kind === 'clarification') {
     console.log('  next=run again with an objective that answers the clarification questions');
   }
 }

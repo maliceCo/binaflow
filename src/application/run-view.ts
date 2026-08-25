@@ -27,9 +27,11 @@ export interface RunView {
   phases: RunPhaseView[];
   currentPhaseId?: string;
   artifacts: RunArtifactView[];
+  eventCount: number;
   metrics: RunMetricsView;
   availableActions: RunAction[];
   pendingAction?: PendingRunAction;
+  followUp?: RunFollowUp;
 }
 
 export interface RunWorkflowView {
@@ -77,6 +79,10 @@ export interface PendingRunAction {
   message: string;
 }
 
+export interface RunFollowUp {
+  kind: 'clarification';
+}
+
 export type RunAction =
   | {
       kind: 'resume';
@@ -109,15 +115,17 @@ export async function getRunView(
   const run = await context.store.getRun(runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
 
-  const [steps, artifacts] = await Promise.all([
+  const [steps, artifacts, eventCount] = await Promise.all([
     context.store.getStepRuns(runId, { includeResult: 'usage' }),
     context.store.getArtifacts(runId),
+    context.store.countEvents(runId),
   ]);
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
   const recovery = buildRunRecoveryExplanation(run, steps);
-  const phases = buildPhases(installedWorkflow, steps);
+  const phases = buildPhases(installedWorkflow, steps, Date.now(), run.status === 'running');
   const pendingAction = compatible ? buildPendingAction(run, installedWorkflow, steps) : undefined;
+  const followUp = clarificationFollowUp(run.status, phases);
   const availableActions = [
     ...mapRecoveryActions(recovery.actions ?? []),
     ...(pendingAction && compatible ? approvalActions(pendingAction) : []),
@@ -139,9 +147,11 @@ export async function getRunView(
     phases,
     ...(phaseId ? { currentPhaseId: phaseId } : {}),
     artifacts: artifacts.map(toArtifactView),
+    eventCount,
     metrics: aggregateMetrics(phases),
     availableActions,
     ...(pendingAction ? { pendingAction } : {}),
+    ...(followUp ? { followUp } : {}),
   };
 }
 
@@ -153,16 +163,22 @@ function resolveInstalledWorkflow(workflowId: string): WorkflowDefinition | unde
   }
 }
 
-function buildPhases(workflow: WorkflowDefinition | undefined, steps: StepRun[]): RunPhaseView[] {
+function buildPhases(
+  workflow: WorkflowDefinition | undefined,
+  steps: StepRun[],
+  nowMs: number,
+  runIsActive: boolean,
+): RunPhaseView[] {
   const persisted = new Map(steps.map((step) => [step.stepId, step]));
   const definitions = workflow ? workflowPhaseDefinitions(workflow) : [];
   const phases = definitions.map(({ id, kind, profile }) =>
-    toPhaseView(persisted.get(id), id, kind, profile),
+    toPhaseView(persisted.get(id), id, kind, profile, nowMs, runIsActive),
   );
   const definedIds = new Set(definitions.map(({ id }) => id));
 
   for (const step of steps) {
-    if (!definedIds.has(step.stepId)) phases.push(toPhaseView(step, step.stepId, 'unknown'));
+    if (!definedIds.has(step.stepId))
+      phases.push(toPhaseView(step, step.stepId, 'unknown', undefined, nowMs, runIsActive));
   }
   return phases;
 }
@@ -185,10 +201,12 @@ function toPhaseView(
   id: string,
   kind: RunPhaseView['kind'],
   profile?: string,
+  nowMs = Date.now(),
+  runIsActive = false,
 ): RunPhaseView {
   if (!step) return { id, kind, ...(profile ? { profile } : {}), status: 'pending' };
 
-  const durationMs = phaseDurationMs(step);
+  const durationMs = phaseDurationMs(step, nowMs, runIsActive);
   const phaseProfile = step.profile || profile;
   return {
     id,
@@ -208,12 +226,30 @@ function toPhaseView(
   };
 }
 
-function phaseDurationMs(step: StepRun): number | undefined {
-  if (!step.startedAt || !step.finishedAt) return undefined;
+function phaseDurationMs(step: StepRun, nowMs: number, runIsActive: boolean): number | undefined {
+  if (!step.startedAt) return undefined;
   const start = Date.parse(step.startedAt);
-  const finish = Date.parse(step.finishedAt);
+  const finish = step.finishedAt
+    ? Date.parse(step.finishedAt)
+    : step.status === 'running' && runIsActive
+      ? nowMs
+      : undefined;
+  if (finish === undefined) return undefined;
   if (Number.isNaN(start) || Number.isNaN(finish)) return undefined;
   return Math.max(0, finish - start);
+}
+
+function clarificationFollowUp(
+  status: WorkflowRun['status'],
+  phases: RunPhaseView[],
+): RunFollowUp | undefined {
+  if (status !== 'completed') return undefined;
+  return phases.some(
+    (phase) =>
+      phase.disposition?.kind === 'stop' && phase.disposition.code === 'PLAN_NEEDS_CLARIFICATION',
+  )
+    ? { kind: 'clarification' }
+    : undefined;
 }
 
 function currentPhaseId(status: WorkflowRun['status'], phases: RunPhaseView[]): string | undefined {

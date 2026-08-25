@@ -222,29 +222,29 @@ preserving all machine contracts.
 
 ### Required Changes
 
-- [ ] Use the new application context and capability types consistently.
-- [ ] Use `RunView` for human run summaries, phase status, metrics, and next
+- [x] Use the new application context and capability types consistently.
+- [x] Use `RunView` for human run summaries, phase status, metrics, and next
       actions where it replaces existing duplicated inference.
-- [ ] Keep command modules thin and free of workflow state decisions.
-- [ ] Keep existing `--json` and `--jsonl` protocol-v1 envelopes, fields,
+- [x] Keep command modules thin and free of workflow state decisions.
+- [x] Keep existing `--json` and `--jsonl` protocol-v1 envelopes, fields,
       ordering, stdout/stderr separation, and exit codes byte-compatible where
       tests define them.
-- [ ] Continue using live normalized events for attached progress output.
-- [ ] Do not add new CLI commands in this phase.
+- [x] Continue using live normalized events for attached progress output.
+- [x] Do not add new CLI commands in this phase.
 
 ### Valuable Tests
 
-- [ ] Human output covers the meaningful new phase/action presentation without
+- [x] Human output covers the meaningful new phase/action presentation without
       asserting incidental spacing beyond existing conventions.
-- [ ] Existing protocol and subprocess tests prove machine output did not change.
-- [ ] Read commands can run through query-only contexts.
+- [x] Existing protocol and subprocess tests prove machine output did not change.
+- [x] Read commands can run through query-only contexts.
 
 ### Acceptance Criteria
 
-- [ ] Human CLI output no longer computes workflow actions independently.
-- [ ] Machine clients observe no protocol-v1 regression.
-- [ ] Full verification gate passes.
-- [ ] Owner QA approved before commit.
+- [x] Human CLI output no longer computes workflow actions independently.
+- [x] Machine clients observe no protocol-v1 regression.
+- [x] Full verification gate passes.
+- [x] Owner QA approved before commit.
 
 ## Phase 5: TUI Adapter Migration
 

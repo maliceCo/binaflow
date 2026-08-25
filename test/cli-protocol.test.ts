@@ -277,6 +277,97 @@ describe('CLI protocol', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
+  it('shows persisted execution metadata in normal human output', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-show-metadata-'));
+    const configDirectory = join(directory, '.binaflow');
+    await mkdir(configDirectory);
+    await writeFile(join(configDirectory, 'config.json'), JSON.stringify({ dataDir: '..' }));
+    const store = new SqliteRunStore(join(directory, 'runs.db'));
+    const run: WorkflowRun = {
+      id: 'metadata-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Show execution metadata',
+      status: 'completed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:03.000Z',
+    };
+    await store.createRun(run);
+    await store.saveStepRun({
+      runId: run.id,
+      stepId: 'plan',
+      profile: 'planner',
+      status: 'completed',
+      attempt: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+      finishedAt: '2026-01-01T00:00:02.000Z',
+      profileSnapshot: {
+        driver: 'pi',
+        model: 'persisted-model',
+        tools: [],
+        workspaceMode: 'read-only',
+        timeoutMs: 1_000,
+        retryLimit: 0,
+      },
+    });
+    store.close();
+
+    let output = '';
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output += `${args.join(' ')}\n`;
+    });
+    try {
+      await createCli().parseAsync(['node', 'binaflow', '--cwd', directory, 'show', run.id]);
+
+      expect(output).toContain('driver=pi  model=persisted-model');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('shows elapsed duration for an active persisted run in human output', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-show-duration-'));
+    const configDirectory = join(directory, '.binaflow');
+    await mkdir(configDirectory);
+    await writeFile(join(configDirectory, 'config.json'), JSON.stringify({ dataDir: '..' }));
+    const store = new SqliteRunStore(join(directory, 'runs.db'));
+    const run: WorkflowRun = {
+      id: 'active-run',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Show active duration',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:01.000Z',
+    };
+    await store.createRun(run);
+    await store.saveStepRun({
+      runId: run.id,
+      stepId: 'plan',
+      profile: 'planner',
+      status: 'running',
+      attempt: 1,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    store.close();
+
+    let output = '';
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      output += `${args.join(' ')}\n`;
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'));
+    try {
+      await createCli().parseAsync(['node', 'binaflow', '--cwd', directory, 'show', run.id]);
+
+      expect(output).toContain('plan  profile=planner');
+      expect(output).toContain('duration=5s');
+    } finally {
+      vi.useRealTimers();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('lists semantic artifact references through the versioned JSON contract', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-artifacts-'));
     const configDirectory = join(directory, '.binaflow');

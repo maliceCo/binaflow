@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { getRunView } from '../src/application/run-view.js';
 import type { RunStore } from '../src/storage/run-store.js';
@@ -83,6 +83,7 @@ describe('application run view', () => {
       costUsd: 0.75,
       durationMs: 3_000,
     });
+    expect(view.eventCount).toBe(0);
     expect(view.artifacts).toEqual([
       {
         id: 'report',
@@ -121,6 +122,86 @@ describe('application run view', () => {
     expect(view.availableActions).toEqual([]);
     expect(view.currentPhaseId).toBe('plan');
     expect(view.phases.map((phase) => phase.id)).toEqual(['plan', 'build']);
+  });
+
+  it('projects clarification follow-up guidance from persisted disposition', async () => {
+    const run = workflowRun({ status: 'completed' });
+    const steps: StepRun[] = [
+      {
+        runId: run.id,
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'completed',
+        attempt: 1,
+        disposition: {
+          kind: 'stop',
+          code: 'PLAN_NEEDS_CLARIFICATION',
+          message: 'The objective needs clarification',
+        },
+      },
+    ];
+
+    const view = await getRunView({ store: store(run, steps) as RunStore }, run.id);
+
+    expect(view.followUp).toEqual({ kind: 'clarification' });
+  });
+
+  it('calculates elapsed duration for an active phase at view time', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'));
+    try {
+      const run = workflowRun({ status: 'running' });
+      const steps: StepRun[] = [
+        {
+          runId: run.id,
+          stepId: 'plan',
+          profile: 'planner',
+          status: 'running',
+          attempt: 1,
+          startedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ];
+
+      const view = await getRunView({ store: store(run, steps) as RunStore }, run.id);
+
+      expect(view.phases.find((phase) => phase.id === 'plan')?.durationMs).toBe(5_000);
+      expect(view.metrics.durationMs).toBe(5_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('freezes interrupted duration and omits invented timing for stale active steps', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:10.000Z'));
+    try {
+      const interrupted = workflowRun({ status: 'interrupted' });
+      const finishedStep: StepRun = {
+        runId: interrupted.id,
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'interrupted',
+        attempt: 1,
+        startedAt: '2026-01-01T00:00:00.000Z',
+        finishedAt: '2026-01-01T00:00:03.000Z',
+      };
+      const interruptedView = await getRunView(
+        { store: store(interrupted, [finishedStep]) as RunStore },
+        interrupted.id,
+      );
+      expect(interruptedView.phases.find((phase) => phase.id === 'plan')?.durationMs).toBe(3_000);
+
+      const staleStep: StepRun = { ...finishedStep, status: 'running' };
+      delete staleStep.finishedAt;
+      const staleView = await getRunView(
+        { store: store(interrupted, [staleStep]) as RunStore },
+        interrupted.id,
+      );
+      expect(staleView.phases.find((phase) => phase.id === 'plan')?.durationMs).toBeUndefined();
+      expect(staleView.metrics.durationMs).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not expose a pending approval action for an incompatible workflow', async () => {
@@ -209,11 +290,12 @@ function store(
   run: WorkflowRun,
   steps: StepRun[],
   artifacts: ArtifactReference[] = [],
-): Pick<RunStore, 'getRun' | 'getStepRuns' | 'getArtifacts'> {
+): Pick<RunStore, 'getRun' | 'getStepRuns' | 'getArtifacts' | 'countEvents'> {
   return {
     getRun: async () => run,
     getStepRuns: async () => steps,
     getArtifacts: async () => artifacts,
+    countEvents: async () => 0,
   };
 }
 

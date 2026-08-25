@@ -78,7 +78,8 @@ async function decide(
         const inspection = await context.application.inspectRun(run.id, {
           includeStepResults: true,
         });
-        printRunSummary(run, inspection.steps);
+        const view = await context.application.getRunView(run.id);
+        printRunSummary(view, inspection.steps);
       }
       if (run.status === 'failed' || run.status === 'cancelled') {
         process.exitCode = run.status === 'cancelled' ? 130 : 1;

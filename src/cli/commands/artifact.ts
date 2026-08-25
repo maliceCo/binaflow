@@ -13,12 +13,13 @@ export function registerArtifactCommands(cli: Command): void {
       rejectUnsupportedJsonl(mode, 'artifacts');
       const context = await openStorageContext(options);
       try {
-        const inspection = await context.application.inspectRun(runId);
-        const artifacts = inspection.artifacts;
         if (mode === 'json') {
+          const inspection = await context.application.inspectRun(runId);
+          const artifacts = inspection.artifacts;
           printMachineResult('artifacts', { runId, artifacts });
           return;
         }
+        const artifacts = (await context.application.getRunView(runId)).artifacts;
         if (artifacts.length === 0) {
           console.log(`No artifacts found for run ${runId}`);
           return;
