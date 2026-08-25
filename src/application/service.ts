@@ -4,7 +4,12 @@ import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { WorkflowEngine } from '../core/engine.js';
 import type { RunStore } from '../storage/run-store.js';
-import type { RunListPage, RunListQuery } from '../storage/run-store.js';
+import type {
+  RunEventPage,
+  RunEventPageQuery,
+  RunListPage,
+  RunListQuery,
+} from '../storage/run-store.js';
 import type { WorkflowRun } from '../core/run.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import {
@@ -14,6 +19,7 @@ import {
   discoverWorkflows,
   explainRunRecovery,
   inspectRun,
+  listRunEvents,
   listRuns,
   loadResearchApprovalPreviews,
   markRunInterrupted,
@@ -39,6 +45,7 @@ import { getRunView, type RunView } from './run-view.js';
 export interface ApplicationQueries {
   inspectRun(runId: string, options?: RunInspectionOptions): Promise<RunInspection>;
   getRunView(runId: string): Promise<RunView>;
+  listRunEvents(runId: string, query?: RunEventPageQuery): Promise<RunEventPage>;
   listRuns(query?: RunListQuery): Promise<RunListPage>;
   readArtifact(
     runId: string,
@@ -93,6 +100,7 @@ export function createApplicationQueries(
   return {
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
     getRunView: (runId) => getRunView(context, runId),
+    listRunEvents: (runId, query) => listRunEvents(context, runId, query),
     listRuns: (query) => listRuns(context, query),
     readArtifact: (runId, artifactKey, readOptions) =>
       readArtifact(context, runId, artifactKey, readOptions),

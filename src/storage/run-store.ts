@@ -1,6 +1,9 @@
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 
+export const DEFAULT_RUN_EVENT_LIMIT = 50;
+export const MAX_RUN_EVENT_LIMIT = 100;
+
 export interface RunListQuery {
   limit?: number;
   status?: RunStatus;
@@ -12,6 +15,20 @@ export interface RunListQuery {
 export interface RunListPage {
   runs: WorkflowRun[];
   nextCursor?: string;
+}
+
+export interface PersistedRunEvent extends NormalizedEvent {
+  id: number;
+}
+
+export interface RunEventPageQuery {
+  afterId?: number;
+  limit?: number;
+}
+
+export interface RunEventPage {
+  events: PersistedRunEvent[];
+  nextCursor?: number;
 }
 
 export type StepResultInclude = boolean | 'usage';
@@ -45,6 +62,7 @@ export interface RunStore {
   saveEvents(events: NormalizedEvent[]): Promise<void>;
   countEvents(runId: string): Promise<number>;
   getEvents(runId: string): Promise<NormalizedEvent[]>;
+  listRunEventsPage(runId: string, query?: RunEventPageQuery): Promise<RunEventPage>;
 }
 
 export class RunExecutionOwnedError extends Error {

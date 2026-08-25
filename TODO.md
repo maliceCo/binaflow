@@ -186,32 +186,32 @@ resume timeline reads without changing live driver events.
 
 ### Required Changes
 
-- [ ] Define an application/storage record for a persisted event that includes
+- [x] Define an application/storage record for a persisted event that includes
       its SQLite event ID and normalized event fields.
-- [ ] Add a bounded page query using an `afterId` cursor and a validated `limit`.
-- [ ] Order pages strictly by the persisted event ID.
-- [ ] Return a next cursor only when more records may be requested.
-- [ ] Add `listRunEvents` to application query capabilities.
-- [ ] Keep `subscribeEvents` as best-effort attached live activity.
-- [ ] Keep `NormalizedEvent` and protocol-v1 JSONL event records unchanged.
-- [ ] Do not add a migration: `normalized_events.id` already exists.
-- [ ] Avoid loading complete event history for the new query.
+- [x] Add a bounded page query using an `afterId` cursor and a validated `limit`.
+- [x] Order pages strictly by the persisted event ID.
+- [x] Return a next cursor only when more records may be requested.
+- [x] Add `listRunEvents` to application query capabilities.
+- [x] Keep `subscribeEvents` as best-effort attached live activity.
+- [x] Keep `NormalizedEvent` and protocol-v1 JSONL event records unchanged.
+- [x] Do not add a migration: `normalized_events.id` already exists.
+- [x] Avoid loading complete event history for the new query.
 
 ### Valuable Tests
 
-- [ ] Paging returns stable, non-overlapping event sequences in ID order.
-- [ ] Cursor and limit validation reject invalid values.
-- [ ] Events from another run never appear in a page.
-- [ ] Existing event persistence and protocol-v1 tests remain unchanged.
+- [x] Paging returns stable, non-overlapping event sequences in ID order.
+- [x] Cursor and limit validation reject invalid values.
+- [x] Events from another run never appear in a page.
+- [x] Existing event persistence and protocol-v1 tests remain unchanged.
 
 ### Acceptance Criteria
 
-- [ ] A consumer can read a timeline, retain the last ID, and request only newer
+- [x] A consumer can read a timeline, retain the last ID, and request only newer
       persisted events.
-- [ ] Live text buffering semantics are not presented as durable delivery.
-- [ ] No schema or machine-protocol compatibility is broken.
-- [ ] Full verification gate passes.
-- [ ] Owner QA approved before commit.
+- [x] Live text buffering semantics are not presented as durable delivery.
+- [x] No schema or machine-protocol compatibility is broken.
+- [x] Full verification gate passes.
+- [x] Owner QA approved before commit.
 
 ## Phase 4: CLI Adapter Migration
 

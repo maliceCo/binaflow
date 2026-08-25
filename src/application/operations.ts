@@ -12,7 +12,15 @@ import {
   type StepRun,
   type WorkflowRun,
 } from '../core/run.js';
-import type { RunListPage, RunListQuery, RunStore } from '../storage/run-store.js';
+import {
+  DEFAULT_RUN_EVENT_LIMIT,
+  MAX_RUN_EVENT_LIMIT,
+  type RunEventPage,
+  type RunEventPageQuery,
+  type RunListPage,
+  type RunListQuery,
+  type RunStore,
+} from '../storage/run-store.js';
 import {
   listWorkflowContracts,
   resolveWorkflow,
@@ -409,6 +417,24 @@ export async function listRuns(
   query: RunListQuery = {},
 ): Promise<RunListPage> {
   return context.store.listRunsPage(query);
+}
+
+export async function listRunEvents(
+  context: Pick<ApplicationInternals, 'store'>,
+  runId: string,
+  query: RunEventPageQuery = {},
+): Promise<RunEventPage> {
+  const run = await context.store.getRun(runId);
+  if (!run) throw new Error(`Unknown run: ${runId}`);
+  const afterId = query.afterId ?? 0;
+  const limit = query.limit ?? DEFAULT_RUN_EVENT_LIMIT;
+  if (!Number.isSafeInteger(afterId) || afterId < 0) {
+    throw new Error('Invalid event cursor: afterId must be a non-negative integer');
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RUN_EVENT_LIMIT) {
+    throw new Error(`Event limit must be an integer between 1 and ${MAX_RUN_EVENT_LIMIT}`);
+  }
+  return context.store.listRunEventsPage(runId, { afterId, limit });
 }
 
 export interface RunInspectionOptions {

@@ -9,6 +9,7 @@ import {
   decideApproval,
   diagnoseConfiguration,
   inspectRun,
+  listRunEvents,
   markRunInterrupted,
   resumeWorkflow,
   runWorkflow,
@@ -93,6 +94,39 @@ describe('application operations', () => {
     await inspectRun({ store }, run.id, { includeStepResults: 'usage' });
 
     expect(getStepRuns).toHaveBeenCalledWith(run.id, { includeResult: 'usage' });
+  });
+
+  it('lists persisted events with a validated cursor and bounded limit', async () => {
+    const run = persistedRun();
+    const page = {
+      events: [
+        {
+          id: 12,
+          runId: run.id,
+          stepId: 'plan',
+          type: 'text' as const,
+          message: 'persisted event',
+          occurredAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      nextCursor: 12,
+    };
+    const listRunEventsPage = vi.fn(async () => page);
+    const store = {
+      getRun: vi.fn(async () => run),
+      listRunEventsPage,
+    } as unknown as RunStore;
+
+    await expect(listRunEvents({ store }, run.id, { afterId: 10, limit: 2 })).resolves.toEqual(
+      page,
+    );
+    expect(listRunEventsPage).toHaveBeenCalledWith(run.id, { afterId: 10, limit: 2 });
+    await expect(listRunEvents({ store }, run.id, { afterId: -1 })).rejects.toThrow(
+      'non-negative integer',
+    );
+    await expect(listRunEvents({ store }, run.id, { limit: 101 })).rejects.toThrow(
+      'between 1 and 100',
+    );
   });
 
   it('resolves the workflow and passes application inputs to the engine', async () => {

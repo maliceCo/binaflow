@@ -9,6 +9,11 @@ import {
   RunStatusConflictError,
   type RunListPage,
   type RunListQuery,
+  type RunEventPage,
+  type RunEventPageQuery,
+  type PersistedRunEvent,
+  DEFAULT_RUN_EVENT_LIMIT,
+  MAX_RUN_EVENT_LIMIT,
   type RunStore,
   type StepRunQueryOptions,
 } from './run-store.js';
@@ -342,6 +347,26 @@ export class SqliteRunStore implements RunStore {
     }));
   }
 
+  async listRunEventsPage(runId: string, query: RunEventPageQuery = {}): Promise<RunEventPage> {
+    const limit = validateEventLimit(query.limit);
+    const afterId = validateEventCursor(query.afterId);
+    const rows = this.database
+      .prepare(
+        `SELECT id, run_id, step_id, type, message, occurred_at
+         FROM normalized_events
+         WHERE run_id = ? AND id > ?
+         ORDER BY id ASC
+         LIMIT ?`,
+      )
+      .all(runId, afterId, limit + 1) as PersistedEventRow[];
+    const hasNextPage = rows.length > limit;
+    const pageRows = hasNextPage ? rows.slice(0, limit) : rows;
+    return {
+      events: pageRows.map(fromPersistedEventRow),
+      ...(hasNextPage ? { nextCursor: pageRows[pageRows.length - 1]!.id } : {}),
+    };
+  }
+
   async completeStep(stepRun: StepRun, artifacts: ArtifactReference[]): Promise<void> {
     if (stepRun.status !== 'completed') {
       throw new Error('A completed step is required to persist artifact references');
@@ -498,6 +523,11 @@ interface EventRow {
   occurred_at: string;
 }
 
+interface PersistedEventRow extends EventRow {
+  id: number;
+  run_id: string;
+}
+
 interface ArtifactRow {
   id: string;
   run_id: string;
@@ -617,6 +647,17 @@ function fromArtifactRow(row: ArtifactRow): ArtifactReference {
   };
 }
 
+function fromPersistedEventRow(row: PersistedEventRow): PersistedRunEvent {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    stepId: row.step_id,
+    type: row.type,
+    message: row.message,
+    occurredAt: row.occurred_at,
+  };
+}
+
 interface RunCursor {
   createdAt: string;
   id: string;
@@ -638,6 +679,22 @@ function validateLimit(value: number | undefined): number {
     throw new Error(`Run limit must be an integer between 1 and ${MAX_RUN_LIMIT}`);
   }
   return limit;
+}
+
+function validateEventLimit(value: number | undefined): number {
+  const limit = value ?? DEFAULT_RUN_EVENT_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RUN_EVENT_LIMIT) {
+    throw new Error(`Event limit must be an integer between 1 and ${MAX_RUN_EVENT_LIMIT}`);
+  }
+  return limit;
+}
+
+function validateEventCursor(value: number | undefined): number {
+  const afterId = value ?? 0;
+  if (!Number.isSafeInteger(afterId) || afterId < 0) {
+    throw new Error('Invalid event cursor: afterId must be a non-negative integer');
+  }
+  return afterId;
 }
 
 function encodeCursor(run: RunRow): string {

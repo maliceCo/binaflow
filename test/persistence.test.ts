@@ -181,6 +181,51 @@ describe('local persistence', () => {
     store.close();
   });
 
+  it('pages persisted events by id without mixing runs', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-event-pages-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const run = (id: string): WorkflowRun => ({
+      id,
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: id,
+      status: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    await store.createRun(run('event-page-a'));
+    await store.createRun(run('event-page-b'));
+    await store.saveEvents([
+      event('event-page-a', 'a-1'),
+      event('event-page-b', 'b-1'),
+      event('event-page-a', 'a-2'),
+      event('event-page-a', 'a-3'),
+    ]);
+
+    const first = await store.listRunEventsPage('event-page-a', { limit: 2 });
+    expect(first.nextCursor).toBeDefined();
+    const second = await store.listRunEventsPage('event-page-a', {
+      limit: 2,
+      afterId: first.nextCursor!,
+    });
+    const otherRun = await store.listRunEventsPage('event-page-b');
+
+    expect(first.events.map((item) => item.message)).toEqual(['a-1', 'a-2']);
+    expect(first.events[0]!.id).toBeLessThan(first.events[1]!.id);
+    expect(first.nextCursor).toBe(first.events[1]!.id);
+    expect(second.events.map((item) => item.message)).toEqual(['a-3']);
+    expect(second.nextCursor).toBeUndefined();
+    expect(otherRun.events.map((item) => item.message)).toEqual(['b-1']);
+    await expect(store.listRunEventsPage('event-page-a', { limit: 0 })).rejects.toThrow(
+      'between 1 and 100',
+    );
+    await expect(store.listRunEventsPage('event-page-a', { afterId: -1 })).rejects.toThrow(
+      'non-negative integer',
+    );
+    store.close();
+  });
+
   it('claims an eligible run with a transactional compare-and-set', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-claim-'));
     temporaryDirectories.push(directory);
@@ -552,3 +597,13 @@ describe('local persistence', () => {
     second.close();
   });
 });
+
+function event(runId: string, message: string): NormalizedEvent {
+  return {
+    runId,
+    stepId: 'plan',
+    type: 'text',
+    message,
+    occurredAt: '2026-01-01T00:00:00.000Z',
+  };
+}
