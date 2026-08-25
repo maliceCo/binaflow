@@ -80,6 +80,7 @@ describe('architecture boundaries', () => {
     expect(publicSurface).not.toMatch(/\bprofiles\b/);
     expect(publicSurface).not.toMatch(/\bclose\b/);
     expect(publicSurface).toMatch(/inspectRun/);
+    expect(publicSurface).toMatch(/getRunView/);
     expect(publicSurface).toMatch(/runWorkflow/);
     expect(publicSurface).toMatch(/subscribeEvents/);
   });

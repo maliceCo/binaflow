@@ -30,6 +30,25 @@ expose a generic plugin API. That is different from Binaflow invoking OpenCode
 or Codex as an agent driver; those drivers are future integrations and are not
 included in this preview milestone.
 
+## Architecture Boundary
+
+Persisted run state is the source of truth. SQLite owns run, step, approval, and
+event records; the filesystem artifact store owns large step outputs. The
+application layer exposes queries such as `getRunView`, commands such as run,
+resume, and approval operations, and normalized events. Application contexts own
+the storage, artifact, engine, and driver lifecycles behind that service boundary.
+
+The CLI and attached TUI are presentation adapters over the same application
+operations. They share persisted state and commands but provide different user
+experiences: the CLI provides stable human and versioned machine protocols,
+while the TUI provides attached navigation and live interaction. Neither adapter
+reads SQLite, artifact files, or Pi directly.
+
+Attached live activity is a bounded display buffer for the current execution.
+Durable normalized events remain in SQLite and are retrieved through the paged
+timeline query. A future web interface would be another presentation adapter;
+there is no web server or web UI in this preview.
+
 This is an early preview. Keep backups of important workspaces and review the
 agent profiles before allowing a builder to edit files.
 

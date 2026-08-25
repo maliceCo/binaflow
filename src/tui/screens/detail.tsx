@@ -30,10 +30,6 @@ export function detailActionItems(view: RunView): DetailAction[] {
   return actions;
 }
 
-export function detailActions(view: RunView): string[] {
-  return detailActionItems(view).map((action) => action.label);
-}
-
 export function detailActionHelp(action: string): string {
   switch (action) {
     case 'Mark interrupted and review recovery':
