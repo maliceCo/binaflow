@@ -34,9 +34,11 @@ import {
   type WorkflowContract,
 } from './operations.js';
 import { discoverAgentModels } from './config-operations.js';
+import { getRunView, type RunView } from './run-view.js';
 
 export interface ApplicationQueries {
   inspectRun(runId: string, options?: RunInspectionOptions): Promise<RunInspection>;
+  getRunView(runId: string): Promise<RunView>;
   listRuns(query?: RunListQuery): Promise<RunListPage>;
   readArtifact(
     runId: string,
@@ -90,6 +92,7 @@ export function createApplicationQueries(
 
   return {
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
+    getRunView: (runId) => getRunView(context, runId),
     listRuns: (query) => listRuns(context, query),
     readArtifact: (runId, artifactKey, readOptions) =>
       readArtifact(context, runId, artifactKey, readOptions),

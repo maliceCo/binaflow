@@ -141,41 +141,41 @@ presentations do not independently infer phases, state, metrics, or actions.
 
 ### Required Changes
 
-- [ ] Add a focused application view module. Keep view construction out of
+- [x] Add a focused application view module. Keep view construction out of
       `src/core` and out of presentation code.
-- [ ] Define a minimal `RunView` containing: - run identity, workflow identity/version, objective, and status; - ordered phase views derived from the installed workflow plus persisted
+- [x] Define a minimal `RunView` containing: - run identity, workflow identity/version, objective, and status; - ordered phase views derived from the installed workflow plus persisted
       step state; - current phase when one is identifiable; - artifact metadata without physical filesystem paths; - aggregate usage, cost, and timing when available; - a discriminated union of currently available concrete actions; - a pending action when the run is waiting.
-- [ ] Keep concrete action kinds limited to behavior that exists now, such as
+- [x] Keep concrete action kinds limited to behavior that exists now, such as
       resume, mark interrupted, and research approval/rejection.
-- [ ] Represent unavailable data honestly for legacy runs; do not invent model,
+- [x] Represent unavailable data honestly for legacy runs; do not invent model,
       timing, or cost data.
-- [ ] Add a query such as `getRunView(runId)` to application query capabilities.
-- [ ] Reuse existing recovery and approval validation rules rather than
+- [x] Add a query such as `getRunView(runId)` to application query capabilities.
+- [x] Reuse existing recovery and approval validation rules rather than
       duplicating a second state machine in the view builder.
-- [ ] Retain `inspectRun()` where protocol-v1 compatibility still requires the
+- [x] Retain `inspectRun()` where protocol-v1 compatibility still requires the
       existing raw shape. Do not change protocol-v1 output fields.
 
 ### Valuable Tests
 
-- [ ] Phase ordering follows the installed workflow definition, including steps
+- [x] Phase ordering follows the installed workflow definition, including steps
       that do not yet have persisted `StepRun` rows.
-- [ ] Current phase and available actions are correct for running, waiting,
+- [x] Current phase and available actions are correct for running, waiting,
       failed/interrupted, and terminal runs without testing redundant status
       permutations.
-- [ ] Artifact views omit physical paths.
-- [ ] Metrics aggregate only available usage/cost values.
-- [ ] Workflow-version incompatibility is represented without crashing or
+- [x] Artifact views omit physical paths.
+- [x] Metrics aggregate only available usage/cost values.
+- [x] Workflow-version incompatibility is represented without crashing or
       claiming invalid actions are available.
 
 ### Acceptance Criteria
 
-- [ ] `RunView` can be serialized with `JSON.stringify` without custom handling.
-- [ ] It imports no CLI, TUI, Ink, concrete storage, or Pi modules.
-- [ ] Presentations can render state and available actions without parsing event
+- [x] `RunView` can be serialized with `JSON.stringify` without custom handling.
+- [x] It imports no CLI, TUI, Ink, concrete storage, or Pi modules.
+- [x] Presentations can render state and available actions without parsing event
       messages.
-- [ ] Existing `inspectRun()` and protocol-v1 behavior remain compatible.
-- [ ] Full verification gate passes.
-- [ ] Owner QA approved before commit.
+- [x] Existing `inspectRun()` and protocol-v1 behavior remain compatible.
+- [x] Full verification gate passes.
+- [x] Owner QA approved before commit.
 
 ## Phase 3: Durable Paged Event Timeline
 

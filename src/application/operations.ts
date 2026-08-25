@@ -124,6 +124,13 @@ export async function explainRunRecovery(
   const run = await context.store.getRun(runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   const steps = await context.store.getStepRuns(runId);
+  return buildRunRecoveryExplanation(run, steps);
+}
+
+export function buildRunRecoveryExplanation(
+  run: WorkflowRun,
+  steps: StepRun[],
+): RunRecoveryExplanation {
   let workflowVersionCompatible = true;
   let installedVersion: number | undefined;
   try {
@@ -224,6 +231,15 @@ export async function explainRunRecovery(
       },
     ],
   };
+}
+
+export function findWaitingApprovalStep(
+  workflow: WorkflowDefinition,
+  run: WorkflowRun,
+  steps: readonly StepRun[],
+): StepRun | undefined {
+  if (run.status !== 'waiting' || !workflow.approval) return undefined;
+  return steps.find((step) => step.stepId === workflow.approval?.id && step.status === 'waiting');
 }
 
 export async function markRunInterrupted(
@@ -452,8 +468,8 @@ export async function decideApproval(
   }
 
   const steps = await context.store.getStepRuns(request.runId);
-  const approval = steps.find((step) => step.stepId === workflow.approval?.id);
-  if (!approval || approval.status !== 'waiting') {
+  const approval = findWaitingApprovalStep(workflow, previous, steps);
+  if (!approval) {
     throw new Error(`Run ${request.runId} is not waiting for approval`);
   }
   const feedback = request.feedback?.trim();

@@ -395,6 +395,9 @@ function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationServi
       artifacts: [],
       eventCount: 0,
     }),
+    getRunView: async () => {
+      throw new Error('not implemented');
+    },
     listRuns: async () => ({ runs: [] }),
     readArtifact: async () => {
       throw new Error('not implemented');
