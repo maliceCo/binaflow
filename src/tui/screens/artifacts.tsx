@@ -1,10 +1,11 @@
-import type { ArtifactContentView, RunInspection } from '../../application/operations.js';
+import type { ArtifactContentView } from '../../application/operations.js';
+import type { RunView } from '../../application/run-view.js';
 import { formatBytes } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 
 export function ArtifactsScreen({
   colors,
-  detail,
+  view,
   selected,
   offset,
   content,
@@ -12,14 +13,14 @@ export function ArtifactsScreen({
   visibleRows,
 }: {
   colors: boolean;
-  detail: RunInspection;
+  view: RunView;
   selected: number;
   offset: number;
   content?: ArtifactContentView | undefined;
   contentOffset: number;
   visibleRows: number;
 }) {
-  const empty = detail.artifacts.length === 0;
+  const empty = view.artifacts.length === 0;
   return (
     <ScreenFrame
       title="Artifacts"
@@ -39,7 +40,7 @@ export function ArtifactsScreen({
         <>
           <PaneSection title="Artifact list" colors={colors} first>
             <SelectionList
-              items={detail.artifacts.map(
+              items={view.artifacts.map(
                 (artifact) =>
                   `${artifact.stepId}.${artifact.name}  ${formatBytes(artifact.sizeBytes)}`,
               )}

@@ -11,7 +11,8 @@ import {
 } from '../application/config-operations.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { discoverWorkflows } from '../application/operations.js';
-import type { RunInspection, RunRecoveryExplanation } from '../application/operations.js';
+import type { RunInspection } from '../application/operations.js';
+import type { RunView } from '../application/run-view.js';
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationContext } from '../application/runtime.js';
 import type { ApplicationService } from '../application/service.js';
@@ -19,7 +20,7 @@ import type { ApplicationContextInput } from './shell.js';
 import { explainUserError } from '../presentation/format.js';
 import { MinimumSizeFallback } from './components.js';
 import {
-  applyStepSnapshot,
+  applyRunViewSnapshot,
   createLiveActivityBuffer,
   createLiveState,
   createLiveUiPublisher,
@@ -58,8 +59,8 @@ import {
 } from './model.js';
 import { reduce } from './reduce.js';
 import { ArtifactsScreen } from './screens/artifacts.js';
-import { APPROVAL_ACTIONS, ApprovalScreen } from './screens/approval.js';
-import { DetailScreen, detailActions } from './screens/detail.js';
+import { approvalActionItems, ApprovalScreen } from './screens/approval.js';
+import { DetailScreen, detailActionItems } from './screens/detail.js';
 import { DiagnosisScreen } from './screens/diagnosis.js';
 import { RejectionFeedbackScreen, RecoveryConfirmScreen } from './screens/feedback.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
@@ -121,6 +122,17 @@ export function InkShellController({
     setLive(value);
   };
 
+  const refreshLiveView = (application: ApplicationService, runId: string): void => {
+    const request = application.getRunView(runId);
+    lifecycle.trackRequest(request);
+    void request
+      .then((view) => {
+        const current = liveRef.current;
+        if (active.current && current?.run.id === runId) publishLive({ ...current, view });
+      })
+      .catch(() => undefined);
+  };
+
   const disposeLiveControllers = (): void => {
     uiPublisherRef.current?.dispose();
     uiPublisherRef.current = undefined;
@@ -141,17 +153,14 @@ export function InkShellController({
       buffer,
     });
     snapshotControllerRef.current = createSnapshotInspectionController({
-      inspect: async (runId) => {
-        const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
-        return inspection.steps;
-      },
+      inspect: (runId) => application.getRunView(runId),
       getRunId: () => activeRunId.current,
-      apply: (steps, generation) => {
+      apply: (view, generation) => {
         const current = liveRef.current;
         if (!current || current.run.id !== activeRunId.current) return;
-        const next = applyStepSnapshot(
+        const next = applyRunViewSnapshot(
           current,
-          steps,
+          view,
           generation,
           appliedSnapshotGeneration.current,
         );
@@ -415,40 +424,49 @@ export function InkShellController({
     const request = (async () => {
       try {
         const application = await ensureContext();
-        const inspection = await application.inspectRun(runId, { includeStepResults: 'usage' });
-        const [recovery, clarifications] = await Promise.all([
-          application.explainRunRecovery(runId),
-          application.clarificationQuestions(inspection),
+        const requests = Promise.allSettled([
+          application.getRunView(runId),
+          application.inspectRun(runId, { includeStepResults: 'usage' }),
         ]);
+        lifecycle.trackRequest(requests);
+        const [viewResult, inspectionResult] = await requests;
+        if (viewResult.status === 'rejected') throw viewResult.reason;
+        const view = viewResult.value;
+        const inspection =
+          inspectionResult.status === 'fulfilled' ? inspectionResult.value : undefined;
+        let clarifications: string[] = [];
+        if (inspection) {
+          try {
+            clarifications = await application.clarificationQuestions(inspection);
+          } catch {
+            // Clarifications are supplemental to the authoritative run view.
+          }
+        }
         if (
           !active.current ||
           requestId !== inspectionRequest.current ||
           stateRef.current.activeRunId !== runId
         )
           return;
-        const workflow = discoverWorkflows().find(
-          (candidate) => candidate.id === inspection.run.workflowId,
-        );
-        const approvalWaiting =
-          inspection.run.status === 'waiting' &&
-          workflow?.approval !== undefined &&
-          inspection.steps.some(
-            (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
-          );
-        if (approvalWaiting && workflow?.approval) {
-          const previews = await application.loadResearchApprovalPreviews(inspection);
-          if (
-            !active.current ||
-            requestId !== inspectionRequest.current ||
-            stateRef.current.activeRunId !== runId
-          )
-            return;
-          dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
-          dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
-        } else {
-          dispatch({ type: 'inspection-set', inspection, recovery, clarifications });
-          if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
+        let previews: Awaited<ReturnType<ApplicationService['loadResearchApprovalPreviews']>> = [];
+        if (view.pendingAction) {
+          if (inspection) {
+            try {
+              previews = await application.loadResearchApprovalPreviews(inspection);
+            } catch {
+              // Approval previews are supplemental to the authoritative run view.
+            }
+          }
         }
+        if (
+          !active.current ||
+          requestId !== inspectionRequest.current ||
+          stateRef.current.activeRunId !== runId
+        )
+          return;
+        dispatch({ type: 'run-view-set', view, clarifications });
+        if (view.pendingAction) dispatch({ type: 'approval-set', previews });
+        else if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
       } catch (reason) {
         if (
           active.current &&
@@ -468,11 +486,11 @@ export function InkShellController({
 
   const loadArtifact = async (): Promise<void> => {
     const current = stateRef.current;
-    const artifact = current.inspection?.artifacts[current.artifactSelected];
+    const artifact = current.runView?.artifacts[current.artifactSelected];
     const context = lifecycle.context;
-    if (!artifact || !context || !current.inspection) return;
+    if (!artifact || !context || !current.runView) return;
     const requestId = ++artifactRequest.current;
-    const runId = current.inspection.run.id;
+    const runId = current.runView.id;
     const artifactKey = `${artifact.stepId}.${artifact.name}`;
     const application = context.application;
     const request = (async () => {
@@ -481,7 +499,7 @@ export function InkShellController({
         if (
           active.current &&
           requestId === artifactRequest.current &&
-          stateRef.current.inspection?.run.id === runId &&
+          stateRef.current.runView?.id === runId &&
           stateRef.current.artifactSelected === current.artifactSelected
         )
           dispatch({ type: 'artifact-content-set', content });
@@ -489,17 +507,12 @@ export function InkShellController({
         if (
           active.current &&
           requestId === artifactRequest.current &&
-          stateRef.current.inspection?.run.id === runId &&
+          stateRef.current.runView?.id === runId &&
           stateRef.current.artifactSelected === current.artifactSelected
         ) {
           dispatch({
-            type: 'artifact-content-set',
-            content: {
-              artifact,
-              truncated: false,
-              formatted: false,
-              error: explainUserError(reason instanceof Error ? reason.message : String(reason)),
-            },
+            type: 'error-set',
+            message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
           });
         }
       }
@@ -508,86 +521,53 @@ export function InkShellController({
     await request;
   };
 
-  const presentApproval = async (
-    run: WorkflowRun,
-    inspection?: RunInspection,
-  ): Promise<boolean> => {
-    const workflow = discoverWorkflows().find((candidate) => candidate.id === run.workflowId);
-    const context = lifecycle.context;
-    if (run.status !== 'waiting' || !workflow?.approval || !context) return false;
-    const application = context.application;
-    try {
-      let detailInspection = inspection;
-      if (!detailInspection) {
-        const inspectionRequest = application.inspectRun(run.id, { includeStepResults: false });
-        lifecycle.trackRequest(inspectionRequest);
-        detailInspection = await inspectionRequest;
-      }
-      const waiting = detailInspection.steps.some(
-        (step) => step.stepId === workflow.approval?.id && step.status === 'waiting',
-      );
-      if (!waiting) return false;
-      const previewRequest = application.loadResearchApprovalPreviews(detailInspection);
-      lifecycle.trackRequest(previewRequest);
-      const previews = await previewRequest;
-      if (!active.current) return true;
-      dispatch({ type: 'inspection-set', inspection: detailInspection, clarifications: [] });
-      dispatch({ type: 'approval-set', message: workflow.approval.message, previews });
-      disposeLiveControllers();
-      setLiveValue(undefined);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const finishRun = async (run: WorkflowRun): Promise<void> => {
-    const current = liveRef.current;
+    let view: RunView | undefined;
     let inspection: RunInspection | undefined;
-    let recovery: RunRecoveryExplanation | undefined;
     let clarifications: string[] = [];
     const context = lifecycle.context;
     if (context) {
       const application = context.application;
       try {
-        const inspectionRequest = application.inspectRun(run.id, { includeStepResults: 'usage' });
-        lifecycle.trackRequest(inspectionRequest);
-        inspection = await inspectionRequest;
-        const current = inspection;
-        const metadataRequest = Promise.all([
-          application.explainRunRecovery(run.id),
-          application.clarificationQuestions(current),
+        const requests = Promise.allSettled([
+          application.getRunView(run.id),
+          application.inspectRun(run.id, { includeStepResults: 'usage' }),
         ]);
-        lifecycle.trackRequest(metadataRequest);
-        [recovery, clarifications] = await metadataRequest;
-        run = current.run;
-      } catch {
-        if (!inspection && current) {
-          inspection = {
-            run,
-            steps: current.steps.map((step) => ({
-              runId: run.id,
-              stepId: step.id,
-              profile: step.profile,
-              status: step.status,
-              attempt: 1,
-            })),
-            artifacts: [],
-            eventCount: 0,
-          };
+        lifecycle.trackRequest(requests);
+        const [viewResult, inspectionResult] = await requests;
+        if (viewResult.status === 'fulfilled') view = viewResult.value;
+        if (inspectionResult.status === 'fulfilled') {
+          inspection = inspectionResult.value;
+          try {
+            clarifications = await application.clarificationQuestions(inspection);
+          } catch {
+            // Clarifications are supplemental to the authoritative run view.
+          }
         }
+      } catch {
+        view = undefined;
       }
     }
-    if (await presentApproval(run, inspection)) return;
     disposeLiveControllers();
     setLiveValue(undefined);
-    dispatch({
-      type: 'inspection-set',
-      inspection: inspection ?? { run, steps: [], artifacts: [], eventCount: 0 },
-      ...(recovery ? { recovery } : {}),
-      clarifications,
-    });
-    dispatch({ type: 'run-finished', status: run.status });
+    if (!view) {
+      dispatch({ type: 'error-set', message: 'Unable to refresh the authoritative run view.' });
+      return;
+    }
+    dispatch({ type: 'run-view-set', view, clarifications });
+    if (view.pendingAction) {
+      let previews: Awaited<ReturnType<ApplicationService['loadResearchApprovalPreviews']>> = [];
+      const application = context?.application;
+      if (application && inspection) {
+        try {
+          previews = await application.loadResearchApprovalPreviews(inspection);
+        } catch {
+          // Approval previews are supplemental to the authoritative run view.
+        }
+      }
+      dispatch({ type: 'approval-set', previews });
+    }
+    dispatch({ type: 'run-finished', status: view.status });
   };
 
   const requestCancellation = (): void => {
@@ -642,6 +622,7 @@ export function InkShellController({
             onRunStarted: (startedRun) => {
               activeRunId.current = startedRun.id;
               setLiveValue(createLiveState(startedRun, launchInput.workflow));
+              refreshLiveView(application, startedRun.id);
               setLiveDetail(false);
               setLiveOffset(0);
               dispatch({ type: 'run-started', runId: startedRun.id });
@@ -681,8 +662,8 @@ export function InkShellController({
     ) => Promise<WorkflowRun>,
     workflowId: string,
   ): void => {
-    const inspection = stateRef.current.inspection;
-    if (!inspection || launching) return;
+    const view = stateRef.current.runView;
+    if (!view || launching) return;
     const workflow = discoverWorkflows().find((candidate) => candidate.id === workflowId);
     if (!workflow) {
       dispatch({ type: 'error-set', message: `Workflow ${workflowId} is unavailable.` });
@@ -699,7 +680,8 @@ export function InkShellController({
           lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
           const run = await operation(application, controller.signal, (startedRun) => {
             activeRunId.current = startedRun.id;
-            setLiveValue(createLiveState(startedRun, workflow, inspection.steps));
+            setLiveValue(createLiveState(startedRun, workflow));
+            refreshLiveView(application, startedRun.id);
             setLiveDetail(false);
             setLiveOffset(0);
             dispatch({ type: 'run-started', runId: startedRun.id });
@@ -771,33 +753,33 @@ export function InkShellController({
           break;
         case 'resume-run': {
           if (next === previous) break;
-          const runId = next.inspection?.run.id;
+          const runId = next.runView?.id;
           if (runId) {
             startContinuation(
               (application, signal, onRunStarted) =>
                 application
                   .resumeWorkflow({ runId, signal, onRunStarted })
                   .then((result) => result.run),
-              next.inspection!.run.workflowId,
+              next.runView!.workflow.id,
             );
           }
           break;
         }
         case 'approval-approve': {
           if (next === previous) break;
-          const runId = next.inspection?.run.id;
+          const runId = next.runView?.id;
           if (runId) {
             startContinuation(
               (application, signal, onRunStarted) =>
                 application.decideApproval({ runId, decision: 'approved', signal, onRunStarted }),
-              next.inspection!.run.workflowId,
+              next.runView!.workflow.id,
             );
           }
           break;
         }
         case 'rejection-submitted': {
           if (next === previous) break;
-          const runId = next.inspection?.run.id;
+          const runId = next.runView?.id;
           if (runId) {
             startContinuation(
               (application, signal, onRunStarted) =>
@@ -808,14 +790,14 @@ export function InkShellController({
                   signal,
                   onRunStarted,
                 }),
-              next.inspection!.run.workflowId,
+              next.runView!.workflow.id,
             );
           }
           break;
         }
         case 'recovery-confirmed': {
           if (next === previous) break;
-          const runId = next.inspection?.run.id;
+          const runId = next.runView?.id;
           const application = lifecycle.context?.application;
           if (runId && application) {
             const request = application.markRunInterrupted(runId);
@@ -1064,9 +1046,11 @@ export function InkShellController({
       else if (direction !== 0) {
         dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
       } else if (input === '\r' || key.return) {
-        const action = APPROVAL_ACTIONS[current.selection];
-        if (action === 'Approve research and continue') dispatch({ type: 'approval-approve' });
-        else if (action === 'Reject research with feedback') dispatch({ type: 'approval-reject' });
+        const action = current.runView
+          ? approvalActionItems(current.runView)[current.selection]
+          : undefined;
+        if (action?.kind === 'approve-research') dispatch({ type: 'approval-approve' });
+        else if (action?.kind === 'reject-research') dispatch({ type: 'approval-reject' });
         else dispatch({ type: 'leave-waiting' });
       }
       return;
@@ -1099,14 +1083,14 @@ export function InkShellController({
       else if (direction !== 0) {
         dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
       } else if (input === '\r' || key.return) {
-        if (!current.inspection) return;
-        const actions = detailActions(current.inspection, current.recovery, current.clarifications);
+        if (!current.runView) return;
+        const actions = detailActionItems(current.runView);
         const action = actions[current.selection];
-        if (action === 'Resume retryable work') dispatch({ type: 'resume-run' });
-        else if (action === 'Mark interrupted and review recovery') {
-          dispatch({ type: 'open-recovery-confirm' });
-        } else if (action === 'New run with revised objective') dispatch({ type: 'open-launch' });
-        else if (action === 'Browse artifacts') dispatch({ type: 'open-artifacts' });
+        if (!action) return;
+        if (action.kind === 'resume') dispatch({ type: 'resume-run' });
+        else if (action.kind === 'mark-interrupted') dispatch({ type: 'open-recovery-confirm' });
+        else if (action.kind === 'clarification') dispatch({ type: 'open-launch' });
+        else if (action.kind === 'browse-artifacts') dispatch({ type: 'open-artifacts' });
         else dispatch({ type: 'inspect-back' });
       }
       return;
@@ -1317,26 +1301,24 @@ export function InkShellController({
       ) : null;
       break;
     case 'approval':
-      right =
-        state.inspection && state.approvalMessage ? (
-          <ApprovalScreen
-            colors={colors}
-            run={state.inspection.run}
-            message={state.approvalMessage}
-            previews={state.approvalPreviews}
-            previewOffset={state.approvalPreviewOffset}
-            error={state.error ?? state.launchInput?.error}
-            selected={state.selection}
-            offset={state.offset}
-            visibleRows={Math.max(1, size.rows - 16)}
-          />
-        ) : null;
+      right = state.runView ? (
+        <ApprovalScreen
+          colors={colors}
+          view={state.runView}
+          previews={state.approvalPreviews}
+          previewOffset={state.approvalPreviewOffset}
+          error={state.error ?? state.launchInput?.error}
+          selected={state.selection}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 16)}
+        />
+      ) : null;
       break;
     case 'result':
-      right = state.inspection ? (
+      right = state.runView ? (
         <ResultScreen
           colors={colors}
-          inspection={state.inspection}
+          view={state.runView}
           selected={state.selection}
           offset={state.offset}
           visibleRows={Math.max(1, size.rows - 16)}
@@ -1345,13 +1327,11 @@ export function InkShellController({
       ) : null;
       break;
     case 'inspect':
-      right = state.inspection ? (
+      right = state.runView ? (
         <DetailScreen
           colors={colors}
-          detail={state.inspection}
-          recovery={state.recovery}
+          view={state.runView}
           clarifications={state.clarifications}
-          approvalMessage={state.approvalMessage}
           previews={state.approvalPreviews}
           previewOffset={state.approvalPreviewOffset}
           error={state.error}
@@ -1362,10 +1342,10 @@ export function InkShellController({
       ) : null;
       break;
     case 'artifacts':
-      right = state.inspection ? (
+      right = state.runView ? (
         <ArtifactsScreen
           colors={colors}
-          detail={state.inspection}
+          view={state.runView}
           selected={state.artifactSelected}
           offset={state.artifactOffset}
           content={state.artifactContent}

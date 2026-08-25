@@ -1,8 +1,5 @@
-import type {
-  ArtifactContentView,
-  RunInspection,
-  RunRecoveryExplanation,
-} from '../../application/operations.js';
+import type { ArtifactContentView } from '../../application/operations.js';
+import type { RunView } from '../../application/run-view.js';
 import {
   formatBytes,
   formatRelativeTime,
@@ -14,18 +11,27 @@ import {
 import { Box } from 'ink';
 import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 
-export function detailActions(
-  detail: RunInspection,
-  recovery?: RunRecoveryExplanation,
-  clarifications: string[] = [],
-): string[] {
-  const actions: string[] = [];
-  if (recovery?.actions?.some((action) => action.kind === 'mark-interrupted'))
-    actions.push('Mark interrupted and review recovery');
-  if (recovery?.eligible) actions.push('Resume retryable work');
-  if (clarifications.length > 0) actions.push('New run with revised objective');
-  actions.push('Browse artifacts', 'Back to history');
+export type DetailAction =
+  | { kind: 'resume' | 'mark-interrupted'; label: string }
+  | { kind: 'clarification' | 'browse-artifacts' | 'back'; label: string };
+
+export function detailActionItems(view: RunView): DetailAction[] {
+  const actions: DetailAction[] = [];
+  for (const action of view.availableActions) {
+    if (action.kind === 'mark-interrupted' || action.kind === 'resume')
+      actions.push({ kind: action.kind, label: action.label });
+  }
+  if (view.followUp?.kind === 'clarification')
+    actions.push({ kind: 'clarification', label: 'New run with revised objective' });
+  actions.push(
+    { kind: 'browse-artifacts', label: 'Browse artifacts' },
+    { kind: 'back', label: 'Back to history' },
+  );
   return actions;
+}
+
+export function detailActions(view: RunView): string[] {
+  return detailActionItems(view).map((action) => action.label);
 }
 
 export function detailActionHelp(action: string): string {
@@ -47,10 +53,8 @@ export function detailActionHelp(action: string): string {
 
 export function DetailScreen({
   colors,
-  detail,
-  recovery,
+  view,
   clarifications,
-  approvalMessage,
   previews,
   previewOffset,
   error,
@@ -59,10 +63,8 @@ export function DetailScreen({
   visibleRows,
 }: {
   colors: boolean;
-  detail: RunInspection;
-  recovery?: RunRecoveryExplanation | undefined;
+  view: RunView;
   clarifications: string[];
-  approvalMessage?: string | undefined;
   previews: ArtifactContentView[];
   previewOffset: number;
   error?: string | undefined;
@@ -70,7 +72,7 @@ export function DetailScreen({
   offset: number;
   visibleRows: number;
 }) {
-  const actions = detailActions(detail, recovery, clarifications);
+  const actions = detailActionItems(view);
   const selectedAction = actions[selected];
   const previewLines = previews.flatMap((preview) => {
     const label = `${preview.artifact.stepId}.${preview.artifact.name}`;
@@ -83,8 +85,8 @@ export function DetailScreen({
         .map((line) => `  ${line}`),
     ];
   });
-  const runTone = colors ? runStatusColor(detail.run.status) : undefined;
-  const artifactBytes = detail.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
+  const runTone = colors ? runStatusColor(view.status) : undefined;
+  const artifactBytes = view.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
   return (
     <ScreenFrame
       title="Run detail"
@@ -98,22 +100,21 @@ export function DetailScreen({
         <Box>
           <SafeText>Status: </SafeText>
           {runTone === undefined ? (
-            <SafeText>{humanRunStatus(detail.run.status)}</SafeText>
+            <SafeText>{humanRunStatus(view.status)}</SafeText>
           ) : (
-            <SafeText color={runTone}>{humanRunStatus(detail.run.status)}</SafeText>
+            <SafeText color={runTone}>{humanRunStatus(view.status)}</SafeText>
           )}
-          <SafeText>{`  updated ${formatRelativeTime(detail.run.updatedAt)}`}</SafeText>
+          <SafeText>{`  updated ${formatRelativeTime(view.updatedAt)}`}</SafeText>
         </Box>
-        <SafeText>{`Workflow: ${detail.run.workflowId} v${detail.run.workflowVersion}`}</SafeText>
-        <SafeText>{`Objective: ${detail.run.objective}`}</SafeText>
-        <SafeText>{`Run ID: ${detail.run.id}`}</SafeText>
-        <SafeText>{`Created: ${formatTimestamp(detail.run.createdAt)}`}</SafeText>
-        <SafeText>{`Events: ${detail.eventCount} persisted events`}</SafeText>
-        <SafeText>{`Recovery: ${recovery?.reason ?? 'Loading recovery explanation...'}`}</SafeText>
+        <SafeText>{`Workflow: ${view.workflow.id} v${view.workflow.version}`}</SafeText>
+        <SafeText>{`Objective: ${view.objective}`}</SafeText>
+        <SafeText>{`Run ID: ${view.id}`}</SafeText>
+        <SafeText>{`Created: ${formatTimestamp(view.createdAt)}`}</SafeText>
+        <SafeText>{`Events: ${view.eventCount} persisted events`}</SafeText>
+        <SafeText>{`Available actions: ${view.availableActions.length}`}</SafeText>
         {clarifications.length > 0 ? (
           <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
         ) : null}
-        {approvalMessage ? <SafeText>{`Approval: ${approvalMessage}`}</SafeText> : null}
         {previewLines.length > 0 ? (
           <TextViewport
             lines={previewLines}
@@ -122,26 +123,26 @@ export function DetailScreen({
           />
         ) : null}
         <SafeText>
-          {`Artifacts: ${detail.artifacts.length} reference${detail.artifacts.length === 1 ? '' : 's'}${
-            detail.artifacts.length > 0 ? ` (${formatBytes(artifactBytes)})` : ''
+          {`Artifacts: ${view.artifacts.length} reference${view.artifacts.length === 1 ? '' : 's'}${
+            view.artifacts.length > 0 ? ` (${formatBytes(artifactBytes)})` : ''
           }`}
         </SafeText>
       </PaneSection>
 
       <PaneSection title="Steps" colors={colors}>
-        {detail.steps.length === 0 ? (
+        {view.phases.length === 0 ? (
           <SafeText dimColor>No step records for this run.</SafeText>
         ) : (
-          detail.steps.map((step) => {
-            const stepTone = colors ? runStatusColor(step.status) : undefined;
-            const suffix = step.error ? `  - ${step.error.message}` : '';
+          view.phases.map((phase) => {
+            const stepTone = colors ? runStatusColor(phase.status) : undefined;
+            const suffix = phase.error ? `  - ${phase.error.message}` : '';
             return (
-              <Box key={step.stepId}>
-                <SafeText>{`  ${step.stepId}  `}</SafeText>
+              <Box key={phase.id}>
+                <SafeText>{`  ${phase.id}  `}</SafeText>
                 {stepTone === undefined ? (
-                  <SafeText>{humanStepStatus(step.status)}</SafeText>
+                  <SafeText>{humanStepStatus(phase.status)}</SafeText>
                 ) : (
-                  <SafeText color={stepTone}>{humanStepStatus(step.status)}</SafeText>
+                  <SafeText color={stepTone}>{humanStepStatus(phase.status)}</SafeText>
                 )}
                 {suffix ? <SafeText>{suffix}</SafeText> : null}
               </Box>
@@ -152,12 +153,14 @@ export function DetailScreen({
 
       <PaneSection title="Actions" colors={colors}>
         <SelectionList
-          items={actions}
+          items={actions.map((action) => action.label)}
           selected={selected}
           offset={offset}
           visibleRows={visibleRows}
         />
-        {selectedAction ? <SafeText dimColor>{detailActionHelp(selectedAction)}</SafeText> : null}
+        {selectedAction ? (
+          <SafeText dimColor>{detailActionHelp(selectedAction.label)}</SafeText>
+        ) : null}
       </PaneSection>
     </ScreenFrame>
   );

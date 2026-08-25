@@ -1,10 +1,9 @@
-import type { RunInspection } from '../../application/operations.js';
-import type { StepRun } from '../../core/run.js';
+import type { RunView } from '../../application/run-view.js';
+import type { StepStatus } from '../../core/run.js';
 import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, SelectionList } from '../components.js';
-import { sumStepCosts, sumStepTokens } from '../execution.js';
 
-function stepMarker(status: StepRun['status']): string {
+function stepMarker(status: StepStatus): string {
   switch (status) {
     case 'completed':
       return '[x]';
@@ -25,49 +24,44 @@ function stepMarker(status: StepRun['status']): string {
 
 export function ResultScreen({
   colors,
-  inspection,
+  view,
   selected,
   offset,
   visibleRows,
   error,
 }: {
   colors: boolean;
-  inspection: RunInspection;
+  view: RunView;
   selected: number;
   offset: number;
   visibleRows: number;
   error?: string;
 }) {
-  const run = inspection.run;
-  const duration = formatDurationMs(
-    Math.max(0, Date.parse(run.updatedAt) - Date.parse(run.createdAt)),
-  );
-  const tokens = sumStepTokens(inspection.steps);
-  const cost = sumStepCosts(inspection.steps);
-  const artifactItems = inspection.artifacts.map(
-    (artifact) => `${artifact.stepId}.${artifact.name}`,
-  );
+  const duration = view.metrics.durationMs;
+  const tokens = view.metrics.usage?.totalTokens;
+  const cost = view.metrics.costUsd;
+  const artifactItems = view.artifacts.map((artifact) => `${artifact.stepId}.${artifact.name}`);
   return (
     <ScreenFrame
       title="Run status"
-      subtitle={`Run ${run.id}`}
+      subtitle={`Run ${view.id}`}
       status={error}
       footer={artifactItems.length > 0 ? 'j/k move | Enter browse artifacts | q back' : 'q back'}
       colors={colors}
       border={false}
     >
       <PaneSection title="Summary" colors={colors} first>
-        <SafeText>Status: {humanRunStatus(run.status)}</SafeText>
-        <SafeText>Workflow: {run.workflowId}</SafeText>
-        <SafeText>Duration: {duration}</SafeText>
+        <SafeText>Status: {humanRunStatus(view.status)}</SafeText>
+        <SafeText>Workflow: {view.workflow.id}</SafeText>
+        <SafeText>Duration: {duration === undefined ? '-' : formatDurationMs(duration)}</SafeText>
         <SafeText>Usage: {tokens === undefined ? '-' : `${tokens} tokens`}</SafeText>
         <SafeText>Cost: {cost === undefined ? '-' : `$${cost.toFixed(4)}`}</SafeText>
       </PaneSection>
       <PaneSection title="Checklist" colors={colors}>
-        {inspection.steps.map((step) => (
-          <SafeText key={step.stepId}>
+        {view.phases.map((phase) => (
+          <SafeText key={phase.id}>
             {'  '}
-            {stepMarker(step.status)} {step.stepId} {step.profile}
+            {stepMarker(phase.status)} {phase.id} {phase.profile ?? '-'}
           </SafeText>
         ))}
       </PaneSection>

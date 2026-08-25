@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowRun } from '../src/core/run.js';
+import type { RunView } from '../src/application/run-view.js';
 import { runInkShell } from '../src/tui/shell.js';
 import * as configOperations from '../src/application/config-operations.js';
 
@@ -395,9 +396,7 @@ function applicationContext(execute: ReturnType<typeof vi.fn>): ApplicationServi
       artifacts: [],
       eventCount: 0,
     }),
-    getRunView: async () => {
-      throw new Error('not implemented');
-    },
+    getRunView: async () => createRunView(completedRun()),
     listRunEvents: async () => ({ events: [] }),
     listRuns: async () => ({ runs: [] }),
     readArtifact: async () => {
@@ -430,6 +429,22 @@ function completedRun(): WorkflowRun {
     status: 'completed',
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+function createRunView(run: WorkflowRun): RunView {
+  return {
+    id: run.id,
+    workflow: { id: run.workflowId, version: run.workflowVersion, compatible: true },
+    objective: run.objective,
+    status: run.status,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    phases: [],
+    artifacts: [],
+    eventCount: 0,
+    metrics: {},
+    availableActions: [],
   };
 }
 

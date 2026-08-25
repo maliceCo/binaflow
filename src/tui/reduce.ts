@@ -12,8 +12,8 @@ import {
   generatedConfigurationPreview,
 } from './launch.js';
 import { visibleFolderEntries, type TuiEvent, type TuiState } from './model.js';
-import { APPROVAL_ACTIONS } from './screens/approval.js';
-import { detailActions } from './screens/detail.js';
+import { approvalActionItems } from './screens/approval.js';
+import { detailActionItems } from './screens/detail.js';
 import { diagnosisLines } from './screens/diagnosis.js';
 import { moveSelection, scrollText } from './viewport.js';
 
@@ -287,6 +287,9 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         cancellationRequested: false,
       };
     case 'run-finished':
+      if (state.runView?.status === event.status) {
+        return { ...state, cancellationRequested: false };
+      }
       return {
         ...state,
         detail:
@@ -302,14 +305,16 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'cancel-requested':
       if (state.detail !== 'live') return state;
       return { ...state, cancellationRequested: true };
-    case 'open-run': {
-      const next = { ...state, activeRunId: event.runId, selection: 0, offset: 0 };
-      if (event.status === 'waiting') return { ...next, detail: 'approval' };
-      if (isTerminalStatus(event.status)) return { ...next, detail: 'result' };
-      return { ...next, detail: 'inspect' };
-    }
+    case 'open-run':
+      return {
+        ...state,
+        activeRunId: event.runId,
+        detail: 'inspect',
+        selection: 0,
+        offset: 0,
+      };
     case 'open-artifacts': {
-      if (!state.inspection) return state;
+      if (!state.runView) return state;
       if (state.detail !== 'inspect' && state.detail !== 'result') return state;
       return {
         ...clearField(state, 'artifactContent'),
@@ -322,12 +327,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
     }
     case 'open-launch': {
-      if (!state.inspection || !state.diagnosis) return state;
+      if (!state.runView || !state.diagnosis) return state;
       const workflow =
-        state.workflows?.find((workflow) => workflow.id === state.inspection?.run.workflowId) ??
-        discoverWorkflows().find((workflow) => workflow.id === state.inspection?.run.workflowId);
+        state.workflows?.find((workflow) => workflow.id === state.runView?.workflow.id) ??
+        discoverWorkflows().find((workflow) => workflow.id === state.runView?.workflow.id);
       if (!workflow) return state;
-      const values = { objective: state.inspection.run.objective };
+      const values = { objective: state.runView.objective };
       const field = Math.max(0, workflowInputFields(workflow).indexOf('objective'));
       return {
         ...clearField(state, 'error'),
@@ -343,38 +348,43 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         offset: 0,
       };
     }
-    case 'inspection-set': {
+    case 'run-view-set': {
+      const detail: TuiState['detail'] =
+        event.view.pendingAction ||
+        event.view.availableActions.some(
+          (action) => action.kind === 'approve-research' || action.kind === 'reject-research',
+        )
+          ? 'approval'
+          : event.view.availableActions.some(
+                (action) => action.kind === 'resume' || action.kind === 'mark-interrupted',
+              )
+            ? 'inspect'
+            : event.view.status === 'completed' ||
+                event.view.status === 'failed' ||
+                event.view.status === 'cancelled' ||
+                event.view.status === 'interrupted'
+              ? 'result'
+              : 'inspect';
       const base = {
         ...state,
-        inspection: event.inspection,
+        runView: event.view,
         clarifications: event.clarifications,
-        detail:
-          (event.inspection.run.status === 'failed' ||
-            event.inspection.run.status === 'interrupted') &&
-          event.recovery?.eligible
-            ? 'inspect'
-            : state.detail,
+        detail,
         selection: 0,
         offset: 0,
         artifactSelected: 0,
         artifactOffset: 0,
         artifactContentOffset: 0,
-        activeRunId: state.activeRunId ?? event.inspection.run.id,
+        activeRunId: state.activeRunId ?? event.view.id,
       };
-      const withRecovery = event.recovery
-        ? { ...base, recovery: event.recovery }
-        : clearField(base, 'recovery');
-      return clearField(clearField(withRecovery, 'artifactContent'), 'error');
+      return clearField(clearField(base, 'artifactContent'), 'error');
     }
     case 'approval-set':
       return {
         ...clearField(state, 'error'),
         detail: 'approval',
-        approvalMessage: event.message,
         approvalPreviews: event.previews,
         approvalPreviewOffset: 0,
-        selection: 0,
-        offset: 0,
       };
     case 'artifact-content-set':
       return { ...state, artifactContent: event.content, artifactContentOffset: 0 };
@@ -405,7 +415,11 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       if (state.overlay !== 'rejection-feedback') return state;
       return { ...clearField(state, 'error'), overlay: 'none', inputValue: '' };
     case 'resume-run':
-      if (state.detail !== 'inspect' || !state.recovery?.eligible) return state;
+      if (
+        state.detail !== 'inspect' ||
+        !state.runView?.availableActions.some((action) => action.kind === 'resume')
+      )
+        return state;
       return { ...clearField(state, 'error'), status: 'Resuming workflow...' };
     case 'approval-approve':
       if (state.detail !== 'approval') return state;
@@ -545,16 +559,17 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       return moveList(state, LAUNCH_CONFIRM_ACTIONS.length, direction, visibleRows);
     }
     case 'inspect': {
-      if (!state.inspection) return state;
-      const count = detailActions(state.inspection, state.recovery, state.clarifications).length;
+      if (!state.runView) return state;
+      const count = detailActionItems(state.runView).length;
       if (count === 0) return state;
       return moveList(state, count, direction, visibleRows);
     }
     case 'approval': {
+      if (!state.runView) return state;
       const moved = moveSelection(
         { offset: state.offset, selected: state.selection },
         direction,
-        APPROVAL_ACTIONS.length,
+        approvalActionItems(state.runView).length,
         visibleRows,
       );
       let next: TuiState = { ...state, selection: moved.selected, offset: moved.offset };
@@ -574,7 +589,7 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       return next;
     }
     case 'result': {
-      const count = state.inspection?.artifacts.length ?? 0;
+      const count = state.runView?.artifacts.length ?? 0;
       if (count === 0) return state;
       return moveList(state, count, direction, visibleRows);
     }
@@ -591,7 +606,7 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
           ),
         };
       }
-      const count = state.inspection?.artifacts.length ?? 0;
+      const count = state.runView?.artifacts.length ?? 0;
       if (count === 0) return state;
       const moved = moveSelection(
         { offset: state.offset, selected: state.selection },
@@ -702,15 +717,6 @@ function previousSetupStep(state: TuiState): TuiState {
     case 1:
       return state;
   }
-}
-
-function isTerminalStatus(status: string): boolean {
-  return (
-    status === 'completed' ||
-    status === 'failed' ||
-    status === 'cancelled' ||
-    status === 'interrupted'
-  );
 }
 
 function clamp(selected: number, count: number): number {

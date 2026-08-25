@@ -66,6 +66,11 @@ export function LiveScreen({
 }) {
   const activity = live.activity.map((item) => `[${item.stepId}] ${item.type}: ${item.message}`);
   const displayed = detail ? activity : activity.slice(-8);
+  const phases = live.view?.phases;
+  const status = live.view?.status ?? live.run.status;
+  const tokens = live.view?.metrics.usage?.totalTokens ?? live.tokens;
+  const cost = live.view?.metrics.costUsd ?? live.costUsd;
+  const duration = live.view?.metrics.durationMs;
   return (
     <ScreenFrame
       title="Workflow running"
@@ -80,19 +85,35 @@ export function LiveScreen({
       border={false}
     >
       <PaneSection title="Run" colors={colors} first>
-        <SafeText>{`${live.run.id}  ${live.workflow.id}`}</SafeText>
+        <SafeText>{`${live.view?.id ?? live.run.id}  ${live.view?.workflow.id ?? live.workflow.id}`}</SafeText>
         <SafeText>
-          Status: {humanRunStatus(live.run.status)} Elapsed:{' '}
-          {formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))}
+          Status: {humanRunStatus(status)} Elapsed:{' '}
+          {duration === undefined
+            ? formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))
+            : formatDurationMs(duration)}
         </SafeText>
         <SafeText>
-          Usage: {live.tokens === undefined ? '-' : `${live.tokens} tokens`} Cost:{' '}
-          {live.costUsd === undefined ? '-' : `$${live.costUsd.toFixed(4)}`}
+          Usage: {tokens === undefined ? '-' : `${tokens} tokens`} Cost:{' '}
+          {cost === undefined ? '-' : `$${cost.toFixed(4)}`}
         </SafeText>
       </PaneSection>
       <PaneSection title="Checklist" colors={colors}>
-        {live.steps.map((step) => (
-          <StepChecklistRow key={step.id} step={step} colors={colors} />
+        {(phases ?? live.steps).map((step) => (
+          <StepChecklistRow
+            key={step.id}
+            step={
+              'kind' in step
+                ? {
+                    id: step.id,
+                    profile: step.profile ?? '-',
+                    status: step.status,
+                    durationMs: step.durationMs,
+                    costUsd: step.costUsd,
+                  }
+                : step
+            }
+            colors={colors}
+          />
         ))}
       </PaneSection>
       <PaneSection title="Activity" colors={colors}>

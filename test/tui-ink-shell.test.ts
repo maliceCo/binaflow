@@ -11,6 +11,7 @@ import type { AgentProfile } from '../src/config.js';
 import type { WorkflowEngine } from '../src/core/engine.js';
 import type { NormalizedEvent } from '../src/core/events.js';
 import type { WorkflowRun } from '../src/core/run.js';
+import type { RunView } from '../src/application/run-view.js';
 
 describe('Ink shell', () => {
   const directories: string[] = [];
@@ -348,6 +349,7 @@ describe('Ink shell', () => {
         await getStepRuns(historical.id, { includeResult: false });
         return { run: historical, steps: [], artifacts: [], eventCount: 0 };
       },
+      getRunView: async () => createRunView(historical),
       explainRunRecovery: async () => ({
         eligible: false,
         reason: 'completed',
@@ -378,6 +380,40 @@ describe('Ink shell', () => {
     await running;
   });
 
+  it('renders the authoritative run view when supplemental inspection fails', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const historical = { ...createRun('completed'), objective: 'Authoritative view' };
+    const context: ApplicationService = {
+      ...createApplicationService(
+        async () => historical,
+        () => undefined,
+      ),
+      listRuns: async () => ({ runs: [historical] }),
+      getRunView: async () => createRunView(historical),
+      inspectRun: async () => {
+        throw new Error('supplemental inspection unavailable');
+      },
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+
+    await openHistory(terminal);
+    await terminal.output.waitFor('Run status');
+    expect(stripAnsi(terminal.output.text())).toContain('Authoritative view');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Workspace status');
+    terminal.input.push('q');
+    await running;
+  });
+
   it('shows approval message, bounded previews, and workspace warning while waiting', async () => {
     const directory = await temporaryDirectory();
     await writeConfig(directory);
@@ -391,7 +427,7 @@ describe('Ink shell', () => {
       id: 'art-1',
       runId: waiting.id,
       stepId: 'research',
-      name: 'report',
+      name: 'artifact',
       kind: 'text' as const,
       path: 'report.txt',
       mediaType: 'text/plain',
@@ -432,6 +468,25 @@ describe('Ink shell', () => {
         artifacts: [reportArtifact],
         eventCount: 0,
       }),
+      getRunView: async () =>
+        createRunView(waiting, {
+          artifacts: [
+            {
+              id: reportArtifact.id,
+              stepId: reportArtifact.stepId,
+              name: reportArtifact.name,
+              kind: reportArtifact.kind,
+              mediaType: reportArtifact.mediaType,
+              sizeBytes: reportArtifact.sizeBytes,
+            },
+          ],
+          availableActions: researchApprovalActions(),
+          pendingAction: {
+            kind: 'research-approval',
+            stepId: 'research-approval',
+            message: 'Review the research before continuing.',
+          },
+        }),
       explainRunRecovery: async () => ({
         eligible: false,
         reason: 'waiting',
@@ -514,6 +569,25 @@ describe('Ink shell', () => {
         artifacts: [reportArtifact],
         eventCount: 2,
       }),
+      getRunView: async () =>
+        createRunView(waiting, {
+          artifacts: [
+            {
+              id: reportArtifact.id,
+              stepId: reportArtifact.stepId,
+              name: reportArtifact.name,
+              kind: reportArtifact.kind,
+              mediaType: reportArtifact.mediaType,
+              sizeBytes: reportArtifact.sizeBytes,
+            },
+          ],
+          availableActions: researchRejectionActions(),
+          pendingAction: {
+            kind: 'research-approval',
+            stepId: 'research-approval',
+            message: 'Review the research before continuing.',
+          },
+        }),
       explainRunRecovery: async () => ({
         eligible: false,
         reason: 'waiting',
@@ -542,11 +616,10 @@ describe('Ink shell', () => {
     });
     await openHistory(terminal);
     await terminal.output.waitFor('Approve research and continue');
-    terminal.input.push('j');
-    await terminal.output.waitFor('Reject research with feedback');
+    await terminal.output.waitFor('bounded');
     terminal.input.push('\r');
-    await terminal.output.waitFor('Reject research');
-    terminal.input.push('q');
+    await terminal.output.waitFor('Feedback for another research iteration');
+    terminal.input.push('\u001b');
     await terminal.output.waitFor('Approve research and continue');
     expect(terminal.output.text()).toContain('Waiting');
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -623,6 +696,22 @@ describe('Ink shell', () => {
           eventCount: 1,
         };
       },
+      getRunView: async () =>
+        createRunView(
+          currentStatus === 'cancelled' ? { ...liveRun, status: 'cancelled' } : failed,
+          {
+            availableActions:
+              currentStatus === 'cancelled'
+                ? []
+                : [
+                    {
+                      kind: 'resume',
+                      label: 'Retry selected work',
+                      requiresConfirmation: false,
+                    },
+                  ],
+          },
+        ),
       explainRunRecovery: async () => ({
         eligible: true,
         reason: 'retryable',
@@ -651,7 +740,7 @@ describe('Ink shell', () => {
       applicationContext: context,
     });
     await openHistory(terminal);
-    await terminal.output.waitFor('Resume retryable work');
+    await terminal.output.waitFor('Retry selected work');
     terminal.input.push('\r');
     await terminal.output.waitFor('Workflow running');
     terminal.input.push('q');
@@ -681,6 +770,19 @@ describe('Ink shell', () => {
       ),
       listRuns: async () => ({ runs: [currentRunning] }),
       inspectRun: async () => ({ run: currentRunning, steps: [], artifacts: [], eventCount: 0 }),
+      getRunView: async () =>
+        createRunView(currentRunning, {
+          availableActions:
+            currentRunning.status === 'running'
+              ? [
+                  {
+                    kind: 'mark-interrupted',
+                    label: 'Mark interrupted and review recovery',
+                    requiresConfirmation: true,
+                  },
+                ]
+              : [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }],
+        }),
       explainRunRecovery: async () => ({
         eligible: currentRunning.status === 'interrupted',
         reason: 'recovery',
@@ -779,6 +881,24 @@ describe('Ink shell', () => {
       ],
       eventCount: 1,
     });
+    context.getRunView = async () =>
+      createRunView(createRun('completed'), {
+        phases: [
+          { id: 'plan', kind: 'agent', profile: 'planner', status: 'completed', attempt: 1 },
+        ],
+        artifacts: [
+          {
+            id: 'artifact-1',
+            stepId: 'plan',
+            name: 'plan',
+            kind: 'json',
+            mediaType: 'application/json',
+            sizeBytes: 2,
+          },
+        ],
+        eventCount: 1,
+        metrics: { usage: { totalTokens: 12 }, costUsd: 0.004 },
+      });
     const running = runInkShell({
       cwd: directory,
       input: terminal.input as unknown as NodeJS.ReadStream,
@@ -961,6 +1081,7 @@ function createApplicationService(
   subscribe: (listener: (event: NormalizedEvent) => void) => void,
 ): ApplicationService {
   const profiles = { planner: profile('planner'), builder: profile('builder') };
+  let currentRun = createRun('completed');
   return {
     subscribeEvents: (listener: (event: NormalizedEvent) => void) => {
       subscribe(listener);
@@ -973,8 +1094,8 @@ function createApplicationService(
       runId?: string;
       signal?: AbortSignal;
       onRunStarted?: (run: WorkflowRun) => void;
-    }) =>
-      execute(
+    }) => {
+      const run = await execute(
         { version: 1, id: request.workflowId, input: { required: [], properties: {} }, steps: [] },
         {
           objective: request.objective,
@@ -982,9 +1103,15 @@ function createApplicationService(
           profiles,
           ...(request.runId ? { runId: request.runId } : {}),
           ...(request.signal ? { signal: request.signal } : {}),
-          ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+          onRunStarted: (startedRun) => {
+            currentRun = startedRun;
+            request.onRunStarted?.(startedRun);
+          },
         },
-      ),
+      );
+      currentRun = run;
+      return run;
+    },
     resumeWorkflow: async () => ({ run: createRun('completed'), alreadyCompleted: false }),
     decideApproval: async () => createRun('completed'),
     inspectRun: async () => ({
@@ -993,9 +1120,7 @@ function createApplicationService(
       artifacts: [],
       eventCount: 0,
     }),
-    getRunView: async () => {
-      throw new Error('not implemented');
-    },
+    getRunView: async () => createRunView(currentRun),
     listRunEvents: async () => ({ events: [] }),
     listRuns: async () => ({ runs: [] }),
     readArtifact: async () => {
@@ -1016,6 +1141,46 @@ function createApplicationService(
     discoverModels: async () => [],
     diagnoseConfiguration: () => ({ configuredProfiles: [], workflows: [] }),
   };
+}
+
+function createRunView(run: WorkflowRun, overrides: Partial<RunView> = {}): RunView {
+  return {
+    id: run.id,
+    workflow: { id: run.workflowId, version: run.workflowVersion, compatible: true },
+    objective: run.objective,
+    status: run.status,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+    phases: [],
+    artifacts: [],
+    eventCount: 0,
+    metrics: {},
+    availableActions: [],
+    ...overrides,
+  };
+}
+
+function researchApprovalActions(): RunView['availableActions'] {
+  return [
+    {
+      kind: 'approve-research',
+      stepId: 'research-approval',
+      label: 'Approve research and continue',
+      requiresConfirmation: false,
+    },
+    {
+      kind: 'reject-research',
+      stepId: 'research-approval',
+      label: 'Reject research with feedback',
+      requiresConfirmation: false,
+      requiresFeedback: true,
+    },
+  ];
+}
+
+function researchRejectionActions(): RunView['availableActions'] {
+  const actions = researchApprovalActions();
+  return [actions[1]!, actions[0]!];
 }
 
 function createRun(status: WorkflowRun['status']): WorkflowRun {

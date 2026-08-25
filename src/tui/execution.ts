@@ -1,5 +1,6 @@
 import type { NormalizedEvent } from '../core/events.js';
 import type { StepRun, WorkflowRun } from '../core/run.js';
+import type { RunView } from '../application/run-view.js';
 import type { WorkflowContract } from '../workflows/catalog.js';
 import { sanitizeInkText } from './text.js';
 
@@ -26,6 +27,7 @@ export interface LiveStep {
 export interface LiveState {
   run: WorkflowRun;
   workflow: WorkflowContract;
+  view?: RunView;
   steps: LiveStep[];
   activity: LiveActivity[];
   startedAt: string;
@@ -166,6 +168,16 @@ export function applyStepSnapshot(
   };
 }
 
+export function applyRunViewSnapshot(
+  state: LiveState,
+  view: RunView,
+  generation: number,
+  appliedGeneration: number,
+): LiveState | undefined {
+  if (generation < appliedGeneration) return undefined;
+  return { ...state, view };
+}
+
 export function stepDurationMs(step: StepRun, nowMs: number = Date.now()): number | undefined {
   if (!step.startedAt) return undefined;
   const start = Date.parse(step.startedAt);
@@ -175,10 +187,10 @@ export function stepDurationMs(step: StepRun, nowMs: number = Date.now()): numbe
   return Math.max(0, end - start);
 }
 
-export function createSnapshotInspectionController(options: {
-  inspect: (runId: string) => Promise<StepRun[]>;
+export function createSnapshotInspectionController<T = StepRun>(options: {
+  inspect: (runId: string) => Promise<T>;
   getRunId: () => string | undefined;
-  apply: (steps: StepRun[], generation: number) => void;
+  apply: (snapshot: T, generation: number) => void;
   intervalMs?: number;
   schedule?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
   clearSchedule?: (handle: ReturnType<typeof setTimeout>) => void;
@@ -213,8 +225,8 @@ export function createSnapshotInspectionController(options: {
     inFlightGeneration = token;
     const inspection = (async () => {
       try {
-        const steps = await options.inspect(runId);
-        if (!disposed) options.apply(steps, token);
+        const snapshot = await options.inspect(runId);
+        if (!disposed) options.apply(snapshot, token);
       } catch {
         // Snapshot inspection is supplemental; live events remain authoritative.
       } finally {

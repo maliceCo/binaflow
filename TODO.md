@@ -255,37 +255,37 @@ turning this phase into a visual redesign.
 
 ### Required Changes
 
-- [ ] Store and render `RunView` rather than raw `RunInspection` wherever the TUI
+- [x] Store and render `RunView` rather than raw `RunInspection` wherever the TUI
       needs phase status, metrics, pending action, or available actions.
-- [ ] Keep terminal navigation state, offsets, focus, and overlays TUI-specific.
-- [ ] Remove workflow decision inference from reducers/controllers when the same
+- [x] Keep terminal navigation state, offsets, focus, and overlays TUI-specific.
+- [x] Remove workflow decision inference from reducers/controllers when the same
       decision is provided by `RunView`.
-- [ ] Refresh the authoritative run view after execution transitions, approval
+- [x] Refresh the authoritative run view after execution transitions, approval
       decisions, recovery actions, and relevant live activity.
-- [ ] Keep live event buffering bounded and use it only for the activity panel.
-- [ ] Keep artifact reads and approval commands behind application capabilities.
-- [ ] Split controller code only where required to separate application session
+- [x] Keep live event buffering bounded and use it only for the activity panel.
+- [x] Keep artifact reads and approval commands behind application capabilities.
+- [x] Split controller code only where required to separate application session
       or lifecycle concerns from Ink rendering. Do not rewrite the shell.
-- [ ] Preserve keyboard behavior, attached cancellation, setup, recovery, and
+- [x] Preserve keyboard behavior, attached cancellation, setup, recovery, and
       current screens unless a change is required by the new contract.
 
 ### Valuable Tests
 
-- [ ] Reducer tests consume explicit available/pending actions instead of
+- [x] Reducer tests consume explicit available/pending actions instead of
       reproducing domain status rules.
-- [ ] Existing lifecycle, cancellation, viewport, and rendering safety tests
+- [x] Existing lifecycle, cancellation, viewport, and rendering safety tests
       remain green.
-- [ ] Add only focused tests for observable-state transitions that previously
+- [x] Add only focused tests for observable-state transitions that previously
       required TUI inference.
 
 ### Acceptance Criteria
 
-- [ ] CLI and TUI render the same authoritative phase and action state.
-- [ ] TUI logs remain useful but cannot change domain decisions.
-- [ ] No Ink or terminal type leaks into application contracts.
-- [ ] No visual redesign or new review feature entered the phase.
-- [ ] Full verification gate passes.
-- [ ] Owner QA approved before commit.
+- [x] CLI and TUI render the same authoritative phase and action state.
+- [x] TUI logs remain useful but cannot change domain decisions.
+- [x] No Ink or terminal type leaks into application contracts.
+- [x] No visual redesign or new review feature entered the phase.
+- [x] Full verification gate passes.
+- [x] Owner QA approved before commit.
 
 ## Phase 6: Documentation And Self-Destruction
 

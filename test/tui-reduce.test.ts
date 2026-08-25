@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discoverWorkflows } from '../src/application/operations.js';
-import type { RunInspection } from '../src/application/operations.js';
+import type { RunView } from '../src/application/run-view.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
 import type { LaunchInputState } from '../src/tui/launch.js';
 import type { TuiEvent, TuiState } from '../src/tui/model.js';
@@ -79,14 +79,14 @@ const transitions: Transition[] = [
     },
   },
   {
-    name: 'opening a waiting run switches the detail to approval and keeps the run selected',
+    name: 'opening a run waits for RunView before selecting a detail mode',
     events: [
       diagnosed(validConfig()),
       useFolder(),
       { type: 'open-run', runId: 'run-9', status: 'waiting' },
     ],
     expect: (state) => {
-      expect(state.detail).toBe('approval');
+      expect(state.detail).toBe('inspect');
       expect(state.activeRunId).toBe('run-9');
       expect(state.overlay).toBe('none');
     },
@@ -149,7 +149,7 @@ const transitions: Transition[] = [
     ],
     expect: (state) => {
       expect(state.detail).toBe('artifacts');
-      expect(state.inspection?.run.id).toBe('run-9');
+      expect(state.runView?.id).toBe('run-9');
     },
   },
   {
@@ -216,17 +216,8 @@ const transitions: Transition[] = [
       useFolder(),
       runStarted(),
       {
-        type: 'inspection-set',
-        inspection: {
-          ...inspectionSetInspection('failed'),
-        },
-        recovery: {
-          eligible: true,
-          reason: 'Retryable builder step',
-          completedStepIds: [],
-          retryableStepIds: ['build'],
-          workflowVersionCompatible: true,
-        },
+        type: 'run-view-set',
+        view: inspectionSetView('failed'),
         clarifications: [],
       },
       { type: 'run-finished', status: 'failed' },
@@ -234,7 +225,9 @@ const transitions: Transition[] = [
     expect: (state) => {
       expect(state.detail).toBe('inspect');
       expect(state.activeRunId).toBe('run-1');
-      expect(state.recovery?.eligible).toBe(true);
+      expect(state.runView?.availableActions).toEqual([
+        { kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false },
+      ]);
     },
   },
   {
@@ -305,37 +298,52 @@ function nextToReview(): TuiEvent[] {
 
 function inspectionSet(): TuiEvent {
   return {
-    type: 'inspection-set',
-    inspection: inspectionSetInspection('completed'),
+    type: 'run-view-set',
+    view: inspectionSetView('completed'),
     clarifications: [],
   };
 }
 
-function inspectionSetInspection(status: 'completed' | 'failed'): RunInspection {
+function inspectionSetView(status: 'completed' | 'failed'): RunView {
   return {
-    run: {
-      id: 'run-9',
-      workflowId: 'plan-build',
-      workflowVersion: 1,
-      objective: 'Build the CLI',
-      status,
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T01:00:00Z',
-    },
-    steps: [],
+    id: 'run-9',
+    workflow: { id: 'plan-build', version: 1, installedVersion: 1, compatible: true },
+    objective: 'Build the CLI',
+    status,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T01:00:00Z',
+    phases: [
+      {
+        id: 'plan',
+        kind: 'agent',
+        profile: 'planner',
+        status,
+        attempt: 1,
+      },
+      {
+        id: 'build',
+        kind: 'agent',
+        profile: 'builder',
+        status: 'pending',
+        attempt: 1,
+      },
+    ],
     artifacts: [
       {
         id: 'artifact-1',
-        runId: 'run-9',
         stepId: 'build',
         name: 'output.txt',
         kind: 'text',
-        path: 'artifacts/run-9/build/output.txt',
         mediaType: 'text/plain',
         sizeBytes: 10,
       },
     ],
     eventCount: 0,
+    metrics: {},
+    availableActions:
+      status === 'failed'
+        ? [{ kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false }]
+        : [],
   };
 }
 

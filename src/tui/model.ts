@@ -2,11 +2,8 @@ import type {
   ConfigurationDiagnosis,
   GeneratedConfiguration,
 } from '../application/config-operations.js';
-import type {
-  ArtifactContentView,
-  RunInspection,
-  RunRecoveryExplanation,
-} from '../application/operations.js';
+import type { ArtifactContentView } from '../application/operations.js';
+import type { RunView } from '../application/run-view.js';
 import type { AgentModel } from '../core/agent.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import type { WorkflowContract } from '../workflows/catalog.js';
@@ -77,10 +74,8 @@ export interface TuiState {
   offset: number;
   inputValue: string;
   launchInput?: LaunchInputState;
-  inspection?: RunInspection;
-  recovery?: RunRecoveryExplanation;
+  runView?: RunView;
   clarifications: string[];
-  approvalMessage?: string;
   approvalPreviews: ArtifactContentView[];
   approvalPreviewOffset: number;
   artifactSelected: number;
@@ -184,13 +179,8 @@ export type TuiEvent =
   | { type: 'workflows-loaded'; workflows: WorkflowContract[] }
   | { type: 'runs-loaded'; runs: WorkflowRun[] }
   | { type: 'folder-listed'; entries: FolderEntry[] }
-  | {
-      type: 'inspection-set';
-      inspection: RunInspection;
-      recovery?: RunRecoveryExplanation;
-      clarifications: string[];
-    }
-  | { type: 'approval-set'; message: string; previews: ArtifactContentView[] }
+  | { type: 'run-view-set'; view: RunView; clarifications: string[] }
+  | { type: 'approval-set'; previews: ArtifactContentView[] }
   | { type: 'artifact-content-set'; content: ArtifactContentView }
   | { type: 'generated-set'; generated: GeneratedConfiguration }
   | { type: 'setup-toggle-config' }

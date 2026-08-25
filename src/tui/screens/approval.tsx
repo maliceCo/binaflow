@@ -1,18 +1,25 @@
 import type { ArtifactContentView } from '../../application/operations.js';
-import type { WorkflowRun } from '../../core/run.js';
+import type { RunView } from '../../application/run-view.js';
 import { humanRunStatus } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
 
-export const APPROVAL_ACTIONS = [
-  'Approve research and continue',
-  'Reject research with feedback',
-  'Leave waiting',
-] as const;
+export type ApprovalSelection =
+  | { kind: 'approve-research'; label: string }
+  | { kind: 'reject-research'; label: string }
+  | { kind: 'leave-waiting'; label: 'Leave waiting' };
+
+export function approvalActionItems(view: RunView): ApprovalSelection[] {
+  return [
+    ...view.availableActions
+      .filter((action) => action.kind === 'approve-research' || action.kind === 'reject-research')
+      .map((action) => ({ kind: action.kind, label: action.label }) as const),
+    { kind: 'leave-waiting', label: 'Leave waiting' },
+  ];
+}
 
 export function ApprovalScreen({
   colors,
-  run,
-  message,
+  view,
   previews,
   previewOffset,
   error,
@@ -21,8 +28,7 @@ export function ApprovalScreen({
   visibleRows,
 }: {
   colors: boolean;
-  run: WorkflowRun;
-  message: string;
+  view: RunView;
   previews: ArtifactContentView[];
   previewOffset: number;
   error?: string | undefined;
@@ -30,6 +36,7 @@ export function ApprovalScreen({
   offset: number;
   visibleRows: number;
 }) {
+  const actions = approvalActionItems(view);
   const previewLines = previews.flatMap((preview) => {
     const label = `${preview.artifact.stepId}.${preview.artifact.name}`;
     if (preview.error) return [`${label}: ${preview.error}`];
@@ -51,11 +58,11 @@ export function ApprovalScreen({
       border={false}
     >
       <PaneSection title="Approval" colors={colors} first>
-        <SafeText>{`Status: ${humanRunStatus(run.status)}`}</SafeText>
-        <SafeText>{`Workflow: ${run.workflowId} v${run.workflowVersion}`}</SafeText>
-        <SafeText>{`Objective: ${run.objective}`}</SafeText>
-        <SafeText>{`Run ID: ${run.id}`}</SafeText>
-        <SafeText>{`Request: ${message}`}</SafeText>
+        <SafeText>{`Status: ${humanRunStatus(view.status)}`}</SafeText>
+        <SafeText>{`Workflow: ${view.workflow.id} v${view.workflow.version}`}</SafeText>
+        <SafeText>{`Objective: ${view.objective}`}</SafeText>
+        <SafeText>{`Run ID: ${view.id}`}</SafeText>
+        <SafeText>{`Request: ${view.pendingAction?.message ?? 'Review the pending action.'}`}</SafeText>
         <SafeText {...(colors ? { color: 'red' as const, bold: true } : { bold: true })}>
           WARNING: approving continues the workflow and can modify the workspace.
         </SafeText>
@@ -73,7 +80,7 @@ export function ApprovalScreen({
       </PaneSection>
       <PaneSection title="Decision" colors={colors}>
         <SelectionList
-          items={[...APPROVAL_ACTIONS]}
+          items={actions.map((action) => action.label)}
           selected={selected}
           offset={offset}
           visibleRows={visibleRows}
