@@ -44,8 +44,6 @@ import {
   FolderConfirmScreen,
   FolderPickerScreen,
   HelpOverlay,
-  IdleDetail,
-  StudioLayout,
   WelcomeScreen,
 } from './layout.js';
 import type { AttachedExecutionLifecycle } from './lifecycle.js';
@@ -57,14 +55,10 @@ import {
   type TuiState,
 } from './model.js';
 import { reduce } from './reduce.js';
-import { ArtifactsScreen } from './screens/artifacts.js';
-import { approvalActionItems, ApprovalScreen } from './screens/approval.js';
-import { DetailScreen, detailActionItems } from './screens/detail.js';
-import { DiagnosisScreen } from './screens/diagnosis.js';
+import { renderShellDetail } from './shell-view.js';
+import { approvalActionItems } from './screens/approval.js';
+import { detailActionItems } from './screens/detail.js';
 import { RejectionFeedbackScreen, RecoveryConfirmScreen } from './screens/feedback.js';
-import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
-import { LiveScreen } from './screens/live.js';
-import { ResultScreen } from './screens/result.js';
 import { SetupWizardScreen } from './screens/setup.js';
 import { MINIMUM_HEIGHT, MINIMUM_WIDTH } from './screens.js';
 import { scrollText } from './viewport.js';
@@ -1229,139 +1223,14 @@ export function InkShellController({
     }
   }
 
-  let right: ReactNode;
-  switch (state.detail) {
-    case 'diagnosis':
-      right = (
-        <DiagnosisScreen
-          colors={colors}
-          diagnosis={state.diagnosis}
-          offset={state.offset}
-          visibleRows={Math.max(1, size.rows - 7)}
-          refreshing={false}
-          error={state.error}
-        />
-      );
-      break;
-    case 'launch':
-      if (
-        state.launchInput &&
-        state.launchInput.field >= workflowInputFields(state.launchInput.workflow).length
-      ) {
-        right = state.diagnosis ? (
-          <LaunchConfirmationScreen
-            colors={colors}
-            diagnosis={state.diagnosis}
-            launchInput={state.launchInput}
-            error={state.error ?? state.status}
-            launching={launching}
-            selected={state.selection}
-            offset={state.offset}
-          />
-        ) : null;
-      } else if (state.launchInput) {
-        right = (
-          <LaunchInputScreen
-            key={`${state.launchInput.workflow.id}-${state.launchInput.field}`}
-            colors={colors}
-            launchInput={state.launchInput}
-            error={state.error ?? state.launchInput.error}
-            value={state.inputValue}
-            onChange={(value) => dispatch({ type: 'input-change', value })}
-            onSubmit={(value) => {
-              setTimeout(() => dispatch({ type: 'launch-input', value }), 0);
-            }}
-          />
-        );
-      } else {
-        right = (
-          <IdleDetail
-            colors={colors}
-            {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})}
-          />
-        );
-      }
-      break;
-    case 'live':
-      right = live ? (
-        <LiveScreen
-          colors={colors}
-          live={live}
-          detail={liveDetail}
-          offset={liveOffset}
-          visibleRows={Math.max(1, size.rows - 13)}
-        />
-      ) : null;
-      break;
-    case 'approval':
-      right = state.runView ? (
-        <ApprovalScreen
-          colors={colors}
-          view={state.runView}
-          previews={state.approvalPreviews}
-          previewOffset={state.approvalPreviewOffset}
-          error={state.error ?? state.launchInput?.error}
-          selected={state.selection}
-          offset={state.offset}
-          visibleRows={Math.max(1, size.rows - 16)}
-        />
-      ) : null;
-      break;
-    case 'result':
-      right = state.runView ? (
-        <ResultScreen
-          colors={colors}
-          view={state.runView}
-          selected={state.selection}
-          offset={state.offset}
-          visibleRows={Math.max(1, size.rows - 16)}
-          {...(state.error ? { error: state.error } : {})}
-        />
-      ) : null;
-      break;
-    case 'inspect':
-      right = state.runView ? (
-        <DetailScreen
-          colors={colors}
-          view={state.runView}
-          clarifications={state.clarifications}
-          previews={state.approvalPreviews}
-          previewOffset={state.approvalPreviewOffset}
-          error={state.error}
-          selected={state.selection}
-          offset={state.offset}
-          visibleRows={Math.max(1, size.rows - 16)}
-        />
-      ) : null;
-      break;
-    case 'artifacts':
-      right = state.runView ? (
-        <ArtifactsScreen
-          colors={colors}
-          view={state.runView}
-          selected={state.artifactSelected}
-          offset={state.artifactOffset}
-          content={state.artifactContent}
-          contentOffset={state.artifactContentOffset}
-          visibleRows={Math.max(1, size.rows - 12)}
-        />
-      ) : null;
-      break;
-    default:
-      right = (
-        <IdleDetail colors={colors} {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})} />
-      );
-      break;
-  }
-
-  return (
-    <StudioLayout
-      colors={colors}
-      state={state}
-      {...(live ? { live } : {})}
-      liveDetail={liveDetail}
-      size={size}
-      right={right}
-    />
-  );
+  return renderShellDetail({
+    colors,
+    state,
+    ...(live ? { live } : {}),
+    liveDetail,
+    liveOffset,
+    size,
+    launching,
+    onEvent: dispatch,
+  });
 }
