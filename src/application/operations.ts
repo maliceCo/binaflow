@@ -1,4 +1,4 @@
-import { validateAgentProfile, type AgentProfile, type BinaflowConfig } from '../config.js';
+import type { BinaflowConfig } from '../config.js';
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import { WorkflowVersionMismatchError } from '../core/execute-request.js';
 import {
@@ -22,9 +22,11 @@ import type {
 import type { ExecutionClaim } from '../core/ports.js';
 import { findWaitingApprovalStep } from './run-operations.js';
 import type { RunInspection } from './run-operations.js';
+import { validateWorkflowProfiles } from './workflow-operations.js';
 export {
   diagnoseConfiguration,
   discoverWorkflows,
+  validateWorkflowProfiles,
   type ConfigurationDiagnosis,
   type WorkflowConfigurationDiagnosis,
 } from './workflow-operations.js';
@@ -333,25 +335,4 @@ async function executeWorkflow(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function validateWorkflowProfiles(
-  workflow: WorkflowDefinition,
-  profiles: Record<string, AgentProfile>,
-): void {
-  const required = [...new Set(workflow.steps.map((step) => step.profile))];
-  const missing = required.filter(
-    (profile) => !Object.prototype.hasOwnProperty.call(profiles, profile),
-  );
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing agent profile(s): ${missing.join(', ')}. Add them to .binaflow/config.json`,
-    );
-  }
-  for (const name of required) {
-    const validation = validateAgentProfile(name, profiles[name]);
-    if (validation.errors.length > 0) {
-      throw new Error(`Profile ${name} has invalid configuration: ${validation.errors.join('; ')}`);
-    }
-  }
 }
