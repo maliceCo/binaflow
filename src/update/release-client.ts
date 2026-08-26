@@ -20,6 +20,9 @@ export interface FetchLike {
   (input: string | URL, init?: RequestInit): Promise<Response>;
 }
 
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+
 export async function findLatestRelease(
   channel: ReleaseChannel,
   fetcher: FetchLike = fetch,
@@ -28,6 +31,7 @@ export async function findLatestRelease(
     `https://api.github.com/repos/${RELEASE_REPOSITORY}/releases?per_page=30`,
     {
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'binaflow-updater' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     },
   );
   if (!response.ok) throw new Error(`GitHub Releases request failed with HTTP ${response.status}`);
@@ -47,10 +51,24 @@ export async function downloadAsset(
   asset: ReleaseAsset,
   fetcher: FetchLike = fetch,
 ): Promise<Uint8Array> {
-  const response = await fetcher(asset.url, { headers: { 'user-agent': 'binaflow-updater' } });
+  if (!Number.isSafeInteger(asset.size) || asset.size < 0 || asset.size > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`Refusing to download an oversized release asset: ${asset.name}`);
+  }
+  const response = await fetcher(asset.url, {
+    headers: { 'user-agent': 'binaflow-updater' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
   if (!response.ok)
     throw new Error(`Download failed for ${asset.name} with HTTP ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`Refusing to download an oversized response: ${asset.name}`);
+  }
+  const content = new Uint8Array(await response.arrayBuffer());
+  if (content.byteLength > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`Downloaded release asset exceeds the size limit: ${asset.name}`);
+  }
+  return content;
 }
 
 export function parseChecksum(text: string, assetName: string): string {

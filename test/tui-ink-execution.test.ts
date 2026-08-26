@@ -3,7 +3,6 @@ import type { NormalizedEvent } from '../src/core/events.js';
 import type { StepRun, WorkflowRun } from '../src/core/run.js';
 import type { WorkflowContract } from '../src/workflows/catalog.js';
 import {
-  appendLiveActivity,
   applyStepSnapshot,
   createLiveActivityBuffer,
   createLiveState,
@@ -15,20 +14,18 @@ import {
 
 describe('Ink execution state', () => {
   it('sanitizes and bounds live activity while retaining the newest events', () => {
-    const state = createLiveState(run('running'), workflow());
-    let current = state;
+    const buffer = createLiveActivityBuffer();
     for (let index = 0; index < MAX_DISPLAYED_ACTIVITY + 20; index += 1) {
-      current = appendLiveActivity(current, event(`event-${index}`));
+      buffer.append(event(`event-${index}`));
     }
-    expect(current.activity).toHaveLength(MAX_DISPLAYED_ACTIVITY);
-    expect(current.activity[0]?.message).toBe('event-20');
-    expect(current.activity.at(-1)?.message).toBe(`event-${MAX_DISPLAYED_ACTIVITY + 19}`);
+    expect(buffer.activity).toHaveLength(MAX_DISPLAYED_ACTIVITY);
+    expect(buffer.activity[0]?.message).toBe('event-20');
+    expect(buffer.activity.at(-1)?.message).toBe(`event-${MAX_DISPLAYED_ACTIVITY + 19}`);
     expect(
-      current.activity.reduce((total, item) => total + Buffer.byteLength(item.message), 0),
+      buffer.activity.reduce((total, item) => total + Buffer.byteLength(item.message), 0),
     ).toBeLessThanOrEqual(MAX_ACTIVITY_BYTES);
-    expect(
-      appendLiveActivity(current, event('\u001b[31munsafe\u001b[0m')).activity.at(-1)?.message,
-    ).toBe('unsafe');
+    buffer.append(event('\u001b[31munsafe\u001b[0m'));
+    expect(buffer.activity.at(-1)?.message).toBe('unsafe');
   });
 
   it('tracks retained activity bytes incrementally without full rescans on each append', () => {

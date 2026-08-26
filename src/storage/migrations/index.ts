@@ -9,69 +9,78 @@ import { executionOwnershipMigration } from './005-execution-ownership.js';
 const currentSchemaVersion = 5;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
-  database.exec(`
+  withWriteLock(database, () => {
+    database.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
       applied_at TEXT NOT NULL
     );
   `);
 
-  const applied = database
-    .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
-    .get() as { version: number } | undefined;
-  let version = applied?.version ?? 0;
-  const hadExistingSchema = tableExists(database, 'runs');
+    const applied = database
+      .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
+      .get() as { version: number } | undefined;
+    let version = applied?.version ?? 0;
+    const hadExistingSchema = tableExists(database, 'runs');
 
-  if (version === 0) {
-    database.transaction(() => {
+    if (version === 0) {
       if (!hadExistingSchema) database.exec(initialMigration);
       recordMigration(database, 1);
-    })();
-    version = 1;
-  }
+      version = 1;
+    }
 
-  if (version < 2) {
-    const rebuildRequired = requiresLegacyRebuild(database);
-    if (hadExistingSchema && rebuildRequired) backupDatabase(database, databasePath);
-    database.pragma('foreign_keys = OFF');
-    try {
-      database.transaction(() => {
+    if (version < 2) {
+      const rebuildRequired = requiresLegacyRebuild(database);
+      if (hadExistingSchema && rebuildRequired) backupDatabase(database, databasePath);
+      database.pragma('foreign_keys = OFF');
+      try {
         upgradeLegacySchema(database, rebuildRequired);
         recordMigration(database, 2);
-      })();
-    } finally {
-      database.pragma('foreign_keys = ON');
+      } finally {
+        database.pragma('foreign_keys = ON');
+      }
     }
-  }
 
-  if (version < 3) {
-    database.transaction(() => {
+    if (version < 3) {
       if (!columnExists(database, 'step_runs', 'profile_json')) {
         database.exec(profileSnapshotMigration);
       }
       recordMigration(database, 3);
-    })();
-  }
+    }
 
-  if (version < 4) {
-    database.transaction(() => {
+    if (version < 4) {
       database.exec(runHistoryMigration);
       recordMigration(database, 4);
-    })();
-  }
+    }
 
-  if (version < 5) {
-    database.transaction(() => {
+    if (version < 5) {
       database.exec(executionOwnershipMigration);
       recordMigration(database, 5);
-    })();
-  }
+    }
 
-  const finalVersion = database
-    .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
-    .get() as { version: number } | undefined;
-  if (finalVersion?.version !== currentSchemaVersion) {
-    throw new Error(`Unsupported Binaflow database schema version: ${finalVersion?.version ?? 0}`);
+    const finalVersion = database
+      .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
+      .get() as { version: number } | undefined;
+    if (finalVersion?.version !== currentSchemaVersion) {
+      throw new Error(
+        `Unsupported Binaflow database schema version: ${finalVersion?.version ?? 0}`,
+      );
+    }
+  });
+}
+
+function withWriteLock(database: Database.Database, action: () => void): void {
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    action();
+    database.exec('COMMIT');
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      // Preserve the migration error if rollback itself cannot run.
+    }
+    throw error;
   }
 }
 
@@ -155,7 +164,6 @@ function renameTableIfExists(database: Database.Database, name: string): void {
 
 function backupDatabase(database: Database.Database, databasePath: string): void {
   if (databasePath === ':memory:' || !existsSync(databasePath)) return;
-  database.pragma('wal_checkpoint(TRUNCATE)');
   let backupPath = `${databasePath}.backup-${Date.now()}`;
   let suffix = 0;
   while (existsSync(backupPath)) {

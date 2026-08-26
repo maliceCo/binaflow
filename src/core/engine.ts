@@ -1,7 +1,6 @@
 import type { AgentDriver } from './agent.js';
 import type { EventSink } from './events.js';
-import type { RunStore } from '../storage/run-store.js';
-import type { ArtifactStore } from '../artifacts/artifact-store.js';
+import type { WorkflowArtifactStore, WorkflowExecutionStore } from './ports.js';
 import type { WorkflowDefinition } from './workflow.js';
 import {
   WorkflowRuntime,
@@ -20,8 +19,8 @@ export class WorkflowEngine {
   readonly runtime: WorkflowRuntime;
 
   constructor(
-    runStore: RunStore,
-    artifactStore: ArtifactStore,
+    runStore: WorkflowExecutionStore,
+    artifactStore: WorkflowArtifactStore,
     driver: AgentDriver,
     eventSink: EventSink = () => undefined,
     options: WorkflowRuntimeOptions = {},

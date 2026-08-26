@@ -1,4 +1,4 @@
-import type { AgentProfile } from '../config.js';
+import type { AgentProfile } from './agent-profile.js';
 import type { WorkflowRun } from './run.js';
 
 export interface ExecuteWorkflowRequest {

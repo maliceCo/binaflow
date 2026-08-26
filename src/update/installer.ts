@@ -3,15 +3,17 @@ import { execFile } from 'node:child_process';
 import {
   mkdir,
   mkdtemp,
+  lstat,
   readFile,
   readlink,
+  realpath,
   rename,
   rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
 import { promisify } from 'node:util';
-import { basename, join, posix, relative } from 'node:path';
+import { basename, isAbsolute, join, posix, relative, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import {
   compareVersions,
@@ -26,6 +28,9 @@ import { installPaths, managedInstallRoot, type InstallPaths } from './paths.js'
 import { parseManifest, payloadSha256 } from './manifest.js';
 
 const execFileAsync = promisify(execFile);
+const ARCHIVE_COMMAND_TIMEOUT_MS = 60_000;
+const SMOKE_TEST_TIMEOUT_MS = 30_000;
+const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024;
 
 export async function checkForUpdate(
   channel: ReleaseChannel,
@@ -65,6 +70,7 @@ export async function installUpdate(
 export async function rollbackUpdate(): Promise<string> {
   const paths = installPaths(managedInstallRoot());
   return withInstallLock(paths, async () => {
+    await validateInstallLayout(paths);
     const currentTarget = await readlink(paths.current).catch(() => undefined);
     const previousTarget = await readlink(paths.previous).catch(() => undefined);
     if (!previousTarget) throw new Error('No previous Binaflow version is available for rollback');
@@ -78,20 +84,18 @@ async function stageAndActivate(
   release: ReleaseInfo,
   archive: Uint8Array,
 ): Promise<void> {
+  await validateInstallLayout(paths);
   await mkdir(paths.versions, { recursive: true, mode: 0o755 });
   const stagingParent = await mkdtemp(join(paths.root, '.staging-'));
   const archivePath = join(stagingParent, release.asset.name);
   try {
     await writeFile(archivePath, archive, { mode: 0o600 });
     await validateArchive(archivePath);
-    await execFileAsync('tar', [
-      '-xzf',
-      archivePath,
-      '--no-same-owner',
-      '--no-same-permissions',
-      '-C',
-      stagingParent,
-    ]);
+    await execFileAsync(
+      'tar',
+      ['-xzf', archivePath, '--no-same-owner', '--no-same-permissions', '-C', stagingParent],
+      { timeout: ARCHIVE_COMMAND_TIMEOUT_MS, maxBuffer: MAX_COMMAND_OUTPUT_BYTES },
+    );
     const bundleRoot = join(stagingParent, 'binaflow');
     const manifest = parseManifest(
       JSON.parse(await readFile(join(bundleRoot, 'manifest.json'), 'utf8')),
@@ -102,6 +106,7 @@ async function stageAndActivate(
       throw new Error('Bundle payload checksum is invalid');
     await smokeTest(bundleRoot);
     const target = join(paths.versions, release.version);
+    assertInstallTarget(paths, relative(paths.root, target));
     await rm(target, { recursive: true, force: true });
     await rename(bundleRoot, target);
     await activate(
@@ -119,6 +124,8 @@ async function activate(
   target: string,
   oldTarget: string | undefined,
 ): Promise<void> {
+  assertInstallTarget(paths, target);
+  if (oldTarget) assertInstallTarget(paths, oldTarget);
   await mkdir(paths.root, { recursive: true, mode: 0o755 });
   if (oldTarget && oldTarget !== target) await replaceLink(paths.previous, oldTarget);
   await replaceLink(paths.current, target);
@@ -132,7 +139,10 @@ async function replaceLink(path: string, target: string): Promise<void> {
 }
 
 async function validateArchive(archivePath: string): Promise<void> {
-  const { stdout: names } = await execFileAsync('tar', ['-tzf', archivePath]);
+  const { stdout: names } = await execFileAsync('tar', ['-tzf', archivePath], {
+    timeout: ARCHIVE_COMMAND_TIMEOUT_MS,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
   const memberNames = names.split('\n').filter(Boolean);
   for (const name of memberNames) {
     const normalized = name.replaceAll('\\', '/');
@@ -141,7 +151,10 @@ async function validateArchive(archivePath: string): Promise<void> {
     if (normalized.startsWith('/') || normalized.split('/').includes('..'))
       throw new Error(`Unsafe archive path: ${name}`);
   }
-  const { stdout: listing } = await execFileAsync('tar', ['-tvzf', archivePath]);
+  const { stdout: listing } = await execFileAsync('tar', ['-tvzf', archivePath], {
+    timeout: ARCHIVE_COMMAND_TIMEOUT_MS,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
   for (const line of listing.split('\n').filter(Boolean)) {
     const kind = line[0];
     if (kind !== '-' && kind !== 'd' && kind !== 'l' && kind !== 'h')
@@ -167,23 +180,79 @@ async function validateArchive(archivePath: string): Promise<void> {
 async function smokeTest(bundleRoot: string): Promise<void> {
   const node = join(bundleRoot, 'runtime', 'bin', 'node');
   const entry = join(bundleRoot, 'app', 'dist', 'src', 'cli', 'index.js');
-  await execFileAsync(node, [entry, '--version'], { cwd: bundleRoot });
-  await execFileAsync(node, [entry, '--help'], { cwd: bundleRoot });
+  await execFileAsync(node, [entry, '--version'], {
+    cwd: bundleRoot,
+    timeout: SMOKE_TEST_TIMEOUT_MS,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
+  await execFileAsync(node, [entry, '--help'], {
+    cwd: bundleRoot,
+    timeout: SMOKE_TEST_TIMEOUT_MS,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
+  });
   await execFileAsync(node, ['-e', "import('better-sqlite3').then(() => process.exit(0))"], {
     cwd: join(bundleRoot, 'app'),
+    timeout: SMOKE_TEST_TIMEOUT_MS,
+    maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
   });
 }
 
 async function withInstallLock<T>(paths: InstallPaths, action: () => Promise<T>): Promise<T> {
   await mkdir(paths.root, { recursive: true, mode: 0o755 });
+  await validateInstallLayout(paths);
   try {
     await mkdir(paths.lock, { mode: 0o700 });
-  } catch {
-    throw new Error('Another Binaflow update is already in progress');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
+      throw new Error('Another Binaflow update is already in progress');
+    }
+    throw error;
   }
   try {
     return await action();
   } finally {
     await rm(paths.lock, { recursive: true, force: true });
   }
+}
+
+async function validateInstallLayout(paths: InstallPaths): Promise<void> {
+  const canonicalRoot = await realpath(paths.root);
+  for (const [name, path] of [
+    ['versions', paths.versions],
+    ['current', paths.current],
+    ['previous', paths.previous],
+  ] as const) {
+    if (resolvePath(path) !== resolvePath(join(paths.root, name))) {
+      throw new Error(`Invalid managed install path for ${name}`);
+    }
+  }
+  const versionsInfo = await lstat(paths.versions).catch(() => undefined);
+  if (versionsInfo && (!versionsInfo.isDirectory() || versionsInfo.isSymbolicLink())) {
+    throw new Error('Managed versions path must be a real directory');
+  }
+  for (const link of [paths.current, paths.previous]) {
+    const info = await lstat(link).catch(() => undefined);
+    if (!info) continue;
+    if (!info.isSymbolicLink()) throw new Error(`Managed link is not a symbolic link: ${link}`);
+    const target = await readlink(link);
+    assertInstallTarget({ ...paths, root: canonicalRoot }, target);
+  }
+}
+
+function assertInstallTarget(paths: InstallPaths, target: string): void {
+  const root = resolvePath(paths.root);
+  const versions = resolvePath(join(root, 'versions'));
+  if (isAbsolute(target)) throw new Error(`Managed install target must be relative: ${target}`);
+  const targetPath = resolvePath(resolve(root, target));
+  if (targetPath === versions || !isWithin(versions, targetPath)) {
+    throw new Error(`Managed install target is outside versions: ${target}`);
+  }
+}
+
+function resolvePath(path: string): string {
+  return path.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
+}
+
+function isWithin(root: string, path: string): boolean {
+  return path.startsWith(`${root}/`);
 }

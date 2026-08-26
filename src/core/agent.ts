@@ -1,4 +1,4 @@
-import type { AgentProfile } from '../config.js';
+import type { AgentProfile } from './agent-profile.js';
 import type { AgentStepResult } from './run.js';
 import type { EventSink } from './events.js';
 

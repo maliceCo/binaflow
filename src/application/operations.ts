@@ -80,16 +80,23 @@ export async function resumeWorkflow(
   context: ApplicationInternals,
   request: ResumeWorkflowRequest,
 ): Promise<ResumeWorkflowResult> {
-  const previous = await context.store.getRun(request.runId);
+  let previous = await context.store.getRun(request.runId);
   if (!previous) throw new Error(`Unknown run: ${request.runId}`);
   if (previous.status === 'completed') {
     return { run: previous, alreadyCompleted: true };
+  }
+  if (previous.status === 'running') {
+    const interrupted = await context.store.markRunInterrupted(previous.id);
+    if (!interrupted) {
+      throw new Error(`Run ${previous.id} could not be recovered from running state`);
+    }
+    previous = interrupted;
   }
 
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
   validatePersistedRunCompatibility(previous, workflow);
   await preflightPersistedInput(context, previous, workflow);
-  await validateResumeEligibility(context, previous);
+  await validateResumeEligibility(context, previous, workflow);
   await claimRunForExecution(context, previous.id, ['pending', 'failed', 'interrupted']);
   const run = await executeClaimedWorkflow(context, workflow, {
     runId: request.runId,
@@ -132,12 +139,13 @@ export async function explainRunRecovery(
   const run = await context.store.getRun(runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   const steps = await context.store.getStepRuns(runId);
-  return buildRunRecoveryExplanation(run, steps);
+  return buildRunRecoveryExplanation(run, steps, resolveRecoveryWorkflow(run.workflowId));
 }
 
 export function buildRunRecoveryExplanation(
   run: WorkflowRun,
   steps: StepRun[],
+  workflow: WorkflowDefinition | undefined = resolveRecoveryWorkflow(run.workflowId),
 ): RunRecoveryExplanation {
   let workflowVersionCompatible = true;
   let installedVersion: number | undefined;
@@ -151,9 +159,7 @@ export function buildRunRecoveryExplanation(
   const completedStepIds = steps
     .filter((step) => step.status === 'completed')
     .map((step) => step.stepId);
-  const retryableStepIds = steps
-    .filter((step) => isStepRetryEligible(step, true))
-    .map((step) => step.stepId);
+  const retryableStepIds = recoveryRetryableStepIds(workflow, steps);
 
   if (!workflowVersionCompatible) {
     return {
@@ -584,6 +590,14 @@ function resolveAndValidateWorkflow(
   return workflow;
 }
 
+function resolveRecoveryWorkflow(workflowId: string): WorkflowDefinition | undefined {
+  try {
+    return resolveWorkflow(workflowId);
+  } catch {
+    return undefined;
+  }
+}
+
 function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowDefinition): void {
   if (run.workflowId !== workflow.id) {
     throw new Error(`Run ${run.id} belongs to workflow ${run.workflowId}`);
@@ -596,13 +610,29 @@ function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowD
 async function validateResumeEligibility(
   context: Pick<ApplicationInternals, 'store'>,
   run: WorkflowRun,
+  workflow: WorkflowDefinition,
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
   const steps = await context.store.getStepRuns(run.id);
-  const retryable = steps.some((step) => isStepRetryEligible(step, true));
+  const retryable = recoveryRetryableStepIds(workflow, steps).length > 0;
   if (!retryable) {
     throw new Error(`Run ${run.id} has no retryable failed, interrupted, or pending steps`);
   }
+}
+
+function recoveryRetryableStepIds(
+  workflow: WorkflowDefinition | undefined,
+  steps: StepRun[],
+): string[] {
+  if (!workflow)
+    return steps.filter((step) => isStepRetryEligible(step, true)).map((step) => step.stepId);
+  const persisted = new Map(steps.map((step) => [step.stepId, step]));
+  return workflow.steps
+    .filter((definition) => {
+      const step = persisted.get(definition.id);
+      return !step || isStepRetryEligible(step, true);
+    })
+    .map((definition) => definition.id);
 }
 
 async function preflightPersistedInput(

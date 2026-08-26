@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, realpath, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import type { ArtifactReference } from '../core/run.js';
 import type { ArtifactStore, BoundedArtifactContent } from './artifact-store.js';
@@ -30,8 +30,12 @@ export class FileArtifactStore implements ArtifactStore {
     assertInsideRoot(realRoot, realDirectory);
 
     const temporaryPath = `${path}.tmp`;
-    await writeFile(temporaryPath, content, 'utf8');
-    await rename(temporaryPath, path);
+    try {
+      await writeFile(temporaryPath, content, 'utf8');
+      await rename(temporaryPath, path);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
 
     return {
       id,
@@ -62,8 +66,21 @@ export class FileArtifactStore implements ArtifactStore {
     try {
       const buffer = Buffer.alloc(maxBytes + 1);
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const contentBytes = Math.min(bytesRead, maxBytes);
+      let safeBytes = contentBytes;
+      while (safeBytes > 0) {
+        const byte = buffer[safeBytes - 1]!;
+        if ((byte & 0xc0) === 0x80) {
+          safeBytes -= 1;
+          continue;
+        }
+        const expectedBytes = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
+        if (contentBytes - (safeBytes - 1) < expectedBytes) safeBytes -= 1;
+        else safeBytes = contentBytes;
+        break;
+      }
       return {
-        content: buffer.subarray(0, Math.min(bytesRead, maxBytes)).toString('utf8'),
+        content: buffer.subarray(0, safeBytes).toString('utf8'),
         truncated: bytesRead > maxBytes,
       };
     } finally {

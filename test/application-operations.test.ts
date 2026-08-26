@@ -356,6 +356,14 @@ describe('application operations', () => {
             attempt: 1,
             error: { message: 'permanent', retryable: false },
           },
+          {
+            runId: previous.id,
+            stepId: 'build',
+            profile: 'builder',
+            status: 'failed',
+            attempt: 1,
+            error: { message: 'permanent', retryable: false },
+          },
         ],
         claimRun,
       },
@@ -439,6 +447,42 @@ describe('application operations', () => {
       status: 'interrupted',
     });
     expect(markRunInterruptedSpy).toHaveBeenCalledWith(running.id);
+  });
+
+  it('recovers a stale running run before resuming it', async () => {
+    const running = { ...persistedRun(), status: 'running' as const };
+    const markRunInterruptedSpy = vi.fn(async () => ({
+      ...running,
+      status: 'interrupted' as const,
+    }));
+    const claimRun = vi.fn(async () => ({ ...running, status: 'running' as const }));
+    const execute = vi.fn(async () => ({ ...running, status: 'completed' as const }));
+    const context = applicationContext(
+      { planner: profile('planner'), builder: profile('builder') },
+      execute,
+      {
+        getRun: async () => running,
+        getStepRuns: async () => [
+          {
+            runId: running.id,
+            stepId: 'plan',
+            profile: 'planner',
+            status: 'pending',
+            attempt: 1,
+          },
+        ],
+        markRunInterrupted: markRunInterruptedSpy,
+        claimRun,
+      },
+    );
+
+    await expect(resumeWorkflow(context, { runId: running.id })).resolves.toMatchObject({
+      alreadyCompleted: false,
+      run: { status: 'completed' },
+    });
+    expect(markRunInterruptedSpy).toHaveBeenCalledWith(running.id);
+    expect(claimRun).toHaveBeenCalledWith(running.id, ['pending', 'failed', 'interrupted']);
+    expect(execute).toHaveBeenCalled();
   });
 
   it('persists a normalized approval decision and resumes the workflow', async () => {

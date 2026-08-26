@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const root = join(import.meta.dirname, '..');
@@ -17,9 +18,33 @@ async function listSourceFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-function importsOf(source: string): string[] {
-  const matches = source.matchAll(/from\s+['"]([^'"]+)['"]/g);
-  return [...matches].map((match) => match[1]!);
+function importsOf(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);
+  const imports: string[] = [];
+  const add = (expression: ts.Expression | undefined): void => {
+    if (expression && ts.isStringLiteral(expression)) imports.push(expression.text);
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      add(node.moduleSpecifier);
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference)
+    ) {
+      add(node.moduleReference.expression);
+    } else if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (
+        callee.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(callee) && callee.text === 'require')
+      ) {
+        add(node.arguments[0]);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return imports;
 }
 
 describe('architecture boundaries', () => {
@@ -28,8 +53,9 @@ describe('architecture boundaries', () => {
     const violations: string[] = [];
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      for (const specifier of importsOf(source)) {
+      for (const specifier of importsOf(source, file)) {
         if (
+          specifier.startsWith('../') ||
           specifier.includes('/cli/') ||
           specifier.includes('/tui') ||
           specifier.includes('/tui/') ||
@@ -54,7 +80,7 @@ describe('architecture boundaries', () => {
     const violations: string[] = [];
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      for (const specifier of importsOf(source)) {
+      for (const specifier of importsOf(source, file)) {
         if (
           specifier.includes('/storage/sqlite-') ||
           specifier.includes('/artifacts/file-') ||

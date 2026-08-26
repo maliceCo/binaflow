@@ -20,7 +20,7 @@ afterEach(() => {
     rmSync(directory, { recursive: true, force: true });
 });
 
-describe('Phase 8 application inspection operations', () => {
+describe('Application inspection operations', () => {
   it('explains retryable recovery, reuse, cancellation, interruption, and version mismatch', async () => {
     const completed = step('plan', 'completed');
     const retryable = step('build', 'failed', { message: 'temporary', retryable: true });
@@ -65,7 +65,7 @@ describe('Phase 8 application inspection operations', () => {
   });
 
   it('extracts clarification questions from the persisted plan disposition', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-phase8-'));
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-inspection-'));
     directories.push(directory);
     const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
     const artifact = await artifacts.write(
@@ -133,7 +133,7 @@ describe('Phase 8 application inspection operations', () => {
   });
 
   it('bounds previews, formats JSON, and reports missing or corrupt artifacts', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-phase8-artifacts-'));
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-inspection-artifacts-'));
     directories.push(directory);
     const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
     const json = await artifacts.write(
@@ -203,7 +203,7 @@ describe('Phase 8 application inspection operations', () => {
   });
 
   it('loads bounded research approval previews while keeping corrupt files actionable', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-phase8-approval-'));
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-inspection-approval-'));
     directories.push(directory);
     const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
     const report = await artifacts.write(

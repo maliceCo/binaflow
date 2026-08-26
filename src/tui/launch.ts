@@ -4,7 +4,7 @@ import type {
   ConfigurationDiagnosis,
   GeneratedConfiguration,
 } from '../application/config-operations.js';
-import type { WorkflowContract } from '../workflows/catalog.js';
+import type { WorkflowContract } from '../application/operations.js';
 
 export const SETUP_FIELDS = [
   { key: 'plannerProvider', title: 'Planner provider' },

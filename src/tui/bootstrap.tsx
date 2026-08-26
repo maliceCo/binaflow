@@ -1,9 +1,5 @@
-import { Box, Text, render, useApp, useInput } from 'ink';
-import type { Key } from 'ink';
+import { render } from 'ink';
 import type { ReactNode } from 'react';
-
-const MINIMUM_WIDTH = 56;
-const MINIMUM_HEIGHT = 12;
 
 export interface InkApplicationOptions {
   input?: NodeJS.ReadStream;
@@ -77,43 +73,6 @@ export async function runInkApplication(
     output.off('resize', onResize);
     for (const [signal, handler] of signalHandlers) process.off(signal, handler);
   }
-}
-
-export async function runInkFoundation(options: InkApplicationOptions = {}): Promise<void> {
-  await runInkApplication(options, ({ colors, size }) => (
-    <FoundationApp colors={colors} size={size} />
-  ));
-}
-
-interface FoundationAppProps {
-  colors: boolean;
-  size: { columns: number; rows: number };
-}
-
-function FoundationApp({ colors, size }: FoundationAppProps): ReactNode {
-  const { exit } = useApp();
-  const { columns, rows } = size;
-
-  useInput((input: string, key: Key) => {
-    if (input === 'q' || key.escape) exit();
-    if (input === 'c' && key.ctrl) exit(130);
-  });
-
-  if (columns < MINIMUM_WIDTH || rows < MINIMUM_HEIGHT) {
-    return <Text>Terminal too small. Resize to at least 56x12.</Text>;
-  }
-
-  return (
-    <Box flexDirection="column">
-      {colors ? (
-        <Text color="cyan">Binaflow Ink foundation</Text>
-      ) : (
-        <Text>Binaflow Ink foundation</Text>
-      )}
-      <Text>Ink owns rendering, input, resize, and terminal restoration.</Text>
-      <Text>Press q to exit.</Text>
-    </Box>
-  );
 }
 
 function terminalSize(output: NodeJS.WriteStream): { columns: number; rows: number } {

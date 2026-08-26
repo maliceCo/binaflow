@@ -1,7 +1,7 @@
 import type { NormalizedEvent } from '../core/events.js';
 import type { StepRun, WorkflowRun } from '../core/run.js';
 import type { RunView } from '../application/run-view.js';
-import type { WorkflowContract } from '../workflows/catalog.js';
+import type { WorkflowContract } from '../application/operations.js';
 import { sanitizeInkText } from './text.js';
 
 export const MAX_DISPLAYED_ACTIVITY = 200;
@@ -124,22 +124,6 @@ export function createLiveActivityBuffer(
       activityBytes = 0;
     },
   };
-}
-
-/** @deprecated Prefer createLiveActivityBuffer; kept for unit tests of pure append. */
-export function appendLiveActivity(state: LiveState, event: NormalizedEvent): LiveState {
-  const buffer = createLiveActivityBuffer();
-  for (const item of state.activity) {
-    buffer.append({
-      runId: state.run.id,
-      stepId: item.stepId,
-      type: item.type,
-      message: item.message,
-      occurredAt: item.occurredAt,
-    });
-  }
-  buffer.append(event);
-  return { ...state, activity: buffer.snapshot() };
 }
 
 export function applyStepSnapshot(

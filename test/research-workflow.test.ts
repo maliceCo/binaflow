@@ -121,6 +121,8 @@ function createEnvironment(driver: AgentDriver) {
       new WorkflowEngine(store, artifacts, driver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
       }).runtime,
+      store,
+      artifacts,
     ),
   };
 }
@@ -338,6 +340,8 @@ describe('research-plan-build workflow', () => {
       new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
       }).runtime,
+      store,
+      artifacts,
     ).execute(researchPlanBuildWorkflow, {
       runId: failed.id,
       profiles: retryProfiles,
@@ -382,6 +386,8 @@ describe('research-plan-build workflow', () => {
         undefined,
         { interpretDisposition: interpretWorkflowDisposition },
       ).runtime,
+      store,
+      artifacts,
     ).execute(researchPlanBuildWorkflow, {
       runId: waiting.id,
       profiles: retryProfiles,
@@ -405,6 +411,8 @@ describe('research-plan-build workflow', () => {
       new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
       }).runtime,
+      store,
+      artifacts,
     ).execute(researchPlanBuildWorkflow, {
       runId: waiting.id,
       profiles: retryProfiles,
@@ -462,6 +470,8 @@ describe('research-plan-build workflow', () => {
             new WorkflowEngine(store, artifacts, new FakeDriver([]), undefined, {
               interpretDisposition: interpretWorkflowDisposition,
             }).runtime,
+            store,
+            artifacts,
           ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true }),
         ).rejects.toThrow('no retryable failed');
         expect(initialDriver.calls.filter((call) => call.stepId === 'build')).toHaveLength(1);
@@ -474,6 +484,8 @@ describe('research-plan-build workflow', () => {
         new WorkflowEngine(store, artifacts, retryDriver, undefined, {
           interpretDisposition: interpretWorkflowDisposition,
         }).runtime,
+        store,
+        artifacts,
       ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true });
 
       expect(resumed.status).toBe('failed');

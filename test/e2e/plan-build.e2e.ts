@@ -115,9 +115,10 @@ describe('plan-build E2E', () => {
           fixture,
           '--config',
           configPath,
+          '--json',
           'runs',
         );
-        const runId = parseActiveRunId(runs.stdout);
+        const runId = parseInterruptedRunId(runs.stdout);
         const resumed = await runCli(
           fixture,
           environment,
@@ -220,7 +221,7 @@ async function terminateAfterPlan(
       stderr += chunk.toString('utf8');
       if (!terminationRequested && stderr.includes('[plan] status: Step plan completed')) {
         terminationRequested = true;
-        child.kill('SIGTERM');
+        child.kill('SIGKILL');
       }
     });
     child.once('error', (error) => {
@@ -245,9 +246,15 @@ function parseRunId(output: string): string {
   return runId;
 }
 
-function parseActiveRunId(output: string): string {
-  const line = output.split(/\r?\n/).find((candidate) => candidate.includes('plan-build'));
-  const runId = line?.match(/^(\S+)\s+(?:running|interrupted)\s+plan-build\s+/)?.[1];
-  if (!runId) throw new Error(`Could not parse active run ID from output:\n${output}`);
-  return runId;
+function parseInterruptedRunId(output: string): string {
+  const page = JSON.parse(output) as {
+    data?: { runs?: Array<{ id: string; status: string; workflowId: string }> };
+  };
+  const run = page.data?.runs?.find(
+    (candidate) =>
+      candidate.workflowId === 'plan-build' &&
+      (candidate.status === 'running' || candidate.status === 'interrupted'),
+  );
+  if (!run) throw new Error(`Could not parse interrupted run ID from output:\n${output}`);
+  return run.id;
 }

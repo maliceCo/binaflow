@@ -1,4 +1,6 @@
 import { mkdir } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
 import { loadConfig, loadDataDir } from '../config.js';
 import { WorkflowEngine } from '../core/engine.js';
@@ -34,6 +36,10 @@ export interface OpenApplicationOptions {
   onEvent?: (event: NormalizedEvent) => void;
 }
 
+export function isApplicationEntrypoint(moduleUrl: string, argv1: string | undefined): boolean {
+  return argv1 !== undefined && fileURLToPath(moduleUrl) === realpathSync(argv1);
+}
+
 export async function openApplicationContext(
   configPathOrOptions: string | OpenApplicationOptions = '.binaflow/config.json',
   cwdArg = process.cwd(),
@@ -66,7 +72,7 @@ export async function openApplicationContext(
     eventSink,
     { interpretDisposition: interpretWorkflowDisposition },
   );
-  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime);
+  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime, store, artifacts);
   const application = createApplicationService({
     config,
     store,

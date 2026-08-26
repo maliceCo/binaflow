@@ -1,12 +1,14 @@
 import type { Command } from 'commander';
-import { resolve } from 'node:path';
 import {
   cliUsageError,
   machineMode,
   rejectUnsupportedJsonl,
   writeJsonResult,
 } from '../protocol.js';
-import type { ConfigurationDiagnosis } from '../../application/config-operations.js';
+import {
+  resolveConfigurationPath,
+  type ConfigurationDiagnosis,
+} from '../../application/config-operations.js';
 
 interface RootOptions {
   config?: string;
@@ -46,6 +48,7 @@ export function registerConfigurationCommands(cli: Command): void {
       const diagnosis = await diagnoseConfigurationFile(
         options.config ?? '.binaflow/config.json',
         options.cwd,
+        { probePiCommand: true },
       );
       if (mode === 'json') {
         writeJsonResult('doctor', diagnosis);
@@ -72,7 +75,7 @@ export function registerConfigurationCommands(cli: Command): void {
       if (await configurationExists(configPath, options.cwd)) {
         throw cliUsageError(
           'CONFIG_EXISTS',
-          `Binaflow config already exists at ${configurationPath(configPath, options.cwd)}; refusing to overwrite it`,
+          `Binaflow config already exists at ${resolveConfigurationPath(configPath, options.cwd)}; refusing to overwrite it`,
         );
       }
 
@@ -239,10 +242,6 @@ function printDiagnosis(diagnosis: ConfigurationDiagnosis): void {
     );
   }
   console.log(`Ready: ${diagnosis.ready ? 'yes' : 'no'}`);
-}
-
-function configurationPath(configPath: string, cwd = process.cwd()): string {
-  return resolve(cwd, configPath);
 }
 
 function rootOptions(command: Command): RootOptions {

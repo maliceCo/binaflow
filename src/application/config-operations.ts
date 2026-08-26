@@ -1,4 +1,4 @@
-import { access, link, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, link, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -39,6 +39,60 @@ export interface ConfigurationDiagnosis {
   ready: boolean;
 }
 
+export interface ConfigurationDiagnosisOptions {
+  probePiCommand?: boolean;
+}
+
+export interface WorkspaceEntry {
+  path: string;
+  name: string;
+  isParent: boolean;
+  hasBinaflow: boolean;
+  error?: string;
+}
+
+export function parentWorkspacePath(path: string): string {
+  return dirname(path);
+}
+
+export function resolveConfigurationPath(configPath: string, cwd = process.cwd()): string {
+  return resolve(cwd, configPath);
+}
+
+export async function readJsonInput(
+  path: string,
+  readStdin: () => Promise<string>,
+): Promise<Record<string, unknown>> {
+  const content = await (path === '-' ? readStdin() : readFile(path, 'utf8'));
+  const parsed: unknown = JSON.parse(content);
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('input JSON must be an object');
+  }
+  return parsed as Record<string, unknown>;
+}
+
+export async function listWorkspaceEntries(path: string): Promise<WorkspaceEntry[]> {
+  const dirents = await readdir(path, { withFileTypes: true });
+  const directories = dirents
+    .filter((entry) => entry.isDirectory())
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const entries: WorkspaceEntry[] =
+    path === '/'
+      ? []
+      : [{ path: parentWorkspacePath(path), name: '..', isParent: true, hasBinaflow: false }];
+  for (const entry of directories) {
+    const full = resolve(path, entry.name);
+    let hasBinaflow = false;
+    try {
+      hasBinaflow = await configurationExists('.binaflow/config.json', full);
+    } catch {
+      hasBinaflow = false;
+    }
+    entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
+  }
+  return entries;
+}
+
 export interface ProfileDiagnosis {
   name: string;
   valid: boolean;
@@ -58,6 +112,7 @@ export interface WorkflowDiagnosis {
 export async function diagnoseConfigurationFile(
   configPath: string,
   cwd = process.cwd(),
+  options: ConfigurationDiagnosisOptions = {},
 ): Promise<ConfigurationDiagnosis> {
   const workspacePath = resolve(cwd);
   const absoluteConfigPath = resolve(workspacePath, configPath);
@@ -137,13 +192,16 @@ export async function diagnoseConfigurationFile(
   const piCommand = typeof piCommandValue === 'string' ? piCommandValue : 'pi';
   const workflowsWithProfiles = workflowDiagnoses(validProfileNames);
   const configValid = errors.length === 0 && profiles.every((profile) => profile.valid);
-  const launch = configValid ? await canLaunchCommand(piCommand, workspacePath) : undefined;
+  const launch =
+    configValid && options.probePiCommand
+      ? await canLaunchCommand(piCommand, workspacePath)
+      : undefined;
   const ready =
     configValid &&
     workflowsWithProfiles
       .filter((workflow) => workflow.experimental !== true)
       .every((workflow) => workflow.available) &&
-    launch?.launchable === true;
+    (options.probePiCommand ? launch?.launchable === true : true);
 
   return {
     workspacePath,

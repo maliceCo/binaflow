@@ -6,7 +6,7 @@ import type { ArtifactContentView } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
 import type { AgentModel } from '../core/agent.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
-import type { WorkflowContract } from '../workflows/catalog.js';
+import type { WorkflowContract } from '../application/operations.js';
 import type { LaunchInputState, SetupStep, SetupValues } from './launch.js';
 
 export interface FolderEntry {

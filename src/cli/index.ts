@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
+import { discoverWorkflows } from '../application/operations.js';
+import { isApplicationEntrypoint } from '../application/runtime.js';
 import { registerResumeCommand } from './commands/resume.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerRunsCommand } from './commands/runs.js';
@@ -12,7 +12,6 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerConfigurationCommands } from './commands/configuration.js';
 import { VERSION } from '../version.js';
-import { workflowSummaries } from '../workflows/catalog.js';
 import {
   exitCodeFor,
   cliUsageError,
@@ -46,7 +45,14 @@ export function createCli(): Command {
 
   cli.addHelpText(
     'after',
-    `\nWorkflows:\n${workflowSummaries.map((item) => `  ${item.id.padEnd(22)} ${item.experimental ? '[experimental] ' : ''}${item.description}`).join('\n')}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow --cwd /path/to/project runs\n  $ binaflow run --interactive\n`,
+    `\nWorkflows:\n${discoverWorkflows()
+      .map(
+        (item) =>
+          `  ${item.id.padEnd(22)} ${item.experimental ? '[experimental] ' : ''}${item.description}`,
+      )
+      .join(
+        '\n',
+      )}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow --cwd /path/to/project runs\n  $ binaflow run --interactive\n`,
   );
   cli.hook('preAction', (command) => {
     let root = command;
@@ -136,7 +142,7 @@ export async function runCli(argv = process.argv): Promise<void> {
   await cli.parseAsync(argv);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+if (isApplicationEntrypoint(import.meta.url, process.argv[1])) {
   runCli().catch((error: unknown) => {
     const mode = machineModeFromArgv(process.argv);
     const exitCode = exitCodeFor(error);

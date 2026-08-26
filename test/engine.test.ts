@@ -82,7 +82,7 @@ function createEnvironment(driver: AgentDriver, events: NormalizedEvent[] = []) 
     },
     { interpretDisposition: interpretWorkflowDisposition },
   );
-  const research = new ResearchPlanBuildCoordinator(engine.runtime);
+  const research = new ResearchPlanBuildCoordinator(engine.runtime, store, artifactStore);
   return { engine, research, store, artifactStore };
 }
 
@@ -157,6 +157,45 @@ describe('WorkflowEngine', () => {
 
     expect(run.status).toBe('cancelled');
     expect(calls).toEqual(['plan']);
+    store.close();
+  });
+
+  it('persists skipped steps as pending before recovery runs them', async () => {
+    const retryProfiles = {
+      ...profiles,
+      planner: { ...profiles.planner, retryLimit: 1 },
+    };
+    const driver = new FakeDriver([
+      new Error('temporary planner failure'),
+      plannerResult(),
+      { text: 'implementation complete' },
+    ]);
+    const { engine, store } = createEnvironment(driver);
+
+    const failed = await engine.execute(planBuildWorkflow, {
+      runId: 'skipped-recovery',
+      objective: 'Recover skipped work',
+      profiles: retryProfiles,
+    });
+    expect(failed.status).toBe('failed');
+    expect(
+      (await store.getStepRuns(failed.id)).find((step) => step.stepId === 'build'),
+    ).toMatchObject({
+      status: 'skipped',
+    });
+
+    const recovered = await engine.execute(planBuildWorkflow, {
+      runId: failed.id,
+      profiles: retryProfiles,
+      resume: true,
+    });
+    expect(recovered.status).toBe('completed');
+    expect(
+      (await store.getStepRuns(failed.id)).find((step) => step.stepId === 'build'),
+    ).toMatchObject({
+      status: 'completed',
+      attempt: 1,
+    });
     store.close();
   });
 
@@ -274,14 +313,17 @@ describe('WorkflowEngine', () => {
       interpretDisposition: interpretWorkflowDisposition,
     });
     await expect(
-      new ResearchPlanBuildCoordinator(sequential.runtime).execute(researchPlanBuildWorkflow, {
-        runId: 'research-start-callback-failure',
-        objective: 'Reject research start',
-        profiles: researchProfiles,
-        onRunStarted: () => {
-          throw new Error('research start callback failed');
+      new ResearchPlanBuildCoordinator(sequential.runtime, store, artifactStore).execute(
+        researchPlanBuildWorkflow,
+        {
+          runId: 'research-start-callback-failure',
+          objective: 'Reject research start',
+          profiles: researchProfiles,
+          onRunStarted: () => {
+            throw new Error('research start callback failed');
+          },
         },
-      }),
+      ),
     ).rejects.toThrow('research start callback failed');
 
     expect((await store.getRun('research-start-callback-failure'))?.status).toBe('failed');

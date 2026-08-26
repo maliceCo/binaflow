@@ -1,4 +1,5 @@
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
+import type { WorkflowArtifactStore, WorkflowExecutionStore } from '../core/ports.js';
 import type { StepRun, WorkflowRun } from '../core/run.js';
 import { isStepRetryEligible } from '../core/run.js';
 import {
@@ -16,8 +17,24 @@ import {
 
 const MAX_RESEARCH_ITERATIONS = 3;
 
+interface ResearchPersistence extends Pick<
+  WorkflowExecutionStore,
+  'getStepRuns' | 'getArtifacts' | 'saveStepRun'
+> {
+  checkpointResearchIteration(
+    inputArtifact: import('../core/run.js').ArtifactReference,
+    researchStep: StepRun,
+    reviewStep: StepRun,
+    approvalStep?: StepRun,
+  ): Promise<void>;
+}
+
 export class ResearchPlanBuildCoordinator {
-  constructor(private readonly runtime: WorkflowRuntime) {}
+  constructor(
+    private readonly runtime: WorkflowRuntime,
+    private readonly persistence: ResearchPersistence,
+    private readonly artifactsStore: WorkflowArtifactStore,
+  ) {}
 
   async execute(
     workflow: WorkflowDefinition,
@@ -53,9 +70,9 @@ export class ResearchPlanBuildCoordinator {
     await this.runtime.notifyRunStarted(run, request.onRunStarted);
 
     const stepRuns = new Map(
-      (await this.runtime.runStore.getStepRuns(run.id)).map((step) => [step.stepId, step]),
+      (await this.persistence.getStepRuns(run.id)).map((step) => [step.stepId, step]),
     );
-    let artifacts = await this.runtime.runStore.getArtifacts(run.id);
+    let artifacts = await this.persistence.getArtifacts(run.id);
     let input = {
       ...initialInput,
       researchFeedback:
@@ -123,7 +140,7 @@ export class ResearchPlanBuildCoordinator {
         const reviewArtifact = findArtifact(artifacts, reviewStep.id, 'review');
         if (!reviewArtifact) throw new Error('Missing research review artifact');
         const researchReview = parseResearchReview(
-          JSON.parse(await this.runtime.artifactStore.read(reviewArtifact)),
+          JSON.parse(await this.artifactsStore.read(reviewArtifact)),
         );
 
         if (researchReview.decision === 'needs_more_research') {
@@ -139,15 +156,16 @@ export class ResearchPlanBuildCoordinator {
             ...input,
             researchFeedback: researchReview.nextResearchQuestions.join('\n'),
           };
-          const inputArtifact = await this.runtime.writeResearchInputArtifact(
+          const inputArtifact = await writeResearchInputArtifact(
             run.id,
             input,
             artifacts,
+            this.artifactsStore,
           );
-          const resetResearch = this.runtime.resetLoopStep(research);
-          const resetReview = this.runtime.resetLoopStep(review);
+          const resetResearch = resetLoopStep(research);
+          const resetReview = resetLoopStep(review);
           const approval = stepRuns.get(workflow.approval.id);
-          await this.runtime.runStore.checkpointResearchIteration(
+          await this.persistence.checkpointResearchIteration(
             inputArtifact,
             resetResearch,
             resetReview,
@@ -168,7 +186,7 @@ export class ResearchPlanBuildCoordinator {
             status: 'pending',
             attempt: 1,
           };
-          await this.runtime.runStore.saveStepRun(approval);
+          await this.persistence.saveStepRun(approval);
         }
 
         if (approval.approval?.decision === 'rejected') {
@@ -185,13 +203,14 @@ export class ResearchPlanBuildCoordinator {
             researchFeedback:
               approval.approval.feedback ?? 'The user requested another research iteration.',
           };
-          const inputArtifact = await this.runtime.writeResearchInputArtifact(
+          const inputArtifact = await writeResearchInputArtifact(
             run.id,
             input,
             artifacts,
+            this.artifactsStore,
           );
-          const resetResearch = this.runtime.resetLoopStep(research);
-          const resetReview = this.runtime.resetLoopStep(review);
+          const resetResearch = resetLoopStep(research);
+          const resetReview = resetLoopStep(review);
           const resetApproval: StepRun = {
             runId: approval.runId,
             stepId: approval.stepId,
@@ -200,7 +219,7 @@ export class ResearchPlanBuildCoordinator {
             attempt: approval.attempt + 1,
             approval: { feedback: input.researchFeedback as string },
           };
-          await this.runtime.runStore.checkpointResearchIteration(
+          await this.persistence.checkpointResearchIteration(
             inputArtifact,
             resetResearch,
             resetReview,
@@ -217,7 +236,7 @@ export class ResearchPlanBuildCoordinator {
         if (approval.approval?.decision !== 'approved') {
           if (approval.status !== 'waiting') {
             approval = { ...approval, status: 'waiting' };
-            await this.runtime.runStore.saveStepRun(approval);
+            await this.persistence.saveStepRun(approval);
           }
           stepRuns.set(workflow.approval.id, approval);
           return this.runtime.saveRunStatus(run, 'waiting');
@@ -229,7 +248,7 @@ export class ResearchPlanBuildCoordinator {
             status: 'completed',
             finishedAt: new Date().toISOString(),
           };
-          await this.runtime.runStore.saveStepRun(approval);
+          await this.persistence.saveStepRun(approval);
           stepRuns.set(workflow.approval.id, approval);
         }
         break;
@@ -311,4 +330,26 @@ export class ResearchPlanBuildCoordinator {
       );
     }
   }
+}
+
+function resetLoopStep(step: StepRun): StepRun {
+  return {
+    runId: step.runId,
+    stepId: step.stepId,
+    profile: step.profile,
+    status: 'pending',
+    attempt: step.attempt + 1,
+  };
+}
+
+async function writeResearchInputArtifact(
+  runId: string,
+  input: Record<string, unknown>,
+  artifacts: import('../core/run.js').ArtifactReference[],
+  store: WorkflowArtifactStore,
+): Promise<import('../core/run.js').ArtifactReference> {
+  if (!findArtifact(artifacts, 'run', 'input')) {
+    throw new Error('Missing persisted run input artifact');
+  }
+  return store.write(runId, 'run', 'input', 'json', JSON.stringify(input), 'application/json');
 }

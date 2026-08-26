@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
-import { readFile } from 'node:fs/promises';
 import type { WorkflowRun } from '../../core/run.js';
-import { workflowSummaries } from '../../workflows/catalog.js';
+import { discoverWorkflows } from '../../application/operations.js';
+import { readJsonInput as readJsonInputFile } from '../../application/config-operations.js';
 import {
   cliUsageError,
   exitCodeFor,
@@ -56,7 +56,7 @@ export function registerRunCommand(cli: Command): void {
       const context = await openContext(optionsAtRoot);
       const runId = randomUUID();
       const controller = new AbortController();
-      const removeSignalHandlers = installSignalHandlers(controller, runId);
+      const signalHandlers = installSignalHandlers(controller, runId);
       let started = false;
       try {
         const run = await context.application.runWorkflow({
@@ -94,14 +94,15 @@ export function registerRunCommand(cli: Command): void {
         }
         throw error;
       } finally {
-        removeSignalHandlers();
+        signalHandlers.remove();
         context.close();
+        signalHandlers.completeCleanup();
       }
     });
 }
 
 function formatWorkflowList(): string {
-  return workflowSummaries
+  return discoverWorkflows()
     .map(
       (item) =>
         `  ${item.id.padEnd(22)} ${item.experimental ? '[experimental] ' : ''}${item.description}`,
@@ -168,7 +169,9 @@ async function promptForMissingInputs(
       workflowId ??
       (
         await readline.question(
-          `Workflow (${workflowSummaries.map((item) => item.id).join(', ')}): `,
+          `Workflow (${discoverWorkflows()
+            .map((item) => item.id)
+            .join(', ')}): `,
         )
       ).trim();
     const selectedObjective = objective?.trim() ?? (await readline.question('Objective: ')).trim();
@@ -180,19 +183,8 @@ async function promptForMissingInputs(
 
 async function readInputJson(path: string | undefined): Promise<Record<string, unknown>> {
   if (!path) return {};
-  let content: string;
   try {
-    content = await (path === '-' ? readStdin() : readFile(path, 'utf8'));
-  } catch (error) {
-    throw cliUsageError(
-      'INVALID_INPUT_JSON',
-      `Cannot read input JSON ${path}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (!isRecord(parsed)) throw new Error('input JSON must be an object');
-    return parsed;
+    return await readJsonInputFile(path, readStdin);
   } catch (error) {
     throw cliUsageError(
       'INVALID_INPUT_JSON',
@@ -205,10 +197,6 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function rootMachineMode(command: Command): 'json' | 'jsonl' | undefined {

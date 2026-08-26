@@ -567,7 +567,7 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     case 'approval': {
       if (!state.runView) return state;
       const moved = moveSelection(
-        { offset: state.offset, selected: state.selection },
+        { offset: state.artifactOffset, selected: state.artifactSelected },
         direction,
         approvalActionItems(state.runView).length,
         visibleRows,

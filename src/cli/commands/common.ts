@@ -15,6 +15,7 @@ import {
   humanStepStatus,
 } from '../../presentation/format.js';
 import type { NormalizedEvent } from '../../core/events.js';
+import { discoverWorkflows } from '../../application/operations.js';
 import {
   machineMode,
   runEventRecord,
@@ -23,7 +24,6 @@ import {
   writeJsonl,
   type MachineMode,
 } from '../protocol.js';
-import { workflowSummaries } from '../../workflows/catalog.js';
 
 export interface RootOptions {
   config?: string;
@@ -195,8 +195,25 @@ export function printMachineResult<T>(command: string, data: T): void {
   writeJsonResult(command, data);
 }
 
-export function installSignalHandlers(controller: AbortController, runId: string): () => void {
+export interface InstalledSignalHandlers {
+  remove(): void;
+  completeCleanup(): void;
+}
+
+export function installSignalHandlers(
+  controller: AbortController,
+  runId: string,
+): InstalledSignalHandlers {
   let cancellationRequested = false;
+  let forceRequested = false;
+  let forceSignal: NodeJS.Signals | undefined;
+  let cleanupComplete = false;
+  let removed = false;
+  const forceAfterCleanup = (signal: NodeJS.Signals): void => {
+    if (!cleanupComplete) return;
+    process.exitCode = 130;
+    process.kill(process.pid, signal);
+  };
   const handleSignal = (signal: NodeJS.Signals): void => {
     if (!cancellationRequested) {
       cancellationRequested = true;
@@ -207,19 +224,26 @@ export function installSignalHandlers(controller: AbortController, runId: string
       return;
     }
 
-    process.stderr.write(`\nForce-exiting run ${runId}.\n`);
-    process.exitCode = 130;
-    process.removeListener('SIGINT', onSigint);
-    process.removeListener('SIGTERM', onSigterm);
-    process.kill(process.pid, signal);
+    forceRequested = true;
+    forceSignal = signal;
+    process.stderr.write(`\nForce-exiting run ${runId} after cleanup.\n`);
+    forceAfterCleanup(signal);
   };
   const onSigint = (): void => handleSignal('SIGINT');
   const onSigterm = (): void => handleSignal('SIGTERM');
   process.on('SIGINT', onSigint);
   process.on('SIGTERM', onSigterm);
-  return () => {
-    process.removeListener('SIGINT', onSigint);
-    process.removeListener('SIGTERM', onSigterm);
+  return {
+    remove: () => {
+      if (removed) return;
+      removed = true;
+      process.removeListener('SIGINT', onSigint);
+      process.removeListener('SIGTERM', onSigterm);
+    },
+    completeCleanup: () => {
+      cleanupComplete = true;
+      if (forceRequested) forceAfterCleanup(forceSignal ?? 'SIGINT');
+    },
   };
 }
 
@@ -269,7 +293,7 @@ function printNextAction(view: RunView): void {
 }
 
 export function workflowDisplayLabel(workflowId: string): string {
-  const summary = workflowSummaries.find((item) => item.id === workflowId);
+  const summary = discoverWorkflows().find((item) => item.id === workflowId);
   return summary?.experimental ? `${workflowId} [Experimental]` : workflowId;
 }
 

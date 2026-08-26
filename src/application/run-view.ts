@@ -122,7 +122,7 @@ export async function getRunView(
   ]);
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
-  const recovery = buildRunRecoveryExplanation(run, steps);
+  const recovery = buildRunRecoveryExplanation(run, steps, installedWorkflow);
   const phases = buildPhases(installedWorkflow, steps, Date.now(), run.status === 'running');
   const pendingAction = compatible ? buildPendingAction(run, installedWorkflow, steps) : undefined;
   const followUp = clarificationFollowUp(run.status, phases);

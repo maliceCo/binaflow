@@ -42,9 +42,9 @@ async function decide(
   const optionsAtRoot = rootOptions(command);
   const mode = machineMode(optionsAtRoot);
   const context = await openContext(optionsAtRoot);
+  const controller = new AbortController();
+  const signalHandlers = installSignalHandlers(controller, runId);
   try {
-    const controller = new AbortController();
-    const removeSignalHandlers = installSignalHandlers(controller, runId);
     let started = false;
     try {
       const run = await context.application.decideApproval({
@@ -92,9 +92,10 @@ async function decide(
       }
       throw error;
     } finally {
-      removeSignalHandlers();
+      signalHandlers.remove();
     }
   } finally {
     context.close();
+    signalHandlers.completeCleanup();
   }
 }

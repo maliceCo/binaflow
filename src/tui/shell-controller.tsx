@@ -1,5 +1,3 @@
-import { readdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import { useApp, useInput } from 'ink';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -7,6 +5,8 @@ import {
   diagnoseConfigurationFile,
   discoverSetupModels,
   generateConfiguration,
+  listWorkspaceEntries,
+  parentWorkspacePath,
   writeConfigurationAtomically,
 } from '../application/config-operations.js';
 import type { NormalizedEvent } from '../core/events.js';
@@ -208,7 +208,7 @@ export function InkShellController({
   const openExecutionContext = async (): Promise<ApplicationService> => {
     const createContext = await resolveContextFactory();
     const current = stateRef.current;
-    const context = await lifecycle.replaceOwnedContext(async () =>
+    const context = await lifecycle.replaceOwnedContextForOperation(async () =>
       createContext(current.configPath, current.cwd),
     );
     return context.application;
@@ -220,11 +220,11 @@ export function InkShellController({
     await lifecycle.replaceContext(async () => createContext(current.configPath, current.cwd));
   };
 
-  const runDiagnose = async (): Promise<void> => {
+  const runDiagnose = async (probePiCommand = false): Promise<void> => {
     const requestId = ++diagnosisRequest.current;
     const requestCwd = stateRef.current.cwd;
     const requestConfigPath = stateRef.current.configPath;
-    const promise = diagnoseConfigurationFile(requestConfigPath, requestCwd)
+    const promise = diagnoseConfigurationFile(requestConfigPath, requestCwd, { probePiCommand })
       .then((result) => {
         if (
           active.current &&
@@ -282,24 +282,7 @@ export function InkShellController({
     const requestId = ++folderRequest.current;
     const request = (async () => {
       try {
-        const dirents = await readdir(path, { withFileTypes: true });
-        const dirs = dirents
-          .filter((entry) => entry.isDirectory())
-          .sort((a, b) => a.name.localeCompare(b.name));
-        const entries: FolderEntry[] =
-          path === '/'
-            ? []
-            : [{ path: dirname(path), name: '..', isParent: true, hasBinaflow: false }];
-        for (const entry of dirs) {
-          const full = join(path, entry.name);
-          let hasBinaflow = false;
-          try {
-            hasBinaflow = await configurationExists('.binaflow/config.json', full);
-          } catch {
-            hasBinaflow = false;
-          }
-          entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
-        }
+        const entries: FolderEntry[] = await listWorkspaceEntries(path);
         if (
           active.current &&
           requestId === folderRequest.current &&
@@ -323,7 +306,7 @@ export function InkShellController({
               ? [{ path, name: path, isParent: false, hasBinaflow: false, error: message }]
               : [
                   {
-                    path: dirname(path),
+                    path: parentWorkspacePath(path),
                     name: '..',
                     isParent: true,
                     hasBinaflow: false,
@@ -585,6 +568,7 @@ export function InkShellController({
     const diagnosis = stateRef.current.diagnosis;
     if (!launchInput || !diagnosis || launching) return;
     setLaunching(true);
+    const executionContext = openExecutionContext();
     const controller = lifecycle.beginOperation();
     lifecycle.trackOperation(
       (async () => {
@@ -607,7 +591,7 @@ export function InkShellController({
             });
             return;
           }
-          const application = await openExecutionContext();
+          const application = await executionContext;
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
           attachLiveControllers(application);
           lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
@@ -670,11 +654,12 @@ export function InkShellController({
       return;
     }
     setLaunching(true);
+    const executionContext = openExecutionContext();
     const controller = lifecycle.beginOperation();
     lifecycle.trackOperation(
       (async () => {
         try {
-          const application = await openExecutionContext();
+          const application = await executionContext;
           if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
           attachLiveControllers(application);
           lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
@@ -825,7 +810,11 @@ export function InkShellController({
         const models = await discoverSetupModels();
         if (active.current) dispatch({ type: 'setup-models', models });
       } else if (next.effect === 'diagnose-cwd') {
-        await runDiagnose();
+        await runDiagnose(
+          event.type === 'use-folder' ||
+            event.type === 'folder-confirm' ||
+            event.type === 'refresh-diagnosis',
+        );
       }
     } catch (reason) {
       if (active.current) {
@@ -938,7 +927,10 @@ export function InkShellController({
           if (key.escape || (input === 'q' && current.folderFilter.length === 0))
             dispatch({ type: 'folder-picker-back' });
           else if (input === 'h') {
-            dispatch({ type: 'folder-picker-path', path: dirname(current.folderPickerPath) });
+            dispatch({
+              type: 'folder-picker-path',
+              path: parentWorkspacePath(current.folderPickerPath),
+            });
           } else if (input === '/') dispatch({ type: 'folder-picker-path', path: '/' });
           else if (key.backspace || input === '\x7f') {
             dispatch({ type: 'folder-filter-backspace' });

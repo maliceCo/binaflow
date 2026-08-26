@@ -1,36 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import type { AgentProfile, WorkspaceMode } from './core/agent-profile.js';
 
-export type WorkspaceMode = 'read-only' | 'read-write';
-export type ProjectTrust = 'never' | 'always';
-
-export interface AgentProfile {
-  driver: string;
-  provider?: string;
-  model: string;
-  thinking?: string;
-  tools: string[];
-  workspaceMode: WorkspaceMode;
-  projectTrust?: ProjectTrust;
-  timeoutMs: number;
-  retryLimit: number;
-}
+export type { AgentProfile, ProjectTrust, WorkspaceMode } from './core/agent-profile.js';
+export { resolveProfile } from './core/agent-profile.js';
 
 export interface BinaflowConfig {
   dataDir: string;
   piCommand: string;
   profiles: Record<string, AgentProfile>;
-}
-
-export function resolveProfile(
-  config: Pick<BinaflowConfig, 'profiles'>,
-  profileName: string,
-): AgentProfile {
-  const profile = Object.prototype.hasOwnProperty.call(config.profiles, profileName)
-    ? config.profiles[profileName]
-    : undefined;
-  if (!profile) throw new Error(`Unknown agent profile: ${profileName}`);
-  return profile;
 }
 
 export async function loadConfig(configPath: string, cwd = process.cwd()): Promise<BinaflowConfig> {
@@ -128,6 +106,14 @@ export function validateAgentProfile(name: string, value: unknown): AgentProfile
     value.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')
   ) {
     errors.push('read-only profiles cannot enable write, edit, or bash tools');
+  }
+  if (
+    name === 'planner' &&
+    (value.workspaceMode !== 'read-only' ||
+      (Array.isArray(value.tools) &&
+        value.tools.some((tool) => ['write', 'edit', 'bash'].includes(tool))))
+  ) {
+    errors.push('planner profiles must be read-only and cannot enable write, edit, or bash tools');
   }
   if (!isPositiveInteger(value.timeoutMs)) errors.push('timeoutMs must be a positive integer');
   if (!isNonNegativeInteger(value.retryLimit)) {

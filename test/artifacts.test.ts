@@ -40,6 +40,18 @@ describe('FileArtifactStore containment', () => {
     );
   });
 
+  it('keeps bounded UTF-8 previews valid when the byte limit splits a character', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-artifact-utf8-'));
+    directories.push(directory);
+    const store = new FileArtifactStore(join(directory, 'artifacts'));
+    const reference = await store.write('run-1', 'plan', 'plan', 'text', 'a\u00e9b', 'text/plain');
+
+    await expect(store.readBounded(reference, 2)).resolves.toEqual({
+      content: 'a',
+      truncated: true,
+    });
+  });
+
   it.skipIf(process.platform === 'win32')(
     'rejects symlink escapes for reads and writes',
     async () => {

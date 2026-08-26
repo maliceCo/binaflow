@@ -25,9 +25,15 @@ export class SqliteRunStore implements RunStore {
   private readonly ownerId = randomUUID();
 
   constructor(databasePath: string) {
-    this.database = new Database(databasePath);
-    this.database.pragma('foreign_keys = ON');
-    applyMigrations(this.database, databasePath);
+    const database = new Database(databasePath);
+    try {
+      database.pragma('foreign_keys = ON');
+      applyMigrations(database, databasePath);
+      this.database = database;
+    } catch (error) {
+      database.close();
+      throw error;
+    }
   }
 
   close(): void {
@@ -269,13 +275,6 @@ export class SqliteRunStore implements RunStore {
     return rows.map(fromArtifactRow);
   }
 
-  async replaceArtifact(artifact: ArtifactReference): Promise<void> {
-    const transaction = this.database.transaction(() => {
-      this.replaceArtifactInTransaction(artifact);
-    });
-    transaction();
-  }
-
   async checkpointResearchIteration(
     inputArtifact: ArtifactReference,
     researchStep: StepRun,
@@ -483,9 +482,14 @@ export class SqliteRunStore implements RunStore {
   private isLiveOwner(owner: ExecutionOwnerRow): boolean {
     try {
       process.kill(owner.owner_pid, 0);
-    } catch {
-      return false;
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      if (code === 'ESRCH') return false;
+      // EPERM means the process exists but cannot be inspected; fail closed.
+      return true;
     }
+    // A PID can be reused after an owner exits. The process-start marker lets
+    // this process distinguish its own stale owner; other processes fail closed.
     return owner.owner_pid !== process.pid || owner.owner_started_at === PROCESS_STARTED_AT;
   }
 }

@@ -12,9 +12,8 @@ import type {
   WorkflowRun,
 } from './run.js';
 import { isStepRetryEligible } from './run.js';
-import type { RunStore } from '../storage/run-store.js';
-import type { ArtifactStore } from '../artifacts/artifact-store.js';
-import { resolveProfile, type AgentProfile } from '../config.js';
+import type { WorkflowArtifactStore, WorkflowExecutionStore } from './ports.js';
+import { resolveProfile, type AgentProfile } from './agent-profile.js';
 import { resolveStepOrder } from './references.js';
 import { validateWorkflowDefinition, type AgentStep, type WorkflowDefinition } from './workflow.js';
 import type { ExecuteWorkflowRequest } from './execute-request.js';
@@ -34,8 +33,8 @@ export interface WorkflowRuntimeOptions {
 
 export class WorkflowRuntime {
   constructor(
-    readonly runStore: RunStore,
-    readonly artifactStore: ArtifactStore,
+    private readonly runStore: WorkflowExecutionStore,
+    private readonly artifactStore: WorkflowArtifactStore,
     private readonly driver: AgentDriver,
     private readonly eventSink: EventSink = () => undefined,
     private readonly options: WorkflowRuntimeOptions = {},
@@ -165,7 +164,7 @@ export class WorkflowRuntime {
 
       if (existing.status === 'failed' || existing.status === 'interrupted') {
         const steps = await this.runStore.getStepRuns(existing.id);
-        if (!steps.some((step) => isStepRetryEligible(step, true))) {
+        if (!hasRetryableWorkflowStep(workflow, steps)) {
           throw new Error(
             `Run ${existing.id} has no retryable failed, interrupted, or pending steps`,
           );
@@ -391,34 +390,6 @@ export class WorkflowRuntime {
     await this.eventSink(event);
   }
 
-  resetLoopStep(step: StepRun): StepRun {
-    return {
-      runId: step.runId,
-      stepId: step.stepId,
-      profile: step.profile,
-      status: 'pending',
-      attempt: step.attempt + 1,
-    };
-  }
-
-  async writeResearchInputArtifact(
-    runId: string,
-    input: Record<string, unknown>,
-    artifacts: ArtifactReference[],
-  ): Promise<ArtifactReference> {
-    if (!findArtifact(artifacts, 'run', 'input')) {
-      throw new Error('Missing persisted run input artifact');
-    }
-    return this.artifactStore.write(
-      runId,
-      'run',
-      'input',
-      'json',
-      JSON.stringify(input),
-      'application/json',
-    );
-  }
-
   private async prepareStep(runId: string, step: AgentStep, existing?: StepRun): Promise<StepRun> {
     if (!existing) {
       const pending: StepRun = {
@@ -446,7 +417,9 @@ export class WorkflowRuntime {
       await this.runStore.saveStepRun(pending);
       return pending;
     }
-    return createPendingRetry(existing, attempt);
+    const pending = createPendingRetry(existing, attempt);
+    await this.runStore.saveStepRun(pending);
+    return pending;
   }
 
   private async recordFailure(
@@ -595,7 +568,7 @@ async function resolveInputs(
   step: AgentStep,
   input: Record<string, unknown>,
   artifacts: ArtifactReference[],
-  artifactStore: ArtifactStore,
+  artifactStore: WorkflowArtifactStore,
 ): Promise<Record<string, string>> {
   const values: Record<string, string> = {};
   for (const reference of step.inputReferences) {
@@ -616,6 +589,14 @@ async function resolveInputs(
     values[reference.name] = await artifactStore.read(artifact);
   }
   return values;
+}
+
+function hasRetryableWorkflowStep(workflow: WorkflowDefinition, steps: StepRun[]): boolean {
+  const persisted = new Map(steps.map((step) => [step.stepId, step]));
+  return workflow.steps.some((definition) => {
+    const step = persisted.get(definition.id);
+    return !step || isStepRetryEligible(step, true);
+  });
 }
 
 function validateJsonOutput(value: unknown, schema: Record<string, unknown>): void {
