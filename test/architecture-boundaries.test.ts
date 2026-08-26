@@ -95,6 +95,27 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([]);
   });
 
+  it('keeps application use cases free of concrete adapters', async () => {
+    const files = (await listSourceFiles(join(root, 'src/application'))).filter(
+      (file) => !file.endsWith('runtime.ts'),
+    );
+    const violations: string[] = [];
+    for (const file of files) {
+      const source = await readFile(file, 'utf8');
+      for (const specifier of importsOf(source, file)) {
+        if (
+          specifier.includes('/storage/') ||
+          specifier.includes('/artifacts/') ||
+          specifier.includes('/drivers/') ||
+          specifier.includes('/process/')
+        ) {
+          violations.push(`${relative(root, file)} -> ${specifier}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it('does not expose infrastructure fields on ApplicationService', async () => {
     const source = await readFile(join(root, 'src/application/service.ts'), 'utf8');
     const publicSurface = ['ApplicationQueries', 'ApplicationCommands', 'ApplicationService']

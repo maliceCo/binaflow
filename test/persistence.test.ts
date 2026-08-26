@@ -110,6 +110,52 @@ describe('local persistence', () => {
     reopenedStore.close();
   });
 
+  it('rolls back step completion when an artifact reference cannot be inserted', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-complete-step-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const run: WorkflowRun = {
+      id: 'atomic-completion',
+      workflowId: 'plan-build',
+      workflowVersion: 1,
+      objective: 'Keep completion atomic',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const existingArtifact = {
+      id: 'existing-artifact',
+      runId: run.id,
+      stepId: 'run',
+      name: 'input',
+      kind: 'json' as const,
+      path: '/tmp/input.json',
+      mediaType: 'application/json',
+      sizeBytes: 2,
+    };
+    await store.createRun(run, [existingArtifact]);
+    const running: StepRun = {
+      runId: run.id,
+      stepId: 'plan',
+      profile: 'planner',
+      status: 'running',
+      attempt: 1,
+      startedAt: '2026-01-01T00:00:01.000Z',
+    };
+    await store.saveStepRun(running);
+
+    await expect(
+      store.completeStep(
+        { ...running, status: 'completed', finishedAt: '2026-01-01T00:00:02.000Z' },
+        [{ ...existingArtifact, stepId: 'plan', name: 'plan' }],
+      ),
+    ).rejects.toThrow('UNIQUE constraint failed');
+
+    expect(await store.getStepRuns(run.id)).toEqual([running]);
+    expect(await store.getArtifacts(run.id)).toEqual([existingArtifact]);
+    store.close();
+  });
+
   it('lists runs with stable cursor pagination and filters', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-history-'));
     temporaryDirectories.push(directory);

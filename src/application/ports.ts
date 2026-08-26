@@ -1,11 +1,25 @@
-import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
+import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import type { ExecutionClaim } from '../core/ports.js';
+import type { WorkflowDefinition } from '../core/workflow.js';
+import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 
-export const DEFAULT_RUN_EVENT_LIMIT = 50;
-export const MAX_RUN_EVENT_LIMIT = 100;
+export interface ApplicationArtifactStore {
+  read(artifact: ArtifactReference): Promise<string>;
+  readBounded(
+    artifact: ArtifactReference,
+    maxBytes: number,
+  ): Promise<{
+    content: string;
+    truncated: boolean;
+  }>;
+}
 
-export interface RunListQuery {
+export interface WorkflowExecutor {
+  execute(workflow: WorkflowDefinition, request: ExecuteWorkflowRequest): Promise<WorkflowRun>;
+}
+
+export interface ApplicationRunListQuery {
   limit?: number;
   status?: RunStatus;
   statuses?: readonly RunStatus[];
@@ -13,33 +27,22 @@ export interface RunListQuery {
   cursor?: string;
 }
 
-export interface RunListPage {
+export interface ApplicationRunListPage {
   runs: WorkflowRun[];
   nextCursor?: string;
 }
 
-export interface PersistedRunEvent extends NormalizedEvent {
-  id: number;
-}
-
-export interface RunEventPageQuery {
+export interface ApplicationRunEventPageQuery {
   afterId?: number;
   limit?: number;
 }
 
-export interface RunEventPage {
-  events: PersistedRunEvent[];
+export interface ApplicationRunEventPage {
+  events: Array<NormalizedEvent & { id: number }>;
   nextCursor?: number;
 }
 
-export type StepResultInclude = boolean | 'usage';
-
-export interface StepRunQueryOptions {
-  /** Default includes full results. false omits bodies; 'usage' keeps usage/cost only. */
-  includeResult?: StepResultInclude;
-}
-
-export interface RunStore {
+export interface ApplicationRunStore {
   createRun(run: WorkflowRun, artifacts?: ArtifactReference[]): Promise<void>;
   getRun(runId: string): Promise<WorkflowRun | undefined>;
   claimRun(runId: string, eligibleStatuses: readonly RunStatus[]): Promise<WorkflowRun | undefined>;
@@ -52,39 +55,34 @@ export interface RunStore {
     approvalStep: StepRun,
   ): Promise<{ run: WorkflowRun; claim: ExecutionClaim } | undefined>;
   assertExecutionClaim(claim: ExecutionClaim): Promise<void>;
-  assertExecutionOwner(runId: string): Promise<void>;
   claimApproval(runId: string, approvalStep: StepRun): Promise<WorkflowRun | undefined>;
   markRunInterrupted(runId: string): Promise<WorkflowRun | undefined>;
   releaseExecution(runId: string): Promise<void>;
-  listRunsPage(query?: RunListQuery): Promise<RunListPage>;
+  assertExecutionOwner(runId: string): Promise<void>;
+  listRunsPage(query?: ApplicationRunListQuery): Promise<ApplicationRunListPage>;
   saveRun(run: WorkflowRun, expectedStatus: RunStatus): Promise<void>;
   saveStepRun(stepRun: StepRun): Promise<void>;
-  getStepRuns(runId: string, options?: StepRunQueryOptions): Promise<StepRun[]>;
+  getStepRuns(runId: string, options?: { includeResult?: boolean | 'usage' }): Promise<StepRun[]>;
   getArtifacts(runId: string): Promise<ArtifactReference[]>;
   completeStep(stepRun: StepRun, artifacts: ArtifactReference[]): Promise<void>;
   saveEvent(event: NormalizedEvent): Promise<void>;
   saveEvents(events: NormalizedEvent[]): Promise<void>;
   countEvents(runId: string): Promise<number>;
   getEvents(runId: string): Promise<NormalizedEvent[]>;
-  listRunEventsPage(runId: string, query?: RunEventPageQuery): Promise<RunEventPage>;
+  listRunEventsPage(
+    runId: string,
+    query?: ApplicationRunEventPageQuery,
+  ): Promise<ApplicationRunEventPage>;
 }
 
-export class RunExecutionOwnedError extends Error {
-  readonly code = 'RUN_EXECUTION_OWNED';
-
-  constructor(runId: string) {
-    super(`Run ${runId} is owned by a live execution`);
-    this.name = 'RunExecutionOwnedError';
-  }
-}
-
-export class RunStatusConflictError extends Error {
-  readonly code = 'RUN_STATUS_CONFLICT';
-
-  constructor(runId: string, expectedStatus: RunStatus, actualStatus: RunStatus) {
-    super(
-      `Run ${runId} changed from the expected status ${expectedStatus}; current status is ${actualStatus}`,
-    );
-    this.name = 'RunStatusConflictError';
-  }
+export interface ResearchPersistence extends Pick<
+  ApplicationRunStore,
+  'getRun' | 'getStepRuns' | 'getArtifacts' | 'saveStepRun'
+> {
+  checkpointResearchIteration(
+    inputArtifact: ArtifactReference,
+    researchStep: StepRun,
+    reviewStep: StepRun,
+    approvalStep?: StepRun,
+  ): Promise<void>;
 }

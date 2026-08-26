@@ -45,11 +45,6 @@ export class WorkflowRuntime {
     request: ExecuteWorkflowRequest,
   ): Promise<WorkflowRun> {
     validateWorkflowDefinition(workflow);
-    if (workflow.approval) {
-      throw new Error(
-        'Workflow approval is not supported by the sequential engine; use the experimental research coordinator',
-      );
-    }
     const input = await this.resolveInput(request);
     validateWorkflowInput(workflow, input);
     if (request.resume) {
@@ -162,25 +157,11 @@ export class WorkflowRuntime {
       if (existing.status === 'completed') return existing;
       if (existing.status === 'cancelled') throw new Error(`Run ${existing.id} was cancelled`);
 
-      if (existing.status === 'failed' || existing.status === 'interrupted') {
-        const steps = await this.runStore.getStepRuns(existing.id);
-        if (!hasRetryableWorkflowStep(workflow, steps)) {
-          throw new Error(
-            `Run ${existing.id} has no retryable failed, interrupted, or pending steps`,
-          );
-        }
-      }
-
-      let run = existing;
+      const run = existing;
       if (run.status === 'running') {
-        if (!request.runClaimed) throw new Error(`Run ${run.id} is already running`);
+        if (!request.executionClaim) throw new Error(`Run ${run.id} is already running`);
+        await this.runStore.assertExecutionClaim(request.executionClaim);
         return run;
-      }
-      if (request.runClaimed) {
-        if (run.status === 'failed' || run.status === 'interrupted') {
-          run = await this.saveRunStatus(run, 'pending');
-        }
-        return this.saveRunStatus(run, 'running');
       }
       const claimed = await this.runStore.claimRun(run.id, [run.status]);
       if (!claimed) {
@@ -591,12 +572,28 @@ async function resolveInputs(
   return values;
 }
 
-function hasRetryableWorkflowStep(workflow: WorkflowDefinition, steps: StepRun[]): boolean {
+export function retryableWorkflowStepIds(workflow: WorkflowDefinition, steps: StepRun[]): string[] {
   const persisted = new Map(steps.map((step) => [step.stepId, step]));
-  return workflow.steps.some((definition) => {
-    const step = persisted.get(definition.id);
-    return !step || isStepRetryEligible(step, true);
-  });
+  return workflow.steps
+    .filter((definition) => {
+      const step = persisted.get(definition.id);
+      if (step && !isStepRetryEligible(step, true)) return false;
+      return !definition.dependsOn.some((dependency) => {
+        const dependencyStep = persisted.get(dependency);
+        return (
+          dependencyStep?.status === 'failed' ||
+          dependencyStep?.status === 'cancelled' ||
+          dependencyStep?.status === 'interrupted' ||
+          dependencyStep?.status === 'skipped'
+        );
+      });
+    })
+    .map((definition) => definition.id);
+}
+
+export function workflowStepsCompleted(workflow: WorkflowDefinition, steps: StepRun[]): boolean {
+  const persisted = new Map(steps.map((step) => [step.stepId, step]));
+  return workflow.steps.every((step) => persisted.get(step.id)?.status === 'completed');
 }
 
 function validateJsonOutput(value: unknown, schema: Record<string, unknown>): void {

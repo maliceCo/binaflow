@@ -14,8 +14,7 @@ const stepTransitions: Record<StepStatus, readonly StepStatus[]> = {
   pending: ['pending', 'running', 'waiting', 'completed', 'cancelled', 'skipped'],
   running: ['running', 'completed', 'failed', 'cancelled', 'interrupted'],
   waiting: ['waiting', 'pending', 'running', 'failed', 'cancelled'],
-  // Bounded workflow loops may explicitly restart a completed step.
-  completed: ['completed', 'pending'],
+  completed: ['completed'],
   failed: ['failed', 'pending'],
   cancelled: ['cancelled'],
   interrupted: ['interrupted', 'pending'],

@@ -64,6 +64,18 @@ describe('plan-build contracts', () => {
     expect(() => validateWorkflowDefinition(transitive)).not.toThrow();
   });
 
+  it('rejects malformed input and output contracts before execution', () => {
+    const invalidInput = structuredClone(planBuildWorkflow) as unknown as Record<string, unknown>;
+    (invalidInput.input as Record<string, unknown>).properties = {
+      objective: { type: 'number' },
+    };
+    expect(() => validateWorkflowDefinition(invalidInput)).toThrow('input must define');
+
+    const invalidSchema = structuredClone(planBuildWorkflow);
+    invalidSchema.steps[0]!.outputs[0]!.schema = { type: 'not-a-json-schema-type' };
+    expect(() => validateWorkflowDefinition(invalidSchema)).toThrow('invalid schema');
+  });
+
   it('accepts the planner contract and rejects incomplete output', () => {
     const plan = {
       decision: 'build',
@@ -84,6 +96,13 @@ describe('plan-build contracts', () => {
 
     expect(parseBuildPlan(plan)).toEqual(plan);
     expect(() => parseBuildPlan({ summary: 'missing tasks' })).toThrow('Invalid build plan');
+
+    expect(() => parseBuildPlan({ ...plan, tasks: [], clarificationQuestions: [] })).toThrow(
+      'Invalid build plan',
+    );
+    expect(() => parseBuildPlan({ ...plan, decision: 'needs_clarification', tasks: [] })).toThrow(
+      'Invalid build plan',
+    );
   });
 });
 

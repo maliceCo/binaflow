@@ -379,6 +379,70 @@ function validConfig(): ConfigurationDiagnosis {
   };
 }
 
+describe('TUI detail navigation', () => {
+  it('keeps approval and artifact movement in their own selection state', () => {
+    const base = createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH });
+    const view = inspectionSetView('completed');
+    const approvalView: RunView = {
+      ...view,
+      status: 'waiting',
+      availableActions: [
+        {
+          kind: 'approve-research',
+          stepId: 'research-approval',
+          label: 'Approve',
+          requiresConfirmation: false,
+        },
+        {
+          kind: 'reject-research',
+          stepId: 'research-approval',
+          label: 'Reject',
+          requiresConfirmation: false,
+          requiresFeedback: true,
+        },
+      ],
+    };
+    const approvalState = {
+      ...base,
+      overlay: 'none' as const,
+      detail: 'approval' as const,
+      focus: 'detail' as const,
+      runView: approvalView,
+      selection: 0,
+      offset: 0,
+      artifactSelected: 2,
+      artifactOffset: 1,
+    };
+    const movedApproval = reduce(
+      reduce(approvalState, { type: 'move', direction: 1, visibleRows: 10 }),
+      { type: 'move', direction: 1, visibleRows: 10 },
+    );
+    expect(movedApproval.selection).toBe(2);
+    expect(movedApproval.artifactSelected).toBe(2);
+
+    const artifactState = {
+      ...base,
+      overlay: 'none' as const,
+      detail: 'artifacts' as const,
+      focus: 'detail' as const,
+      runView: {
+        ...view,
+        artifacts: [view.artifacts[0]!, view.artifacts[0]!, view.artifacts[0]!],
+      },
+      selection: 2,
+      offset: 1,
+      artifactSelected: 0,
+      artifactOffset: 0,
+    };
+    const movedArtifacts = reduce(
+      reduce(artifactState, { type: 'move', direction: 1, visibleRows: 10 }),
+      { type: 'move', direction: 1, visibleRows: 10 },
+    );
+    expect(movedArtifacts.artifactSelected).toBe(2);
+    expect(movedArtifacts.selection).toBe(2);
+  });
+});
+
 function invalidConfig(): ConfigurationDiagnosis {
   return {
     workspacePath: CWD,

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
+import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
 import {
@@ -23,6 +24,7 @@ const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOS
 export class SqliteRunStore implements RunStore {
   private readonly database: Database.Database;
   private readonly ownerId = randomUUID();
+  private readonly executionClaims = new Map<string, string>();
 
   constructor(databasePath: string) {
     const database = new Database(databasePath);
@@ -64,6 +66,13 @@ export class SqliteRunStore implements RunStore {
     runId: string,
     eligibleStatuses: readonly RunStatus[],
   ): Promise<WorkflowRun | undefined> {
+    return (await this.claimRunForExecution(runId, eligibleStatuses))?.run;
+  }
+
+  async claimRunForExecution(
+    runId: string,
+    eligibleStatuses: readonly RunStatus[],
+  ): Promise<{ run: WorkflowRun; claim: ExecutionClaim } | undefined> {
     const statuses = [...new Set(eligibleStatuses)];
     if (statuses.length === 0) return undefined;
     for (const status of statuses) {
@@ -86,10 +95,18 @@ export class SqliteRunStore implements RunStore {
         RunRow | undefined;
       return row ? fromRunRow(row) : undefined;
     });
-    return transaction();
+    const run = transaction();
+    return run ? { run, claim: this.createExecutionClaim(runId) } : undefined;
   }
 
   async claimApproval(runId: string, approvalStep: StepRun): Promise<WorkflowRun | undefined> {
+    return (await this.claimApprovalForExecution(runId, approvalStep))?.run;
+  }
+
+  async claimApprovalForExecution(
+    runId: string,
+    approvalStep: StepRun,
+  ): Promise<{ run: WorkflowRun; claim: ExecutionClaim } | undefined> {
     if (approvalStep.runId !== runId || approvalStep.status !== 'pending') {
       throw new Error('A pending approval step for the same run is required');
     }
@@ -115,7 +132,19 @@ export class SqliteRunStore implements RunStore {
       this.writeStepRun(approvalStep);
       return fromRunRow({ ...run, status: 'running', updated_at: updatedAt });
     });
-    return transaction();
+    const run = transaction();
+    return run ? { run, claim: this.createExecutionClaim(runId) } : undefined;
+  }
+
+  async assertExecutionOwner(runId: string): Promise<void> {
+    this.assertCurrentExecutionOwner(runId);
+  }
+
+  async assertExecutionClaim(claim: ExecutionClaim): Promise<void> {
+    if (this.executionClaims.get(claim.runId) !== claim.token) {
+      throw new RunExecutionOwnedError(claim.runId);
+    }
+    this.assertCurrentExecutionOwner(claim.runId);
   }
 
   async markRunInterrupted(runId: string): Promise<WorkflowRun | undefined> {
@@ -160,6 +189,7 @@ export class SqliteRunStore implements RunStore {
     this.database
       .prepare('DELETE FROM run_execution_owners WHERE run_id = ? AND owner_id = ?')
       .run(runId, this.ownerId);
+    this.executionClaims.delete(runId);
   }
 
   async listRunsPage(query: RunListQuery = {}): Promise<RunListPage> {
@@ -248,7 +278,14 @@ export class SqliteRunStore implements RunStore {
   }
 
   async saveStepRun(stepRun: StepRun): Promise<void> {
-    const transaction = this.database.transaction(() => this.writeStepRun(stepRun));
+    const transaction = this.database.transaction(() => {
+      const run = this.database
+        .prepare('SELECT status FROM runs WHERE id = ?')
+        .get(stepRun.runId) as { status: RunStatus } | undefined;
+      if (!run) throw new Error(`Cannot update step for unknown run: ${stepRun.runId}`);
+      if (run.status === 'running') this.assertCurrentExecutionOwner(stepRun.runId);
+      this.writeStepRun(stepRun);
+    });
     transaction();
   }
 
@@ -292,9 +329,9 @@ export class SqliteRunStore implements RunStore {
     }
     const transaction = this.database.transaction(() => {
       this.replaceArtifactInTransaction(inputArtifact);
-      this.writeStepRun(researchStep);
-      this.writeStepRun(reviewStep);
-      if (approvalStep) this.writeStepRun(approvalStep);
+      this.writeStepRun(researchStep, true);
+      this.writeStepRun(reviewStep, true);
+      if (approvalStep) this.writeStepRun(approvalStep, true);
     });
     transaction();
   }
@@ -372,6 +409,11 @@ export class SqliteRunStore implements RunStore {
     }
 
     const transaction = this.database.transaction(() => {
+      const run = this.database
+        .prepare('SELECT status FROM runs WHERE id = ?')
+        .get(stepRun.runId) as { status: RunStatus } | undefined;
+      if (!run) throw new Error(`Cannot complete step for unknown run: ${stepRun.runId}`);
+      if (run.status === 'running') this.assertCurrentExecutionOwner(stepRun.runId);
       this.writeStepRun(stepRun);
       const insertArtifact = this.database.prepare(
         `INSERT INTO artifacts (id, run_id, step_id, name, kind, path, media_type, size_bytes)
@@ -403,12 +445,17 @@ export class SqliteRunStore implements RunStore {
     this.insertArtifact(artifact);
   }
 
-  private writeStepRun(stepRun: StepRun): void {
+  private writeStepRun(stepRun: StepRun, allowResearchReset = false): void {
     const current = this.database
       .prepare('SELECT status FROM step_runs WHERE run_id = ? AND step_id = ?')
       .get(stepRun.runId, stepRun.stepId) as { status: StepRun['status'] } | undefined;
 
-    if (current) assertStepTransition(current.status, stepRun.status);
+    if (
+      current &&
+      !(allowResearchReset && current.status === 'completed' && stepRun.status === 'pending')
+    ) {
+      assertStepTransition(current.status, stepRun.status);
+    }
 
     const row = toStepRunRow(stepRun);
     this.database
@@ -466,6 +513,12 @@ export class SqliteRunStore implements RunStore {
          VALUES (?, ?, ?, ?, ?)`,
       )
       .run(runId, this.ownerId, process.pid, PROCESS_STARTED_AT, new Date().toISOString());
+  }
+
+  private createExecutionClaim(runId: string): ExecutionClaim {
+    const token = randomUUID();
+    this.executionClaims.set(runId, token);
+    return { runId, token };
   }
 
   private assertCurrentExecutionOwner(runId: string): void {

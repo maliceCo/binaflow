@@ -1,3 +1,5 @@
+import { Ajv } from 'ajv';
+
 export type WorkflowStep = AgentStep;
 
 export interface WorkflowDefinition {
@@ -5,13 +7,6 @@ export interface WorkflowDefinition {
   id: string;
   input: WorkflowInputDefinition;
   steps: WorkflowStep[];
-  approval?: WorkflowApprovalDefinition;
-}
-
-export interface WorkflowApprovalDefinition {
-  id: string;
-  after: string;
-  message: string;
 }
 
 export interface WorkflowInputDefinition {
@@ -55,7 +50,8 @@ export interface StepOutputDefinition {
   kind: 'artifact';
   format: 'json' | 'text';
   schema?: Record<string, unknown>;
-  disposition?: 'build-plan';
+  /** An opaque workflow-owned interpretation key. */
+  disposition?: string;
 }
 
 export function validateWorkflowDefinition(
@@ -69,7 +65,9 @@ export function validateWorkflowDefinition(
 
   if (!isPositiveInteger(workflow.version)) errors.push('version must be a positive integer');
   if (!isNonEmptyString(workflow.id)) errors.push('id must be a non-empty string');
-  if (!isRecord(workflow.input)) errors.push('input must be an object');
+  if (!isWorkflowInputDefinition(workflow.input)) {
+    errors.push('input must define required string names and string properties');
+  }
   if (!Array.isArray(workflow.steps) || workflow.steps.length === 0) {
     errors.push('steps must be a non-empty array');
   }
@@ -103,6 +101,17 @@ export function validateWorkflowDefinition(
     ) {
       errors.push(`step ${step.id} has duplicate input reference names`);
     }
+    for (const output of step.outputs) {
+      if (output.schema !== undefined) {
+        try {
+          new Ajv({ allErrors: true }).compile(output.schema);
+        } catch (error) {
+          errors.push(
+            `step ${step.id} output ${output.name} has an invalid schema: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    }
   }
 
   for (const step of stepsById.values()) {
@@ -130,22 +139,6 @@ export function validateWorkflowDefinition(
           );
         }
       }
-    }
-  }
-
-  if (workflow.approval !== undefined) {
-    if (!isRecord(workflow.approval)) {
-      errors.push('approval must be an object');
-    } else if (
-      !isNonEmptyString(workflow.approval.id) ||
-      !isNonEmptyString(workflow.approval.after) ||
-      typeof workflow.approval.message !== 'string'
-    ) {
-      errors.push('approval must have id, after, and message');
-    } else if (!stepsById.has(workflow.approval.after)) {
-      errors.push(`approval references unknown step ${workflow.approval.after}`);
-    } else if (stepsById.has(workflow.approval.id)) {
-      errors.push(`approval id conflicts with step ${workflow.approval.id}`);
     }
   }
 
@@ -225,7 +218,26 @@ function isStepOutputDefinition(value: unknown): value is StepOutputDefinition {
     isNonEmptyString(value.name) &&
     value.kind === 'artifact' &&
     (value.format === 'json' || value.format === 'text') &&
-    (value.disposition === undefined || value.disposition === 'build-plan')
+    (value.disposition === undefined || typeof value.disposition === 'string') &&
+    (value.schema === undefined || isRecord(value.schema))
+  );
+}
+
+function isWorkflowInputDefinition(value: unknown): value is WorkflowInputDefinition {
+  if (!isRecord(value) || !isStringArray(value.required) || !isRecord(value.properties)) {
+    return false;
+  }
+  return (
+    Object.values(value.properties).every(isWorkflowInputProperty) &&
+    value.required.every((name) => Object.prototype.hasOwnProperty.call(value.properties, name))
+  );
+}
+
+function isWorkflowInputProperty(value: unknown): value is WorkflowInputProperty {
+  return (
+    isRecord(value) &&
+    value.type === 'string' &&
+    (value.minLength === undefined || isNonNegativeInteger(value.minLength))
   );
 }
 
@@ -243,4 +255,8 @@ function isStringArray(value: unknown): value is string[] {
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }

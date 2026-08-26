@@ -1,16 +1,16 @@
-import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import type { BinaflowConfig } from '../config.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
 import type { NormalizedEvent } from '../core/events.js';
-import type { WorkflowEngine } from '../core/engine.js';
-import type { RunStore } from '../storage/run-store.js';
-import type {
-  RunEventPage,
-  RunEventPageQuery,
-  RunListPage,
-  RunListQuery,
-} from '../storage/run-store.js';
 import type { WorkflowRun } from '../core/run.js';
+import type {
+  ApplicationArtifactStore as ArtifactStore,
+  ApplicationRunEventPage as RunEventPage,
+  ApplicationRunEventPageQuery as RunEventPageQuery,
+  ApplicationRunListPage as RunListPage,
+  ApplicationRunListQuery as RunListQuery,
+  ApplicationRunStore as RunStore,
+  WorkflowExecutor,
+} from './ports.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import {
   clarificationQuestions,
@@ -68,17 +68,17 @@ export interface ApplicationCommands {
 }
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
-  subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
+  subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
 export interface CreateApplicationServiceOptions {
   config: Pick<BinaflowConfig, 'profiles'>;
   store: RunStore;
   artifacts: ArtifactStore;
-  engine: WorkflowEngine;
+  engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
   modelDiscovery: AgentModelDiscovery;
-  subscribeEvents(listener: (event: NormalizedEvent) => void): () => void;
+  subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
 export interface CreateApplicationQueriesOptions {

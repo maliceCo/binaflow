@@ -68,16 +68,14 @@ export class FileArtifactStore implements ArtifactStore {
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
       const contentBytes = Math.min(bytesRead, maxBytes);
       let safeBytes = contentBytes;
+      const decoder = new TextDecoder('utf-8', { fatal: true });
       while (safeBytes > 0) {
-        const byte = buffer[safeBytes - 1]!;
-        if ((byte & 0xc0) === 0x80) {
+        try {
+          decoder.decode(buffer.subarray(0, safeBytes));
+          break;
+        } catch {
           safeBytes -= 1;
-          continue;
         }
-        const expectedBytes = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-        if (contentBytes - (safeBytes - 1) < expectedBytes) safeBytes -= 1;
-        else safeBytes = contentBytes;
-        break;
       }
       return {
         content: buffer.subarray(0, safeBytes).toString('utf8'),

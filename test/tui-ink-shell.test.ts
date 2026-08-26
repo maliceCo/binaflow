@@ -13,9 +13,9 @@ import type { NormalizedEvent } from '../src/core/events.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import type { RunView } from '../src/application/run-view.js';
 
-describe('Ink shell', () => {
-  const directories: string[] = [];
+const directories: string[] = [];
 
+describe('Ink shell', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     for (const directory of directories.splice(0)) {
@@ -1049,6 +1049,7 @@ async function waitForCondition(condition: () => boolean): Promise<void> {
 
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'binaflow-ink-shell-'));
+  directories.push(directory);
   return directory;
 }
 

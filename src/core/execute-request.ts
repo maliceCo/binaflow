@@ -1,4 +1,5 @@
 import type { AgentProfile } from './agent-profile.js';
+import type { ExecutionClaim } from './ports.js';
 import type { WorkflowRun } from './run.js';
 
 export interface ExecuteWorkflowRequest {
@@ -7,7 +8,7 @@ export interface ExecuteWorkflowRequest {
   profiles: Record<string, AgentProfile>;
   runId?: string;
   resume?: boolean;
-  runClaimed?: boolean;
+  executionClaim?: ExecutionClaim;
   signal?: AbortSignal;
   onRunStarted?: (run: WorkflowRun) => Promise<void> | void;
 }

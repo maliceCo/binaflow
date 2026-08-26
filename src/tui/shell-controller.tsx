@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   configurationExists,
   diagnoseConfigurationFile,
-  discoverSetupModels,
   generateConfiguration,
   listWorkspaceEntries,
   parentWorkspacePath,
@@ -807,7 +806,9 @@ export function InkShellController({
           break;
       }
       if (next.effect === 'discover-setup-models') {
-        const models = await discoverSetupModels();
+        const models = lifecycle.context
+          ? await lifecycle.context.application.discoverModels()
+          : [];
         if (active.current) dispatch({ type: 'setup-models', models });
       } else if (next.effect === 'diagnose-cwd') {
         await runDiagnose(
@@ -851,7 +852,7 @@ export function InkShellController({
       if (request === 'inactive') return false;
       if (request === 'forced') return false;
       dispatch({ type: 'cancel-requested' });
-      return false;
+      return liveRef.current !== undefined;
     });
   }, [lifecycle, registerSignalHandler, belowMinimumSize]);
 

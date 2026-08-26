@@ -204,14 +204,49 @@ async function withInstallLock<T>(paths: InstallPaths, action: () => Promise<T>)
     await mkdir(paths.lock, { mode: 0o700 });
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-      throw new Error('Another Binaflow update is already in progress');
+      if (await staleLockOwner(paths.lock)) {
+        await rm(paths.lock, { recursive: true, force: true });
+        await mkdir(paths.lock, { mode: 0o700 });
+      } else {
+        throw new Error('Another Binaflow update is already in progress');
+      }
+    } else {
+      throw error;
     }
-    throw error;
   }
   try {
+    await writeFile(join(paths.lock, 'owner.json'), JSON.stringify({ pid: process.pid }), {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
     return await action();
   } finally {
     await rm(paths.lock, { recursive: true, force: true });
+  }
+}
+
+async function staleLockOwner(lockPath: string): Promise<boolean> {
+  let owner: unknown;
+  try {
+    owner = JSON.parse(await readFile(join(lockPath, 'owner.json'), 'utf8'));
+  } catch {
+    return false;
+  }
+  if (
+    typeof owner !== 'object' ||
+    owner === null ||
+    !('pid' in owner) ||
+    typeof owner.pid !== 'number' ||
+    !Number.isInteger(owner.pid) ||
+    owner.pid < 1
+  ) {
+    return false;
+  }
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'ESRCH';
   }
 }
 

@@ -1,6 +1,6 @@
 import { access, link, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, resolve } from 'node:path';
+import { dirname, parse, resolve } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
   parseConfigValue,
@@ -9,7 +9,6 @@ import {
   type AgentProfile,
 } from '../config.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
-import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { discoverWorkflows } from './operations.js';
 
 export async function discoverAgentModels(discovery: AgentModelDiscovery): Promise<AgentModel[]> {
@@ -18,10 +17,6 @@ export async function discoverAgentModels(discovery: AgentModelDiscovery): Promi
   } catch {
     return [];
   }
-}
-
-export function discoverSetupModels(): Promise<AgentModel[]> {
-  return discoverAgentModels(new PiModelDiscovery());
 }
 
 export interface ConfigurationDiagnosis {
@@ -77,7 +72,7 @@ export async function listWorkspaceEntries(path: string): Promise<WorkspaceEntry
     .filter((entry) => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name));
   const entries: WorkspaceEntry[] =
-    path === '/'
+    parse(path).root === path
       ? []
       : [{ path: parentWorkspacePath(path), name: '..', isParent: true, hasBinaflow: false }];
   for (const entry of directories) {

@@ -118,6 +118,10 @@ export class JsonlProcess {
     const request = { ...message, id };
 
     return new Promise<JsonObject>((resolve, reject) => {
+      if (this.pending.has(id)) {
+        reject(new Error(`JSONL request id is already pending: ${id}`));
+        return;
+      }
       const pending: PendingRequest = { resolve, reject };
       if (options.timeoutMs !== undefined) {
         pending.timer = setTimeout(() => {

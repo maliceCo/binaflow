@@ -1,33 +1,28 @@
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
-import type { WorkflowArtifactStore, WorkflowExecutionStore } from '../core/ports.js';
+import type { WorkflowArtifactStore } from '../core/ports.js';
 import type { StepRun, WorkflowRun } from '../core/run.js';
 import { isStepRetryEligible } from '../core/run.js';
 import {
   findArtifact,
   replaceArtifacts,
   StepExecutionFailure,
+  retryableWorkflowStepIds,
   type WorkflowRuntime,
   validateWorkflowInput,
+  workflowStepsCompleted,
 } from '../core/workflow-runtime.js';
-import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
+import type { WorkflowDefinition } from '../core/workflow.js';
+import {
+  validateResearchWorkflowDefinition,
+  type ResearchWorkflowDefinition,
+} from '../workflows/research-plan-build.js';
+import type { ResearchPersistence } from './ports.js';
 import {
   parseResearchReview,
   researchPlanBuildWorkflow,
 } from '../workflows/research-plan-build.js';
 
 const MAX_RESEARCH_ITERATIONS = 3;
-
-interface ResearchPersistence extends Pick<
-  WorkflowExecutionStore,
-  'getStepRuns' | 'getArtifacts' | 'saveStepRun'
-> {
-  checkpointResearchIteration(
-    inputArtifact: import('../core/run.js').ArtifactReference,
-    researchStep: StepRun,
-    reviewStep: StepRun,
-    approvalStep?: StepRun,
-  ): Promise<void>;
-}
 
 export class ResearchPlanBuildCoordinator {
   constructor(
@@ -40,28 +35,35 @@ export class ResearchPlanBuildCoordinator {
     workflow: WorkflowDefinition,
     request: ExecuteWorkflowRequest,
   ): Promise<WorkflowRun> {
-    validateWorkflowDefinition(workflow);
+    validateResearchWorkflowDefinition(workflow);
     if (workflow.id !== researchPlanBuildWorkflow.id) {
       throw new Error(`Research coordinator cannot execute workflow ${workflow.id}`);
-    }
-    if (!workflow.approval) {
-      throw new Error('Invalid research-plan-build workflow definition');
     }
 
     const initialInput = await this.runtime.resolveInput(request);
     validateWorkflowInput(workflow, initialInput);
-    if (request.resume) {
-      for (const step of workflow.steps) {
-        // Profile resolution happens inside executeStep; keep parity with sequential path.
-        void step;
+    if (request.resume && request.runId) {
+      const existing = await this.persistence.getRun(request.runId);
+      if (existing && (existing.status === 'failed' || existing.status === 'interrupted')) {
+        const steps = await this.persistence.getStepRuns(existing.id);
+        const build = steps.find((step) => step.stepId === 'build');
+        if (
+          build &&
+          !isStepRetryEligible(build, true) &&
+          retryableWorkflowStepIds(workflow, steps).length === 0 &&
+          !workflowStepsCompleted(workflow, steps)
+        ) {
+          throw new Error(
+            `Run ${existing.id} has no retryable failed, interrupted, or pending steps`,
+          );
+        }
       }
     }
-
     return this.executeResearchPlanBuild(workflow, request, initialInput);
   }
 
   private async executeResearchPlanBuild(
-    workflow: WorkflowDefinition,
+    workflow: ResearchWorkflowDefinition,
     request: ExecuteWorkflowRequest,
     initialInput: Record<string, unknown>,
   ): Promise<WorkflowRun> {

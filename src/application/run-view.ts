@@ -11,6 +11,7 @@ import type {
 } from '../core/run.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { resolveWorkflow } from '../workflows/catalog.js';
+import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import {
   buildRunRecoveryExplanation,
   findWaitingApprovalStep,
@@ -187,10 +188,12 @@ function workflowPhaseDefinitions(
   workflow: WorkflowDefinition,
 ): Array<{ id: string; kind: RunPhaseView['kind']; profile?: string }> {
   const definitions: Array<{ id: string; kind: RunPhaseView['kind']; profile?: string }> = [];
+  const approval =
+    workflow.id === researchPlanBuildWorkflow.id ? researchPlanBuildWorkflow.approval : undefined;
   for (const step of workflow.steps) {
     definitions.push({ id: step.id, kind: 'agent', profile: step.profile });
-    if (workflow.approval?.after === step.id) {
-      definitions.push({ id: workflow.approval.id, kind: 'approval', profile: 'human' });
+    if (approval?.after === step.id) {
+      definitions.push({ id: approval.id, kind: 'approval', profile: 'human' });
     }
   }
   return definitions;
@@ -329,13 +332,13 @@ function buildPendingAction(
   workflow: WorkflowDefinition | undefined,
   steps: StepRun[],
 ): PendingRunAction | undefined {
-  if (!workflow || workflow.id !== 'research-plan-build' || !workflow.approval) return undefined;
+  if (!workflow || workflow.id !== researchPlanBuildWorkflow.id) return undefined;
   const approval = findWaitingApprovalStep(workflow, run, steps);
   if (!approval) return undefined;
   return {
     kind: 'research-approval',
     stepId: approval.stepId,
-    message: workflow.approval.message,
+    message: researchPlanBuildWorkflow.approval.message,
   };
 }
 

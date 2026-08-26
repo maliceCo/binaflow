@@ -3,20 +3,15 @@ import { EventEmitter } from 'node:events';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentProfile } from '../src/config.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import type { RunView } from '../src/application/run-view.js';
 import { runInkShell } from '../src/tui/shell.js';
-import * as configOperations from '../src/application/config-operations.js';
 
 const testDirectories: string[] = [];
 
 describe('Ink setup and launch safety', () => {
-  beforeEach(() => {
-    vi.spyOn(configOperations, 'discoverSetupModels').mockResolvedValue([]);
-  });
-
   afterEach(async () => {
     vi.restoreAllMocks();
     for (const directory of testDirectories.splice(0)) {
@@ -37,7 +32,6 @@ describe('Ink setup and launch safety', () => {
 
     await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
-    expect(configOperations.discoverSetupModels).toHaveBeenCalled();
     terminal.input.push('\r');
     await terminal.output.waitFor('Step 2 of 4: planner');
     const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];

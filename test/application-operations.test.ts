@@ -233,6 +233,15 @@ describe('application operations', () => {
         status = 'running';
         return { ...previous, status: 'running' as const };
       },
+      claimRunForExecution: async () => {
+        if (status !== 'failed') return undefined;
+        status = 'running';
+        return {
+          run: { ...previous, status: 'running' as const },
+          claim: { runId: previous.id, token: 'test-claim' },
+        };
+      },
+      assertExecutionClaim: async () => undefined,
       releaseExecution: async () => undefined,
     } as unknown as RunStore;
     const context = {
@@ -590,6 +599,15 @@ describe('application operations', () => {
         status = 'running';
         return { ...previous, status: 'running' as const };
       },
+      claimApprovalForExecution: async () => {
+        if (status !== 'waiting') return undefined;
+        status = 'running';
+        return {
+          run: { ...previous, status: 'running' as const },
+          claim: { runId: previous.id, token: 'test-claim' },
+        };
+      },
+      assertExecutionClaim: async () => undefined,
       releaseExecution: async () => undefined,
     } as unknown as RunStore;
     const context = {
@@ -716,12 +734,25 @@ function applicationContext(
     getArtifacts: async () => [],
     getStepRuns,
     claimRun,
+    claimRunForExecution: async (
+      runId: string,
+      eligibleStatuses: readonly WorkflowRun['status'][],
+    ) => {
+      const run = await claimRun(runId, eligibleStatuses);
+      return run ? { run, claim: { runId, token: 'test-claim' } } : undefined;
+    },
     claimApproval: async (runId: string, approvalStep: StepRun) => {
       const run = await getRun(runId);
       if (!run || run.status !== 'waiting') return undefined;
       await storeOverrides.saveStepRun?.(approvalStep);
       return { ...run, status: 'running' as const };
     },
+    claimApprovalForExecution: async (runId: string, approvalStep: StepRun) => {
+      const run = await store.claimApproval(runId, approvalStep);
+      return run ? { run, claim: { runId, token: 'test-claim' } } : undefined;
+    },
+    assertExecutionClaim: async () => undefined,
+    assertExecutionOwner: async () => undefined,
     releaseExecution: async () => undefined,
     ...storeOverrides,
   } as unknown as RunStore;

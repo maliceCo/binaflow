@@ -122,19 +122,6 @@ function clarificationResult(): AgentStepResult {
 }
 
 describe('WorkflowEngine', () => {
-  it('rejects approval metadata on unsupported workflows', async () => {
-    const { engine, store } = createEnvironment(new FakeDriver([]));
-    const workflow = {
-      ...planBuildWorkflow,
-      approval: { id: 'approval', after: 'plan', message: 'Review first' },
-    };
-
-    await expect(
-      engine.execute(workflow, { objective: 'Reject unsupported approval', profiles }),
-    ).rejects.toThrow('approval is not supported by the sequential engine');
-    store.close();
-  });
-
   it('does not start the next step after cancellation', async () => {
     const controller = new AbortController();
     const calls: string[] = [];

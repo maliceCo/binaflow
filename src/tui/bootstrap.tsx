@@ -61,7 +61,7 @@ export async function runInkApplication(
         instance?.unmount();
       };
       signalHandlers.set(signal, handler);
-      process.once(signal, handler);
+      process.on(signal, handler);
     }
 
     await instance.waitUntilExit();

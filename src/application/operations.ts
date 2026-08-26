@@ -1,11 +1,11 @@
-import type { ArtifactStore } from '../artifacts/artifact-store.js';
 import { validateAgentProfile, type AgentProfile, type BinaflowConfig } from '../config.js';
+import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
+import { WorkflowVersionMismatchError } from '../core/execute-request.js';
 import {
+  retryableWorkflowStepIds,
   validateWorkflowInput,
-  WorkflowVersionMismatchError,
-  type ExecuteWorkflowRequest,
-  type WorkflowEngine,
-} from '../core/engine.js';
+  workflowStepsCompleted,
+} from '../core/workflow-runtime.js';
 import {
   isStepRetryEligible,
   type ArtifactReference,
@@ -13,29 +13,36 @@ import {
   type WorkflowRun,
 } from '../core/run.js';
 import {
-  DEFAULT_RUN_EVENT_LIMIT,
-  MAX_RUN_EVENT_LIMIT,
-  type RunEventPage,
-  type RunEventPageQuery,
-  type RunListPage,
-  type RunListQuery,
-  type RunStore,
-} from '../storage/run-store.js';
-import {
   listWorkflowContracts,
   resolveWorkflow,
   type WorkflowContract,
 } from '../workflows/catalog.js';
-import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
+import {
+  researchPlanBuildWorkflow,
+  type WorkflowApprovalDefinition,
+} from '../workflows/research-plan-build.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
 import type { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
+import type {
+  ApplicationArtifactStore as ArtifactStore,
+  ApplicationRunEventPage as RunEventPage,
+  ApplicationRunEventPageQuery as RunEventPageQuery,
+  ApplicationRunListPage as RunListPage,
+  ApplicationRunListQuery as RunListQuery,
+  ApplicationRunStore as RunStore,
+  WorkflowExecutor,
+} from './ports.js';
+import type { ExecutionClaim } from '../core/ports.js';
+
+const DEFAULT_RUN_EVENT_LIMIT = 50;
+const MAX_RUN_EVENT_LIMIT = 100;
 
 /** Internal composition surface. Presentation must use ApplicationService. */
 export interface ApplicationInternals {
   config: Pick<BinaflowConfig, 'profiles'>;
   store: RunStore;
   artifacts: ArtifactStore;
-  engine: WorkflowEngine;
+  engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
 }
 
@@ -85,6 +92,9 @@ export async function resumeWorkflow(
   if (previous.status === 'completed') {
     return { run: previous, alreadyCompleted: true };
   }
+  const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
+  validatePersistedRunCompatibility(previous, workflow);
+  await preflightPersistedInput(context, previous, workflow);
   if (previous.status === 'running') {
     const interrupted = await context.store.markRunInterrupted(previous.id);
     if (!interrupted) {
@@ -92,17 +102,17 @@ export async function resumeWorkflow(
     }
     previous = interrupted;
   }
-
-  const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
-  validatePersistedRunCompatibility(previous, workflow);
-  await preflightPersistedInput(context, previous, workflow);
   await validateResumeEligibility(context, previous, workflow);
-  await claimRunForExecution(context, previous.id, ['pending', 'failed', 'interrupted']);
+  const claim = await claimRunForExecution(context, previous.id, [
+    'pending',
+    'failed',
+    'interrupted',
+  ]);
   const run = await executeClaimedWorkflow(context, workflow, {
     runId: request.runId,
     profiles: context.config.profiles,
     resume: true,
-    runClaimed: true,
+    executionClaim: claim.claim,
     ...(request.signal ? { signal: request.signal } : {}),
     ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
   });
@@ -218,7 +228,12 @@ export function buildRunRecoveryExplanation(
       ],
     };
   }
-  if (run.status === 'failed' && retryableStepIds.length === 0) {
+  const canFinalize = workflow !== undefined && workflowStepsCompleted(workflow, steps);
+  if (
+    (run.status === 'failed' || run.status === 'interrupted') &&
+    retryableStepIds.length === 0 &&
+    !canFinalize
+  ) {
     return {
       eligible: false,
       reason: 'The run has no retryable failed, interrupted, or pending steps.',
@@ -252,8 +267,9 @@ export function findWaitingApprovalStep(
   run: WorkflowRun,
   steps: readonly StepRun[],
 ): StepRun | undefined {
-  if (run.status !== 'waiting' || !workflow.approval) return undefined;
-  return steps.find((step) => step.stepId === workflow.approval?.id && step.status === 'waiting');
+  const approval = researchApproval(workflow);
+  if (run.status !== 'waiting' || !approval) return undefined;
+  return steps.find((step) => step.stepId === approval.id && step.status === 'waiting');
 }
 
 export async function markRunInterrupted(
@@ -494,7 +510,8 @@ export async function decideApproval(
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
   validatePersistedRunCompatibility(previous, workflow);
   await preflightPersistedInput(context, previous, workflow);
-  if (!workflow.approval) throw new Error(`Workflow ${workflow.id} has no approval gate`);
+  const approvalDefinition = researchApproval(workflow);
+  if (!approvalDefinition) throw new Error(`Workflow ${workflow.id} has no approval gate`);
   if (previous.status !== 'waiting') {
     throw new Error(`Run ${request.runId} is not waiting for approval`);
   }
@@ -518,7 +535,7 @@ export async function decideApproval(
       decidedAt: new Date().toISOString(),
     },
   };
-  const claimed = await context.store.claimApproval(request.runId, decisionStep);
+  const claimed = await context.store.claimApprovalForExecution(request.runId, decisionStep);
   if (!claimed) {
     const current = await context.store.getRun(request.runId);
     if (!current) throw new Error(`Unknown run: ${request.runId}`);
@@ -530,7 +547,7 @@ export async function decideApproval(
     runId: request.runId,
     profiles: context.config.profiles,
     resume: true,
-    runClaimed: true,
+    executionClaim: claimed.claim,
     ...(request.signal ? { signal: request.signal } : {}),
     ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
   });
@@ -540,8 +557,8 @@ async function claimRunForExecution(
   context: Pick<ApplicationInternals, 'store'>,
   runId: string,
   eligibleStatuses: readonly WorkflowRun['status'][],
-): Promise<WorkflowRun> {
-  const claimed = await context.store.claimRun(runId, eligibleStatuses);
+): Promise<{ run: WorkflowRun; claim: ExecutionClaim }> {
+  const claimed = await context.store.claimRunForExecution(runId, eligibleStatuses);
   if (claimed) return claimed;
   const current = await context.store.getRun(runId);
   if (!current) throw new Error(`Unknown run: ${runId}`);
@@ -575,7 +592,9 @@ export function diagnoseConfiguration(
       id: workflow.id,
       ...(workflow.experimental ? { experimental: true } : {}),
       requiredProfiles: workflow.requiredProfiles,
-      missingProfiles: workflow.requiredProfiles.filter((profile) => !config.profiles[profile]),
+      missingProfiles: workflow.requiredProfiles.filter(
+        (profile) => !Object.prototype.hasOwnProperty.call(config.profiles, profile),
+      ),
     })),
   };
 }
@@ -598,6 +617,12 @@ function resolveRecoveryWorkflow(workflowId: string): WorkflowDefinition | undef
   }
 }
 
+function researchApproval(workflow: WorkflowDefinition): WorkflowApprovalDefinition | undefined {
+  if (workflow.id !== researchPlanBuildWorkflow.id) return undefined;
+  const approval = (workflow as typeof researchPlanBuildWorkflow).approval;
+  return approval;
+}
+
 function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowDefinition): void {
   if (run.workflowId !== workflow.id) {
     throw new Error(`Run ${run.id} belongs to workflow ${run.workflowId}`);
@@ -614,8 +639,8 @@ async function validateResumeEligibility(
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
   const steps = await context.store.getStepRuns(run.id);
-  const retryable = recoveryRetryableStepIds(workflow, steps).length > 0;
-  if (!retryable) {
+  const retryable = retryableWorkflowStepIds(workflow, steps).length > 0;
+  if (!retryable && !workflowStepsCompleted(workflow, steps)) {
     throw new Error(`Run ${run.id} has no retryable failed, interrupted, or pending steps`);
   }
 }
@@ -626,13 +651,7 @@ function recoveryRetryableStepIds(
 ): string[] {
   if (!workflow)
     return steps.filter((step) => isStepRetryEligible(step, true)).map((step) => step.stepId);
-  const persisted = new Map(steps.map((step) => [step.stepId, step]));
-  return workflow.steps
-    .filter((definition) => {
-      const step = persisted.get(definition.id);
-      return !step || isStepRetryEligible(step, true);
-    })
-    .map((definition) => definition.id);
+  return retryableWorkflowStepIds(workflow, steps);
 }
 
 async function preflightPersistedInput(
@@ -697,7 +716,9 @@ export function validateWorkflowProfiles(
   profiles: Record<string, AgentProfile>,
 ): void {
   const required = [...new Set(workflow.steps.map((step) => step.profile))];
-  const missing = required.filter((profile) => !profiles[profile]);
+  const missing = required.filter(
+    (profile) => !Object.prototype.hasOwnProperty.call(profiles, profile),
+  );
   if (missing.length > 0) {
     throw new Error(
       `Missing agent profile(s): ${missing.join(', ')}. Add them to .binaflow/config.json`,

@@ -4,6 +4,8 @@ import type { EventSink } from '../core/events.js';
 import { JsonlProcess, type JsonObject } from '../process/jsonl-process.js';
 import { AgentDriverError } from './contract.js';
 
+export const MAX_AGENT_RESULT_BYTES = 8 * 1024 * 1024;
+
 export interface PiDriverOptions {
   command?: string;
   commandArgs?: string[];
@@ -36,6 +38,7 @@ export class PiDriver implements AgentDriver {
     let terminalError: string | undefined;
     let settle: (() => void) | undefined;
     let eventError: unknown;
+    const resultSize = { value: 0 };
     let eventProcessing = Promise.resolve();
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
@@ -57,8 +60,11 @@ export class PiDriver implements AgentDriver {
       eventProcessing = eventProcessing
         .then(async () => {
           if (eventError) return;
-          const event = await normalizePiEvent(message, request, emit, textParts);
-          if (event.text) finalText = event.text;
+          const event = await normalizePiEvent(message, request, emit, textParts, resultSize);
+          if (event.text !== undefined) {
+            assertResultSize(event.text);
+            finalText = event.text;
+          }
           if (event.error) terminalError = event.error;
           if (event.settled) settle?.();
         })
@@ -171,6 +177,7 @@ async function normalizePiEvent(
   request: AgentRequest,
   emit: EventSink,
   textParts: string[],
+  resultSize: { value: number },
 ): Promise<{ text?: string; error?: string; settled?: boolean }> {
   if (message.type === 'agent_settled') {
     await emitStatus(request, emit, 'Pi agent settled');
@@ -179,6 +186,14 @@ async function normalizePiEvent(
   if (message.type === 'message_update') {
     const delta = asRecord(message.assistantMessageEvent);
     if (delta?.type === 'text_delta' && typeof delta.delta === 'string') {
+      const deltaBytes = Buffer.byteLength(delta.delta, 'utf8');
+      if (resultSize.value + deltaBytes > MAX_AGENT_RESULT_BYTES) {
+        throw new AgentDriverError(
+          `Pi result exceeds the ${MAX_AGENT_RESULT_BYTES}-byte limit`,
+          'PI_OUTPUT_TOO_LARGE',
+        );
+      }
+      resultSize.value += deltaBytes;
       textParts.push(delta.delta);
       await emit({ ...eventBase(request), type: 'text', message: delta.delta });
     }
@@ -203,6 +218,15 @@ async function normalizePiEvent(
     await emitStatus(request, emit, `Pi ${message.type}${tool}${id}`);
   }
   return {};
+}
+
+function assertResultSize(text: string): void {
+  if (Buffer.byteLength(text, 'utf8') > MAX_AGENT_RESULT_BYTES) {
+    throw new AgentDriverError(
+      `Pi result exceeds the ${MAX_AGENT_RESULT_BYTES}-byte limit`,
+      'PI_OUTPUT_TOO_LARGE',
+    );
+  }
 }
 
 function eventBase(request: AgentRequest): { runId: string; stepId: string; occurredAt: string } {

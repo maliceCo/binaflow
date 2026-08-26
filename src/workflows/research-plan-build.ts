@@ -1,5 +1,5 @@
 import { Ajv, type JSONSchemaType } from 'ajv';
-import type { WorkflowDefinition } from '../core/workflow.js';
+import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
 import { buildPlanSchema } from './plan-build.js';
 
 export interface ResearchEvidence {
@@ -27,6 +27,16 @@ export interface ResearchReview {
   summary: string;
   gaps: string[];
   nextResearchQuestions: string[];
+}
+
+export interface WorkflowApprovalDefinition {
+  id: string;
+  after: string;
+  message: string;
+}
+
+export interface ResearchWorkflowDefinition extends WorkflowDefinition {
+  approval: WorkflowApprovalDefinition;
 }
 
 export const researchReportSchema: JSONSchemaType<ResearchReport> = {
@@ -122,7 +132,7 @@ const plannerPrompt = [
   'Return exactly the validated BuildPlan JSON object and nothing else.',
 ].join(' ');
 
-export const researchPlanBuildWorkflow: WorkflowDefinition = {
+export const researchPlanBuildWorkflow: ResearchWorkflowDefinition = {
   version: 1,
   id: 'research-plan-build',
   input: {
@@ -215,6 +225,35 @@ export const researchPlanBuildWorkflow: WorkflowDefinition = {
     },
   ],
 };
+
+export function validateResearchWorkflowDefinition(
+  workflow: unknown,
+): asserts workflow is ResearchWorkflowDefinition {
+  validateWorkflowDefinition(workflow);
+  const candidate = workflow as WorkflowDefinition & { approval?: unknown };
+  const approval = candidate.approval;
+  const approvalRecord =
+    typeof approval === 'object' && approval !== null && !Array.isArray(approval)
+      ? (approval as Record<string, unknown>)
+      : undefined;
+  if (
+    !approvalRecord ||
+    typeof approvalRecord.id !== 'string' ||
+    !approvalRecord.id.trim() ||
+    typeof approvalRecord.after !== 'string' ||
+    !approvalRecord.after.trim() ||
+    typeof approvalRecord.message !== 'string'
+  ) {
+    throw new Error('Invalid research-plan-build workflow approval definition');
+  }
+  const stepIds = new Set(workflow.steps.map((step) => step.id));
+  if (!stepIds.has(approvalRecord.after)) {
+    throw new Error(`Approval references unknown step ${approvalRecord.after}`);
+  }
+  if (stepIds.has(approvalRecord.id)) {
+    throw new Error(`Approval id conflicts with step ${approvalRecord.id}`);
+  }
+}
 
 function validationDetails(errors: Array<{ message?: string }> | null | undefined): string {
   return errors?.map((error) => error.message).join(', ') ?? 'schema validation failed';

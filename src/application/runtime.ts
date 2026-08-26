@@ -8,7 +8,7 @@ import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
 import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
-import type { RunStore } from '../storage/run-store.js';
+import type { ApplicationRunStore } from './ports.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import {
@@ -33,7 +33,7 @@ export type ApplicationRuntimeContext = ApplicationContext;
 export interface OpenApplicationOptions {
   configPath?: string;
   cwd?: string;
-  onEvent?: (event: NormalizedEvent) => void;
+  onEvent?: (event: NormalizedEvent) => void | Promise<void>;
 }
 
 export function isApplicationEntrypoint(moduleUrl: string, argv1: string | undefined): boolean {
@@ -54,16 +54,10 @@ export async function openApplicationContext(
   await mkdir(config.dataDir, { recursive: true });
   const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
-  const eventListeners = new Set<(event: NormalizedEvent) => void>();
+  const eventListeners = new Set<(event: NormalizedEvent) => void | Promise<void>>();
   if (options.onEvent) eventListeners.add(options.onEvent);
-  const eventSink = createRuntimeEventSink(store, (event) => {
-    for (const listener of eventListeners) {
-      try {
-        listener(event);
-      } catch {
-        // Presentation listeners must not change event persistence semantics.
-      }
-    }
+  const eventSink = createRuntimeEventSink(store, async (event) => {
+    for (const listener of eventListeners) await listener(event);
   });
   const engine = new WorkflowEngine(
     store,
@@ -109,8 +103,8 @@ export async function openApplicationStorage(
 }
 
 export function createRuntimeEventSink(
-  store: Pick<RunStore, 'saveEvent' | 'saveEvents'>,
-  observer?: (event: NormalizedEvent) => void,
+  store: Pick<ApplicationRunStore, 'saveEvent' | 'saveEvents'>,
+  observer?: (event: NormalizedEvent) => void | Promise<void>,
 ): EventSink {
   const pendingTextEvents: NormalizedEvent[] = [];
   let pendingTextBytes = 0;
@@ -139,12 +133,12 @@ export function createRuntimeEventSink(
       ) {
         await flushTextEvents();
       }
-      observer?.(event);
+      await observer?.(event);
       return;
     }
     await flushTextEvents();
     await store.saveEvent(event);
-    observer?.(event);
+    await observer?.(event);
   };
   eventSink.flush = flushTextEvents;
   return eventSink;

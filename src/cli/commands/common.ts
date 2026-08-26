@@ -103,8 +103,11 @@ export async function openContext(rootOptions: RootOptions): Promise<CliContext>
   return {
     application: application.application,
     close: () => {
-      presenter.flush();
-      application.close();
+      try {
+        presenter.flush();
+      } finally {
+        application.close();
+      }
     },
   };
 }

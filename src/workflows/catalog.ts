@@ -1,6 +1,10 @@
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { planBuildWorkflow } from './plan-build.js';
-import { researchPlanBuildWorkflow } from './research-plan-build.js';
+import {
+  researchPlanBuildWorkflow,
+  type ResearchWorkflowDefinition,
+  type WorkflowApprovalDefinition,
+} from './research-plan-build.js';
 
 export interface WorkflowSummary {
   id: string;
@@ -9,7 +13,7 @@ export interface WorkflowSummary {
 }
 
 export interface WorkflowRegistration {
-  definition: WorkflowDefinition;
+  definition: WorkflowDefinition | ResearchWorkflowDefinition;
   description: string;
   experimental?: boolean;
 }
@@ -26,9 +30,8 @@ const registrations: readonly WorkflowRegistration[] = [
   },
 ];
 
-const workflows: Record<string, WorkflowDefinition> = Object.fromEntries(
-  registrations.map((entry) => [entry.definition.id, entry.definition]),
-);
+const workflows: Record<string, WorkflowDefinition | ResearchWorkflowDefinition> =
+  Object.fromEntries(registrations.map((entry) => [entry.definition.id, entry.definition]));
 
 export const workflowSummaries: readonly WorkflowSummary[] = registrations.map((entry) => ({
   id: entry.definition.id,
@@ -36,7 +39,9 @@ export const workflowSummaries: readonly WorkflowSummary[] = registrations.map((
   ...(entry.experimental ? { experimental: true as const } : {}),
 }));
 
-export function resolveWorkflow(workflowId: string): WorkflowDefinition {
+export function resolveWorkflow(
+  workflowId: string,
+): WorkflowDefinition | ResearchWorkflowDefinition {
   const workflow = workflows[workflowId];
   if (!workflow) {
     throw new Error(
@@ -59,7 +64,7 @@ export interface WorkflowContract {
     dependsOn: string[];
     outputs: WorkflowDefinition['steps'][number]['outputs'];
   }>;
-  approval?: WorkflowDefinition['approval'];
+  approval?: WorkflowApprovalDefinition;
 }
 
 export function listWorkflowContracts(): WorkflowContract[] {
@@ -70,15 +75,15 @@ export function listWorkflowContracts(): WorkflowContract[] {
       version: workflow.version,
       description: entry.description,
       ...(entry.experimental ? { experimental: true } : {}),
-      input: workflow.input,
+      input: structuredClone(workflow.input),
       requiredProfiles: [...new Set(workflow.steps.map((step) => step.profile))],
       steps: workflow.steps.map((step) => ({
         id: step.id,
         profile: step.profile,
-        dependsOn: step.dependsOn,
-        outputs: step.outputs,
+        dependsOn: [...step.dependsOn],
+        outputs: structuredClone(step.outputs),
       })),
-      ...(workflow.approval ? { approval: workflow.approval } : {}),
+      ...('approval' in workflow ? { approval: structuredClone(workflow.approval) } : {}),
     };
   });
 }
