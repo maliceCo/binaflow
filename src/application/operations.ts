@@ -21,7 +21,6 @@ import type {
 } from './ports.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import { findWaitingApprovalStep } from './run-operations.js';
-import type { RunInspection } from './run-operations.js';
 import { validateWorkflowProfiles } from './workflow-operations.js';
 export {
   diagnoseConfiguration,
@@ -31,6 +30,7 @@ export {
   type WorkflowConfigurationDiagnosis,
 } from './workflow-operations.js';
 export {
+  clarificationQuestions,
   loadResearchApprovalPreviews,
   readArtifact,
   type ArtifactContentView,
@@ -130,43 +130,6 @@ export async function resumeWorkflow(
     ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
   });
   return { run, alreadyCompleted: false };
-}
-
-const MAX_CLARIFICATION_PLAN_BYTES = 64_000;
-
-export async function clarificationQuestions(
-  context: Pick<ApplicationInternals, 'store' | 'artifacts'>,
-  inspection: RunInspection,
-): Promise<string[]> {
-  const disposition = inspection.steps.find(
-    (step) => step.disposition?.kind === 'stop',
-  )?.disposition;
-  if (
-    !disposition ||
-    disposition.kind !== 'stop' ||
-    disposition.code !== 'PLAN_NEEDS_CLARIFICATION'
-  ) {
-    return [];
-  }
-  const plan = inspection.artifacts.find((artifact) => artifact.name === 'plan');
-  if (plan) {
-    try {
-      const bounded = await context.artifacts.readBounded(plan, MAX_CLARIFICATION_PLAN_BYTES);
-      if (!bounded.truncated) {
-        const value = JSON.parse(bounded.content) as Record<string, unknown>;
-        if (Array.isArray(value.clarificationQuestions)) {
-          const questions = value.clarificationQuestions.filter(
-            (question): question is string =>
-              typeof question === 'string' && question.trim().length > 0,
-          );
-          if (questions.length > 0) return questions;
-        }
-      }
-    } catch {
-      // The artifact view reports corrupt content separately.
-    }
-  }
-  return disposition.message ? [disposition.message] : [];
 }
 
 export interface ApprovalDecisionRequest {

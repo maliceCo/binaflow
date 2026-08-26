@@ -4,6 +4,7 @@ import type { RunInspection } from './run-operations.js';
 
 const ARTIFACT_PREVIEW_BYTES = 4_000;
 const MAX_ARTIFACT_PREVIEW_BYTES = 64_000;
+const MAX_CLARIFICATION_PLAN_BYTES = 64_000;
 
 export interface ArtifactContentView {
   artifact: ArtifactReference;
@@ -84,6 +85,42 @@ export async function loadResearchApprovalPreviews(
       }
     }),
   );
+}
+
+export async function clarificationQuestions(
+  context: ArtifactOperationsContext,
+  inspection: Pick<RunInspection, 'steps' | 'artifacts'>,
+): Promise<string[]> {
+  const disposition = inspection.steps.find(
+    (step) => step.disposition?.kind === 'stop',
+  )?.disposition;
+  if (
+    !disposition ||
+    disposition.kind !== 'stop' ||
+    disposition.code !== 'PLAN_NEEDS_CLARIFICATION'
+  ) {
+    return [];
+  }
+  const plan = inspection.artifacts.find((artifact) => artifact.name === 'plan');
+  if (plan) {
+    try {
+      const bounded = await context.artifacts.readBounded(plan, MAX_CLARIFICATION_PLAN_BYTES);
+      if (!bounded.truncated) {
+        const value = JSON.parse(bounded.content) as Record<string, unknown>;
+        if (Array.isArray(value.clarificationQuestions)) {
+          const questions = value.clarificationQuestions.filter(
+            (question): question is string =>
+              typeof question === 'string' && question.trim().length > 0,
+          );
+          if (questions.length > 0) return questions;
+        }
+      }
+    } catch {
+      // The artifact view reports corrupt content separately.
+    }
+  }
+  const message = disposition.message;
+  return message ? [message] : [];
 }
 
 function formatArtifactContent(
