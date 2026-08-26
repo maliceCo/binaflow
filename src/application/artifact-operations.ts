@@ -1,6 +1,6 @@
 import type { ArtifactReference } from '../core/run.js';
 import type { ApplicationArtifactStore, ApplicationRunStore } from './ports.js';
-import type { RunInspection } from './operations.js';
+import type { RunInspection } from './run-operations.js';
 
 const ARTIFACT_PREVIEW_BYTES = 4_000;
 const MAX_ARTIFACT_PREVIEW_BYTES = 64_000;
