@@ -9,7 +9,7 @@ import {
   type AgentProfile,
 } from '../config.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
-import { discoverWorkflows } from './operations.js';
+import { discoverWorkflows } from './workflow-operations.js';
 
 export async function discoverAgentModels(discovery: AgentModelDiscovery): Promise<AgentModel[]> {
   try {

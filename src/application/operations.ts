@@ -12,11 +12,7 @@ import {
   type StepRun,
   type WorkflowRun,
 } from '../core/run.js';
-import {
-  listWorkflowContracts,
-  resolveWorkflow,
-  type WorkflowContract,
-} from '../workflows/catalog.js';
+import { resolveWorkflow, type WorkflowContract } from '../workflows/catalog.js';
 import {
   researchPlanBuildWorkflow,
   type WorkflowApprovalDefinition,
@@ -33,6 +29,12 @@ import type {
   WorkflowExecutor,
 } from './ports.js';
 import type { ExecutionClaim } from '../core/ports.js';
+export {
+  diagnoseConfiguration,
+  discoverWorkflows,
+  type ConfigurationDiagnosis,
+  type WorkflowConfigurationDiagnosis,
+} from './workflow-operations.js';
 export {
   loadResearchApprovalPreviews,
   readArtifact,
@@ -459,39 +461,6 @@ async function claimRunForExecution(
   if (!current) throw new Error(`Unknown run: ${runId}`);
   if (current.status === 'running') throw new Error(`Run ${runId} is already running`);
   throw new Error(`Run ${runId} is not eligible for execution from status ${current.status}`);
-}
-
-export function discoverWorkflows(): WorkflowContract[] {
-  return listWorkflowContracts();
-}
-
-export interface WorkflowConfigurationDiagnosis {
-  id: string;
-  experimental?: boolean;
-  requiredProfiles: string[];
-  missingProfiles: string[];
-}
-
-export interface ConfigurationDiagnosis {
-  configuredProfiles: string[];
-  workflows: WorkflowConfigurationDiagnosis[];
-}
-
-export function diagnoseConfiguration(
-  config: Pick<BinaflowConfig, 'profiles'>,
-): ConfigurationDiagnosis {
-  const configuredProfiles = Object.keys(config.profiles).sort();
-  return {
-    configuredProfiles,
-    workflows: discoverWorkflows().map((workflow) => ({
-      id: workflow.id,
-      ...(workflow.experimental ? { experimental: true } : {}),
-      requiredProfiles: workflow.requiredProfiles,
-      missingProfiles: workflow.requiredProfiles.filter(
-        (profile) => !Object.prototype.hasOwnProperty.call(config.profiles, profile),
-      ),
-    })),
-  };
 }
 
 function resolveAndValidateWorkflow(
