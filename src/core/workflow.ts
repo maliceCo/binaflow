@@ -1,4 +1,7 @@
-import { Ajv } from 'ajv';
+import { Ajv, type ValidateFunction } from 'ajv';
+
+const ajv = new Ajv({ allErrors: true });
+const schemaValidators = new WeakMap<object, ValidateFunction>();
 
 export type WorkflowStep = AgentStep;
 
@@ -104,7 +107,7 @@ export function validateWorkflowDefinition(
     for (const output of step.outputs) {
       if (output.schema !== undefined) {
         try {
-          new Ajv({ allErrors: true }).compile(output.schema);
+          getSchemaValidator(output.schema);
         } catch (error) {
           errors.push(
             `step ${step.id} output ${output.name} has an invalid schema: ${error instanceof Error ? error.message : String(error)}`,
@@ -144,6 +147,14 @@ export function validateWorkflowDefinition(
 
   if (hasDependencyCycle(stepsById)) errors.push('steps contain a dependency cycle');
   if (errors.length > 0) throw new Error(`Invalid workflow definition: ${errors.join('; ')}`);
+}
+
+function getSchemaValidator(schema: Record<string, unknown>): ValidateFunction {
+  const cached = schemaValidators.get(schema);
+  if (cached) return cached;
+  const validator = ajv.compile(schema);
+  schemaValidators.set(schema, validator);
+  return validator;
 }
 
 export function serializeWorkflow(workflow: WorkflowDefinition): string {

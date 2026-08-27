@@ -39,6 +39,7 @@ export class SqliteRunStore implements RunStore {
   }
 
   close(): void {
+    this.executionClaims.clear();
     this.database.close();
   }
 
@@ -182,7 +183,9 @@ export class SqliteRunStore implements RunStore {
       if (result.changes !== 1) return undefined;
       return fromRunRow({ ...run, status: 'interrupted', updated_at: interruptedAt });
     });
-    return transaction();
+    const interrupted = transaction();
+    if (interrupted) this.executionClaims.delete(runId);
+    return interrupted;
   }
 
   async releaseExecution(runId: string): Promise<void> {
@@ -275,6 +278,7 @@ export class SqliteRunStore implements RunStore {
       }
     });
     transaction();
+    if (run.status !== 'running') this.executionClaims.delete(run.id);
   }
 
   async saveStepRun(stepRun: StepRun): Promise<void> {
@@ -283,7 +287,8 @@ export class SqliteRunStore implements RunStore {
         .prepare('SELECT status FROM runs WHERE id = ?')
         .get(stepRun.runId) as { status: RunStatus } | undefined;
       if (!run) throw new Error(`Cannot update step for unknown run: ${stepRun.runId}`);
-      if (run.status === 'running') this.assertCurrentExecutionOwner(stepRun.runId);
+      if (run.status !== 'running') throw new RunExecutionOwnedError(stepRun.runId);
+      this.assertCurrentExecutionOwner(stepRun.runId);
       this.writeStepRun(stepRun);
     });
     transaction();
@@ -328,6 +333,12 @@ export class SqliteRunStore implements RunStore {
       throw new Error('Research checkpoint state must belong to the same run');
     }
     const transaction = this.database.transaction(() => {
+      const run = this.database
+        .prepare('SELECT status FROM runs WHERE id = ?')
+        .get(inputArtifact.runId) as { status: RunStatus } | undefined;
+      if (!run) throw new Error(`Cannot checkpoint unknown run: ${inputArtifact.runId}`);
+      if (run.status !== 'running') throw new RunExecutionOwnedError(inputArtifact.runId);
+      this.assertCurrentExecutionOwner(inputArtifact.runId);
       this.replaceArtifactInTransaction(inputArtifact);
       this.writeStepRun(researchStep, true);
       this.writeStepRun(reviewStep, true);
@@ -413,7 +424,8 @@ export class SqliteRunStore implements RunStore {
         .prepare('SELECT status FROM runs WHERE id = ?')
         .get(stepRun.runId) as { status: RunStatus } | undefined;
       if (!run) throw new Error(`Cannot complete step for unknown run: ${stepRun.runId}`);
-      if (run.status === 'running') this.assertCurrentExecutionOwner(stepRun.runId);
+      if (run.status !== 'running') throw new RunExecutionOwnedError(stepRun.runId);
+      this.assertCurrentExecutionOwner(stepRun.runId);
       this.writeStepRun(stepRun);
       const insertArtifact = this.database.prepare(
         `INSERT INTO artifacts (id, run_id, step_id, name, kind, path, media_type, size_bytes)

@@ -9,6 +9,18 @@ import { executionOwnershipMigration } from './005-execution-ownership.js';
 const currentSchemaVersion = 5;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
+  const hadExistingSchema = tableExists(database, 'runs');
+  const version = tableExists(database, 'schema_migrations')
+    ? ((
+        database
+          .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
+          .get() as { version: number } | undefined
+      )?.version ?? 0)
+    : 0;
+  if (hadExistingSchema && version < 2 && requiresLegacyRebuild(database)) {
+    backupDatabase(database, databasePath);
+  }
+
   withWriteLock(database, () => {
     database.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -31,7 +43,6 @@ export function applyMigrations(database: Database.Database, databasePath: strin
 
     if (version < 2) {
       const rebuildRequired = requiresLegacyRebuild(database);
-      if (hadExistingSchema && rebuildRequired) backupDatabase(database, databasePath);
       database.pragma('foreign_keys = OFF');
       try {
         upgradeLegacySchema(database, rebuildRequired);
@@ -164,6 +175,10 @@ function renameTableIfExists(database: Database.Database, name: string): void {
 
 function backupDatabase(database: Database.Database, databasePath: string): void {
   if (databasePath === ':memory:' || !existsSync(databasePath)) return;
+  const checkpoint = database.pragma('wal_checkpoint(TRUNCATE)', { simple: false }) as {
+    busy?: number;
+  };
+  if (checkpoint.busy) throw new Error('Cannot create migration backup while the database is busy');
   let backupPath = `${databasePath}.backup-${Date.now()}`;
   let suffix = 0;
   while (existsSync(backupPath)) {

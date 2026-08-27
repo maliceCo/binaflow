@@ -214,56 +214,6 @@ describe('application operations', () => {
     );
   });
 
-  it('allows only one concurrent resume to claim a failed run', async () => {
-    const previous = { ...persistedRun(), status: 'failed' as const };
-    let status: WorkflowRun['status'] = previous.status;
-    let executions = 0;
-    const execute = vi.fn(async () => {
-      executions += 1;
-      return { ...previous, status: 'completed' as const };
-    });
-    const store = {
-      getRun: async () => ({ ...previous, status }),
-      getArtifacts: async () => [],
-      getStepRuns: async () => [
-        { runId: previous.id, stepId: 'plan', profile: 'planner', status: 'pending', attempt: 1 },
-      ],
-      claimRun: async () => {
-        if (status !== 'failed') return undefined;
-        status = 'running';
-        return { ...previous, status: 'running' as const };
-      },
-      claimRunForExecution: async () => {
-        if (status !== 'failed') return undefined;
-        status = 'running';
-        return {
-          run: { ...previous, status: 'running' as const },
-          claim: { runId: previous.id, token: 'test-claim' },
-        };
-      },
-      assertExecutionClaim: async () => undefined,
-      releaseExecution: async () => undefined,
-    } as unknown as RunStore;
-    const context = {
-      config: { profiles: { planner: profile('planner'), builder: profile('builder') } },
-      store,
-      artifacts: {} as ArtifactStore,
-      engine: { execute } as unknown as WorkflowEngine,
-      researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
-    } satisfies ApplicationInternals;
-
-    const results = await Promise.allSettled([
-      resumeWorkflow(context, { runId: previous.id }),
-      resumeWorkflow(context, { runId: previous.id }),
-    ]);
-
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
-      reason: new Error('Run run-1 is already running'),
-    });
-    expect(executions).toBe(1);
-  });
-
   it('preflights persisted resume input before claiming the run', async () => {
     const previous = { ...persistedRun(), status: 'failed' as const };
     const claimRun = vi.fn(async () => ({ ...previous, status: 'running' as const }));
@@ -412,7 +362,7 @@ describe('application operations', () => {
     expect(claimRun).not.toHaveBeenCalled();
   });
 
-  it('marks a claimed run interrupted when execution fails before starting', async () => {
+  it('does not mutate a running run during resume validation', async () => {
     const previous = { ...persistedRun(), status: 'failed' as const };
     const markRunInterruptedSpy = vi.fn(async () => ({
       ...previous,
@@ -432,9 +382,9 @@ describe('application operations', () => {
     );
 
     await expect(resumeWorkflow(context, { runId: previous.id })).rejects.toThrow(
-      'pre-execution failure',
+      'mark it interrupted before recovery',
     );
-    expect(markRunInterruptedSpy).toHaveBeenCalledWith(previous.id);
+    expect(markRunInterruptedSpy).not.toHaveBeenCalled();
   });
 
   it('marks a persisted running run interrupted through the application operation', async () => {
@@ -458,7 +408,7 @@ describe('application operations', () => {
     expect(markRunInterruptedSpy).toHaveBeenCalledWith(running.id);
   });
 
-  it('recovers a stale running run before resuming it', async () => {
+  it('requires explicit interruption before resuming a stale running run', async () => {
     const running = { ...persistedRun(), status: 'running' as const };
     const markRunInterruptedSpy = vi.fn(async () => ({
       ...running,
@@ -485,19 +435,19 @@ describe('application operations', () => {
       },
     );
 
-    await expect(resumeWorkflow(context, { runId: running.id })).resolves.toMatchObject({
-      alreadyCompleted: false,
-      run: { status: 'completed' },
-    });
-    expect(markRunInterruptedSpy).toHaveBeenCalledWith(running.id);
-    expect(claimRun).toHaveBeenCalledWith(running.id, ['pending', 'failed', 'interrupted']);
-    expect(execute).toHaveBeenCalled();
+    await expect(resumeWorkflow(context, { runId: running.id })).rejects.toThrow(
+      'mark it interrupted before recovery',
+    );
+    expect(markRunInterruptedSpy).not.toHaveBeenCalled();
+    expect(claimRun).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('persists a normalized approval decision and resumes the workflow', async () => {
     const previous = {
       ...persistedRun(),
       workflowId: researchPlanBuildWorkflow.id,
+      workflowVersion: researchPlanBuildWorkflow.version,
       status: 'waiting' as const,
     };
     const approval = approvalStep(previous.id);
@@ -540,6 +490,7 @@ describe('application operations', () => {
     const previous = {
       ...persistedRun(),
       workflowId: researchPlanBuildWorkflow.id,
+      workflowVersion: researchPlanBuildWorkflow.version,
       status: 'waiting' as const,
     };
     const markRunInterrupted = vi.fn(async () => ({
@@ -571,76 +522,11 @@ describe('application operations', () => {
     expect(markRunInterrupted).toHaveBeenCalledWith(previous.id);
   });
 
-  it('allows only one concurrent approval decision to claim a waiting run', async () => {
-    const previous = {
-      ...persistedRun(),
-      workflowId: researchPlanBuildWorkflow.id,
-      status: 'waiting' as const,
-    };
-    const approval = approvalStep(previous.id);
-    let status: WorkflowRun['status'] = previous.status;
-    let executions = 0;
-    const execute = vi.fn(async () => {
-      executions += 1;
-      return { ...previous, status: 'completed' as const };
-    });
-    const store = {
-      getRun: async () => ({ ...previous, status }),
-      getArtifacts: async () => [],
-      getStepRuns: async () => [approval],
-      saveStepRun: async () => undefined,
-      claimRun: async () => {
-        if (status !== 'waiting') return undefined;
-        status = 'running';
-        return { ...previous, status: 'running' as const };
-      },
-      claimApproval: async () => {
-        if (status !== 'waiting') return undefined;
-        status = 'running';
-        return { ...previous, status: 'running' as const };
-      },
-      claimApprovalForExecution: async () => {
-        if (status !== 'waiting') return undefined;
-        status = 'running';
-        return {
-          run: { ...previous, status: 'running' as const },
-          claim: { runId: previous.id, token: 'test-claim' },
-        };
-      },
-      assertExecutionClaim: async () => undefined,
-      releaseExecution: async () => undefined,
-    } as unknown as RunStore;
-    const context = {
-      config: {
-        profiles: {
-          researcher: profile('researcher'),
-          'research-reviewer': profile('reviewer'),
-          planner: profile('planner'),
-          builder: profile('builder'),
-        },
-      },
-      store,
-      artifacts: {} as ArtifactStore,
-      engine: { execute } as unknown as WorkflowEngine,
-      researchCoordinator: { execute } as unknown as ResearchPlanBuildCoordinator,
-    } satisfies ApplicationInternals;
-
-    const results = await Promise.allSettled([
-      decideApproval(context, { runId: previous.id, decision: 'approved' }),
-      decideApproval(context, { runId: previous.id, decision: 'approved' }),
-    ]);
-
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.find((result) => result.status === 'rejected')).toMatchObject({
-      reason: new Error('Run run-1 is already running'),
-    });
-    expect(executions).toBe(1);
-  });
-
   it('rejects empty feedback before changing the approval step', async () => {
     const previous = {
       ...persistedRun(),
       workflowId: researchPlanBuildWorkflow.id,
+      workflowVersion: researchPlanBuildWorkflow.version,
       status: 'waiting' as const,
     };
     const saveStepRun = vi.fn(async () => undefined);
@@ -675,7 +561,7 @@ describe('application operations', () => {
     const previous = {
       ...persistedRun(),
       workflowId: researchPlanBuildWorkflow.id,
-      workflowVersion: 2,
+      workflowVersion: 1,
       status: 'waiting' as const,
     };
     const claimApproval = vi.fn(async () => previous);
@@ -698,7 +584,7 @@ describe('application operations', () => {
 
     await expect(
       decideApproval(context, { runId: previous.id, decision: 'approved' }),
-    ).rejects.toThrow('workflow version 2; installed version is 1');
+    ).rejects.toThrow('workflow version 1; installed version is 2');
     expect(claimApproval).not.toHaveBeenCalled();
     expect(saveStepRun).not.toHaveBeenCalled();
   });

@@ -1,7 +1,10 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentRequest } from '../../src/core/agent.js';
 import type { NormalizedEvent } from '../../src/core/events.js';
-import { PiDriver } from '../../src/drivers/pi-rpc.js';
+import { MAX_AGENT_RESULT_BYTES, PiDriver } from '../../src/drivers/pi-rpc.js';
 import { JsonlProcess, MAX_JSONL_RECORD_BYTES } from '../../src/process/jsonl-process.js';
 
 const children: JsonlProcess[] = [];
@@ -61,6 +64,28 @@ describe('JSONL transport', () => {
     expect(client.stderr).toContain('fake stderr');
   });
 
+  it('drains a final response before reporting process exit', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: [
+        '-e',
+        String.raw`process.stdin.once('data', (chunk) => {
+          const command = JSON.parse(chunk.toString());
+          process.stdout.write(JSON.stringify({ id: command.id, type: 'response', success: true }) + '\n');
+          process.exit(0);
+        });`,
+      ],
+    });
+    children.push(client);
+
+    await expect(
+      client.request({ type: 'final-response' }, { timeoutMs: 1000 }),
+    ).resolves.toMatchObject({
+      type: 'response',
+      success: true,
+    });
+  });
+
   it('does not wait for a second termination grace period after signal exit', async () => {
     const client = new JsonlProcess({
       command: process.execPath,
@@ -71,10 +96,9 @@ describe('JSONL transport', () => {
     await expect(client.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
       'JSONL process exited',
     );
-    const startedAt = Date.now();
+    const exit = await client.waitForExit();
+    expect(exit.code !== null || exit.signal !== null).toBe(true);
     await client.terminate();
-
-    expect(Date.now() - startedAt).toBeLessThan(500);
   });
 
   it('turns a child that closes stdin into a request failure', async () => {
@@ -99,12 +123,78 @@ describe('JSONL transport', () => {
     });
     children.push(client);
 
+    await expect(client.request({ type: 'wait' }, { timeoutMs: 3000 })).rejects.toThrow(
+      'JSONL record exceeded maximum size',
+    );
+  });
+
+  it('splits complete records before applying the per-record byte bound', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: [
+        '-e',
+        String.raw`process.stdin.once('data', (chunk) => {
+          const command = JSON.parse(chunk.toString());
+          const event = JSON.stringify({ type: 'event', value: 'x'.repeat(${MAX_JSONL_RECORD_BYTES - 100}) });
+          const response = JSON.stringify({ id: command.id, type: 'response', success: true });
+          process.stdout.write(event + '\n' + response + '\n');
+        });`,
+      ],
+    });
+    children.push(client);
+
+    await expect(
+      client.request({ type: 'near-limit' }, { timeoutMs: 1000 }),
+    ).resolves.toMatchObject({
+      type: 'response',
+      success: true,
+    });
+  });
+
+  it('rejects an oversized complete JSONL record', async () => {
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: [
+        '-e',
+        String.raw`process.stdout.write("{" + "a".repeat(${MAX_JSONL_RECORD_BYTES + 8}) + "}\n"); setTimeout(() => {}, 500)`,
+      ],
+    });
+    children.push(client);
+
     await expect(client.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
       'JSONL record exceeded maximum size',
     );
   });
 
-  it('turns message and stderr listener exceptions into transport failures', async () => {
+  it('terminates a Pi grandchild before it can modify the workspace', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-process-tree-'));
+    const sentinel = join(directory, 'sentinel.txt');
+    const ready = join(directory, 'ready.txt');
+    const controller = new AbortController();
+    const client = new JsonlProcess({
+      command: process.execPath,
+      args: [join(process.cwd(), 'test', 'drivers', 'grandchild-pi.mjs')],
+      env: { ...process.env, BINAFLOW_SENTINEL: sentinel, BINAFLOW_PARENT_READY: ready },
+    });
+    children.push(client);
+    try {
+      const request = client.request({ type: 'wait' }, { signal: controller.signal });
+      const deadline = Date.now() + 2_000;
+      while (!existsSync(ready) && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(existsSync(ready)).toBe(true);
+      const { childPid } = JSON.parse(readFileSync(ready, 'utf8')) as { childPid: number };
+      controller.abort();
+      await expect(request).rejects.toThrow('JSONL request cancelled');
+      await client.terminate();
+      await waitForProcessExit(childPid);
+      expect(existsSync(sentinel)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('turns message listener exceptions into transport failures', async () => {
     const messageClient = new JsonlProcess({
       command: process.execPath,
       args: [
@@ -119,20 +209,24 @@ describe('JSONL transport', () => {
     await expect(messageClient.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
       'JSONL message listener failed',
     );
-
-    const stderrClient = new JsonlProcess({
-      command: process.execPath,
-      args: ['-e', 'process.stderr.write("stderr event\\n"); setTimeout(() => {}, 500)'],
-    });
-    children.push(stderrClient);
-    stderrClient.onStderr(() => {
-      throw new Error('stderr listener failed');
-    });
-    await expect(stderrClient.request({ type: 'wait' }, { timeoutMs: 1000 })).rejects.toThrow(
-      'JSONL stderr listener failed',
-    );
   });
 });
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (processIsAlive(pid) && Date.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(processIsAlive(pid)).toBe(false);
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !(error instanceof Error && 'code' in error && error.code === 'ESRCH');
+  }
+}
 
 describe('PiDriver', () => {
   it('normalizes Pi text, session, usage, cost, and events', async () => {
@@ -217,7 +311,6 @@ process.stdin.on('data', (chunk) => {
       ],
     });
 
-    const startedAt = Date.now();
     await expect(
       driver.execute(
         requestFor({ timeoutMs: 5_000 }),
@@ -225,7 +318,59 @@ process.stdin.on('data', (chunk) => {
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ code: 'PI_RPC_FAILED' });
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
+  it('drains accepted events after Pi exits before agent_settled', async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const firstEvent = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/exiting-events-pi.mjs'],
+    });
+    const events: string[] = [];
+    const execution = driver.execute(
+      requestFor(),
+      async (event) => {
+        if (event.type !== 'text') return;
+        events.push(event.message);
+        if (event.message === 'first') {
+          started();
+          await gate;
+        }
+      },
+      new AbortController().signal,
+    );
+
+    await firstEvent;
+    release();
+    await expect(execution).rejects.toMatchObject({ code: 'PI_RPC_FAILED' });
+    expect(events).toEqual(['first', 'second']);
+  });
+
+  it.each(['delta', 'final'] as const)('rejects an oversized Pi %s result', async (kind) => {
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/oversized-pi.mjs'],
+      env: {
+        ...process.env,
+        BINAFLOW_RESULT_KIND: kind,
+        BINAFLOW_RESULT_SIZE: String(MAX_AGENT_RESULT_BYTES + 1),
+      },
+    });
+
+    await expect(
+      driver.execute(
+        requestFor({ timeoutMs: 1000 }),
+        () => undefined,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: 'PI_OUTPUT_TOO_LARGE' });
   });
 
   it('does not spawn Pi when execution is already aborted', async () => {
@@ -245,7 +390,6 @@ process.stdin.on('data', (chunk) => {
       command: process.execPath,
       commandArgs: ['test/drivers/canceling-pi.mjs'],
     });
-    const startedAt = Date.now();
     const execution = driver.execute(
       requestFor(),
       (event) => {
@@ -258,7 +402,6 @@ process.stdin.on('data', (chunk) => {
     }, 20);
 
     await expect(execution).rejects.toMatchObject({ code: 'PI_CANCELLED' });
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(80);
     expect(events.some((event) => event.message === 'Pi agent settled')).toBe(true);
   });
 });

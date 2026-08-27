@@ -1,4 +1,6 @@
 import { RELEASE_REPOSITORY } from './paths.js';
+import { createHash } from 'node:crypto';
+import { open } from 'node:fs/promises';
 
 export type ReleaseChannel = 'preview' | 'stable';
 
@@ -21,7 +23,8 @@ export interface FetchLike {
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+export const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+const MAX_CHECKSUM_BYTES = 64 * 1024;
 
 export async function findLatestRelease(
   channel: ReleaseChannel,
@@ -47,10 +50,55 @@ export async function findLatestRelease(
   return latest;
 }
 
-export async function downloadAsset(
+export async function downloadChecksumAsset(
   asset: ReleaseAsset,
   fetcher: FetchLike = fetch,
 ): Promise<Uint8Array> {
+  return downloadResponseBytes(asset, fetcher, MAX_CHECKSUM_BYTES);
+}
+
+async function downloadResponseBytes(
+  asset: ReleaseAsset,
+  fetcher: FetchLike,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(asset.size) || asset.size < 0 || asset.size > maxBytes) {
+    throw new Error(`Refusing to download an oversized release asset: ${asset.name}`);
+  }
+  const response = await fetcher(asset.url, {
+    headers: { 'user-agent': 'binaflow-updater' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok)
+    throw new Error(`Download failed for ${asset.name} with HTTP ${response.status}`);
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    const length = Number(contentLength);
+    if (!Number.isSafeInteger(length) || length > maxBytes) {
+      throw new Error(`Refusing to download an oversized response: ${asset.name}`);
+    }
+  }
+  if (!response.body) throw new Error(`Download response for ${asset.name} had no body`);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      throw new Error(`Downloaded release asset exceeds the size limit: ${asset.name}`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size);
+}
+
+export async function downloadAssetToFile(
+  asset: ReleaseAsset,
+  path: string,
+  fetcher: FetchLike = fetch,
+): Promise<string> {
   if (!Number.isSafeInteger(asset.size) || asset.size < 0 || asset.size > MAX_DOWNLOAD_BYTES) {
     throw new Error(`Refusing to download an oversized release asset: ${asset.name}`);
   }
@@ -60,15 +108,34 @@ export async function downloadAsset(
   });
   if (!response.ok)
     throw new Error(`Download failed for ${asset.name} with HTTP ${response.status}`);
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > MAX_DOWNLOAD_BYTES) {
-    throw new Error(`Refusing to download an oversized response: ${asset.name}`);
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    const length = Number(contentLength);
+    if (!Number.isSafeInteger(length) || length > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`Refusing to download an oversized response: ${asset.name}`);
+    }
   }
-  const content = new Uint8Array(await response.arrayBuffer());
-  if (content.byteLength > MAX_DOWNLOAD_BYTES) {
-    throw new Error(`Downloaded release asset exceeds the size limit: ${asset.name}`);
+  if (!response.body) throw new Error(`Download response for ${asset.name} had no body`);
+
+  const handle = await open(path, 'w');
+  const hash = createHash('sha256');
+  let size = 0;
+  try {
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_DOWNLOAD_BYTES) {
+        throw new Error(`Downloaded release asset exceeds the size limit: ${asset.name}`);
+      }
+      hash.update(value);
+      await handle.write(value);
+    }
+  } finally {
+    await handle.close();
   }
-  return content;
+  return hash.digest('hex');
 }
 
 export function parseChecksum(text: string, assetName: string): string {
@@ -127,15 +194,55 @@ function isVersion(value: string): boolean {
 }
 
 export function compareVersions(a: string, b: string): number {
-  const left = a.split('-', 2);
-  const right = b.split('-', 2);
-  const leftCore = (left[0] ?? '').split('.').map(Number);
-  const rightCore = (right[0] ?? '').split('.').map(Number);
+  const [leftCoreText, leftPrerelease] = splitVersion(a);
+  const [rightCoreText, rightPrerelease] = splitVersion(b);
+  const leftCore = leftCoreText.split('.');
+  const rightCore = rightCoreText.split('.');
   for (let index = 0; index < 3; index += 1) {
-    if (leftCore[index] !== rightCore[index])
-      return (leftCore[index] ?? 0) - (rightCore[index] ?? 0);
+    const comparison = compareNumericIdentifiers(leftCore[index] ?? '', rightCore[index] ?? '');
+    if (comparison !== 0) return comparison;
   }
-  if (left[1] === undefined && right[1] !== undefined) return 1;
-  if (left[1] !== undefined && right[1] === undefined) return -1;
-  return (left[1] ?? '').localeCompare(right[1] ?? '', undefined, { numeric: true });
+  if (leftPrerelease === undefined && rightPrerelease !== undefined) return 1;
+  if (leftPrerelease !== undefined && rightPrerelease === undefined) return -1;
+  if (leftPrerelease === undefined || rightPrerelease === undefined) return 0;
+  const leftIdentifiers = leftPrerelease.split('.');
+  const rightIdentifiers = rightPrerelease.split('.');
+  for (
+    let index = 0;
+    index < Math.max(leftIdentifiers.length, rightIdentifiers.length);
+    index += 1
+  ) {
+    const leftIdentifier = leftIdentifiers[index];
+    const rightIdentifier = rightIdentifiers[index];
+    if (leftIdentifier === undefined) return -1;
+    if (rightIdentifier === undefined) return 1;
+    const leftNumeric = /^\d+$/.test(leftIdentifier);
+    const rightNumeric = /^\d+$/.test(rightIdentifier);
+    if (leftNumeric && rightNumeric) {
+      const comparison = compareNumericIdentifiers(leftIdentifier, rightIdentifier);
+      if (comparison !== 0) return comparison;
+    } else if (leftNumeric !== rightNumeric) {
+      return leftNumeric ? -1 : 1;
+    } else if (leftIdentifier !== rightIdentifier) {
+      return leftIdentifier < rightIdentifier ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+function splitVersion(version: string): [string, string | undefined] {
+  const separator = version.indexOf('-');
+  return separator < 0
+    ? [version, undefined]
+    : [version.slice(0, separator), version.slice(separator + 1)];
+}
+
+function compareNumericIdentifiers(left: string, right: string): number {
+  const normalizedLeft = left.replace(/^0+(?=\d)/, '');
+  const normalizedRight = right.replace(/^0+(?=\d)/, '');
+  if (normalizedLeft.length !== normalizedRight.length) {
+    return normalizedLeft.length < normalizedRight.length ? -1 : 1;
+  }
+  if (normalizedLeft === normalizedRight) return 0;
+  return normalizedLeft < normalizedRight ? -1 : 1;
 }

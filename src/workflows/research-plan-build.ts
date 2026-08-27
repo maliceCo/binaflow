@@ -39,6 +39,9 @@ export interface ResearchWorkflowDefinition extends WorkflowDefinition {
   approval: WorkflowApprovalDefinition;
 }
 
+export const MAX_RESEARCH_ITERATIONS = 3;
+export const RESEARCH_ITERATION_INPUT = 'researchIteration';
+
 export const researchReportSchema: JSONSchemaType<ResearchReport> = {
   type: 'object',
   additionalProperties: false,
@@ -106,7 +109,16 @@ export function parseResearchReview(value: unknown): ResearchReview {
   if (!validateResearchReview(value)) {
     throw new Error(`Invalid research review: ${validationDetails(validateResearchReview.errors)}`);
   }
-  return value as ResearchReview;
+  const review = value as ResearchReview;
+  if (
+    (review.decision === 'needs_more_research' && review.nextResearchQuestions.length === 0) ||
+    (review.decision === 'ready' && review.nextResearchQuestions.length > 0)
+  ) {
+    throw new Error(
+      'Invalid research review: nextResearchQuestions must be non-empty only when more research is needed',
+    );
+  }
+  return review;
 }
 
 const researchPrompt = [
@@ -133,7 +145,7 @@ const plannerPrompt = [
 ].join(' ');
 
 export const researchPlanBuildWorkflow: ResearchWorkflowDefinition = {
-  version: 1,
+  version: 2,
   id: 'research-plan-build',
   input: {
     required: ['objective'],

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync } from 'node:fs';
 import { createCli } from '../src/cli/index.js';
+import { installCliStreamFailure, runAttachedCli } from '../src/cli/commands/common.js';
+import * as applicationRuntime from '../src/application/runtime.js';
 import {
   CliError,
   machineModeFromArgv,
@@ -227,6 +229,98 @@ describe('CLI protocol', () => {
     });
   });
 
+  it('captures the first attached stream failure and skips later output', () => {
+    const controller = new AbortController();
+    const streamFailure = installCliStreamFailure(controller);
+    const first = new Error('stdout closed');
+    const second = new Error('stderr closed');
+    let writes = 0;
+
+    try {
+      process.stdout.emit('error', first);
+      process.stderr.emit('error', second);
+
+      expect(streamFailure.error).toBe(first);
+      expect(controller.signal.reason).toBe(first);
+      expect(streamFailure.write(() => (writes += 1))).toBe(false);
+      expect(writes).toBe(0);
+    } finally {
+      streamFailure.remove();
+    }
+  });
+
+  it('aborts and joins active work before closing context after stdout failure', async () => {
+    const previousExitCode = process.exitCode;
+    const order: string[] = [];
+    let releaseOperation!: () => void;
+    const operation = new Promise<void>((resolve) => {
+      releaseOperation = resolve;
+    });
+    vi.spyOn(applicationRuntime, 'openApplicationContext').mockResolvedValue({
+      application: {} as never,
+      close: () => order.push('context closed'),
+    });
+    const running = runAttachedCli({}, 'stream-failure-run', 'run', async (_context, lifecycle) => {
+      lifecycle.signal.addEventListener('abort', () => order.push('aborted'));
+      await operation;
+      order.push('operation settled');
+    });
+
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      process.stdout.emit('error', new Error('stdout closed'));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(order).toEqual(['aborted']);
+      releaseOperation();
+      await running;
+      expect(order).toEqual(['aborted', 'operation settled', 'context closed']);
+    } finally {
+      releaseOperation();
+      await running.catch(() => undefined);
+      process.exitCode = previousExitCode;
+    }
+  });
+
+  it('defers second-signal force until operation and context cleanup complete', async () => {
+    const previousExitCode = process.exitCode;
+    const order: string[] = [];
+    let releaseOperation!: () => void;
+    const operation = new Promise<void>((resolve) => {
+      releaseOperation = resolve;
+    });
+    vi.spyOn(applicationRuntime, 'openApplicationContext').mockResolvedValue({
+      application: {} as never,
+      close: () => order.push('context closed'),
+    });
+    const running = runAttachedCli({}, 'signal-order-run', 'run', async (_context, lifecycle) => {
+      lifecycle.signal.addEventListener('abort', () => order.push('aborted'));
+      await operation;
+      order.push('operation settled');
+    });
+    const forceSignal = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      process.emit('SIGINT');
+      process.emit('SIGTERM');
+      expect(forceSignal).not.toHaveBeenCalled();
+
+      releaseOperation();
+      await running;
+
+      expect(order).toEqual(['aborted', 'operation settled', 'context closed']);
+      expect(forceSignal).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+    } finally {
+      releaseOperation();
+      await running.catch(() => undefined);
+      process.exitCode = previousExitCode;
+      write.mockRestore();
+      forceSignal.mockRestore();
+    }
+  });
+
   it('inspects a persisted run without execution profiles', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-inspection-'));
     const configDirectory = join(directory, '.binaflow');
@@ -238,7 +332,7 @@ describe('CLI protocol', () => {
       workflowId: 'plan-build',
       workflowVersion: 1,
       objective: 'Inspect this run',
-      status: 'completed',
+      status: 'running',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
     };
@@ -261,6 +355,7 @@ describe('CLI protocol', () => {
       attempt: 1,
     };
     await store.saveStepRun(step);
+    await store.saveRun({ ...run, status: 'completed' }, 'running');
     store.close();
 
     let output = '';
@@ -288,7 +383,7 @@ describe('CLI protocol', () => {
       workflowId: 'plan-build',
       workflowVersion: 1,
       objective: 'Show execution metadata',
-      status: 'completed',
+      status: 'running',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:03.000Z',
     };
@@ -310,6 +405,7 @@ describe('CLI protocol', () => {
         retryLimit: 0,
       },
     });
+    await store.saveRun({ ...run, status: 'completed' }, 'running');
     store.close();
 
     let output = '';
@@ -435,7 +531,7 @@ describe('CLI protocol', () => {
         workflowId: 'plan-build',
         workflowVersion: 1,
         objective: id,
-        status: 'completed',
+        status: id === 'run-c' ? 'running' : 'completed',
         createdAt,
         updatedAt: createdAt,
       };
@@ -462,6 +558,9 @@ describe('CLI protocol', () => {
       message: 'completed',
       occurredAt: createdAt,
     });
+    const activeRun = await store.getRun('run-c');
+    expect(activeRun).toBeDefined();
+    await store.saveRun({ ...activeRun!, status: 'completed' }, 'running');
     store.close();
 
     let output = '';

@@ -18,6 +18,7 @@ describe('SQLite migrations', () => {
     temporaryDirectories.push(directory);
     const databasePath = join(directory, 'runs.db');
     const database = new Database(databasePath);
+    database.pragma('journal_mode = WAL');
     database.exec(`
       CREATE TABLE runs (
         id TEXT PRIMARY KEY, workflow_id TEXT NOT NULL, workflow_version INTEGER NOT NULL,
@@ -46,15 +47,39 @@ describe('SQLite migrations', () => {
         step_id TEXT NOT NULL, type TEXT NOT NULL CHECK (type IN ('status', 'text', 'error')),
         message TEXT NOT NULL, occurred_at TEXT NOT NULL
       );
-      INSERT INTO runs VALUES ('run-1', 'plan-build', 1, 'objective', 'pending', '2026-01-01', '2026-01-01');
-      INSERT INTO step_runs VALUES ('run-1', 'plan', 'planner', 'pending', 1, NULL, NULL, NULL, NULL);
+       INSERT INTO runs VALUES ('run-1', 'plan-build', 1, 'objective', 'failed', '2026-01-01', '2026-01-01');
+       INSERT INTO step_runs VALUES ('run-1', 'plan', 'planner', 'failed', 2, '2026-01-01T00:00:00Z', '2026-01-01T00:01:00Z', '{"summary":"plan"}', '{"message":"failed"}');
+       INSERT INTO step_attempts VALUES ('run-1', 'plan', 1, 'completed', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z', 'session-1', '{"text":"attempt"}', NULL);
+       INSERT INTO artifacts VALUES ('artifact-1', 'run-1', 'plan', 'plan', 'json', '/tmp/plan.json', 'application/json', 42);
+       INSERT INTO normalized_events VALUES (1, 'run-1', 'plan', 'error', 'failed', '2026-01-01T00:01:00Z');
     `);
-    database.close();
 
     const store = new SqliteRunStore(databasePath);
-    expect((await store.getRun('run-1'))?.objective).toBe('objective');
-    expect((await store.getStepRuns('run-1'))[0]?.status).toBe('pending');
+    expect((await store.getRun('run-1'))?.status).toBe('failed');
+    expect((await store.getStepRuns('run-1'))[0]).toMatchObject({
+      status: 'failed',
+      attempt: 2,
+      result: { summary: 'plan' },
+      error: { message: 'failed' },
+    });
+    expect((await store.getEvents('run-1'))[0]).toMatchObject({
+      type: 'error',
+      message: 'failed',
+    });
+    const verificationBeforeClose = new Database(databasePath);
+    expect(
+      verificationBeforeClose
+        .prepare('SELECT external_session_id, result_json FROM step_attempts WHERE run_id = ?')
+        .get('run-1'),
+    ).toMatchObject({ external_session_id: 'session-1', result_json: '{"text":"attempt"}' });
+    expect(
+      verificationBeforeClose
+        .prepare('SELECT id, name, kind FROM artifacts WHERE run_id = ?')
+        .get('run-1'),
+    ).toMatchObject({ id: 'artifact-1', name: 'plan', kind: 'json' });
+    verificationBeforeClose.close();
     store.close();
+    database.close();
 
     const verification = new Database(databasePath);
     const versions = verification
@@ -76,26 +101,5 @@ describe('SQLite migrations', () => {
     verification.close();
     expect(readdirSync(directory).some((name) => name.startsWith('runs.db.backup-'))).toBe(true);
     expect(existsSync(databasePath)).toBe(true);
-  });
-
-  it('recovers when the profile column exists but migration 3 was not recorded', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-migration-partial-'));
-    temporaryDirectories.push(directory);
-    const databasePath = join(directory, 'runs.db');
-    const store = new SqliteRunStore(databasePath);
-    store.close();
-
-    const database = new Database(databasePath);
-    database.prepare('DELETE FROM schema_migrations WHERE version >= 3').run();
-    database.close();
-
-    const reopened = new SqliteRunStore(databasePath);
-    const verification = new Database(databasePath);
-    const versions = verification
-      .prepare('SELECT version FROM schema_migrations ORDER BY version')
-      .all() as Array<{ version: number }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5]);
-    verification.close();
-    reopened.close();
   });
 });

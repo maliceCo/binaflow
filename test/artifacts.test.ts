@@ -105,4 +105,15 @@ describe('FileArtifactStore containment', () => {
       'outside the artifact directory',
     );
   });
+
+  it('removes an artifact through its validated path', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-artifact-remove-'));
+    directories.push(directory);
+    const store = new FileArtifactStore(join(directory, 'artifacts'));
+    const reference = await store.write('run-1', 'plan', 'plan', 'json', '{}', 'application/json');
+
+    await store.remove(reference);
+
+    await expect(store.read(reference)).rejects.toThrow();
+  });
 });

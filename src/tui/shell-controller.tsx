@@ -10,7 +10,7 @@ import {
 } from '../application/config-operations.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { discoverWorkflows } from '../application/operations.js';
-import type { RunInspection } from '../application/operations.js';
+import type { RunInspection, WorkflowContract } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationContext } from '../application/runtime.js';
@@ -64,7 +64,6 @@ interface InkShellControllerProps {
   openApplicationContext?:
     ((configPath: string, cwd: string) => Promise<ApplicationContextInput>) | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
-  hasInjectedContext?: boolean;
 }
 
 export function InkShellController({
@@ -138,7 +137,11 @@ export function InkShellController({
       buffer,
     });
     snapshotControllerRef.current = createSnapshotInspectionController({
-      inspect: (runId) => application.getRunView(runId),
+      inspect: (runId) => {
+        const request = application.getRunView(runId);
+        lifecycle.trackRequest(request);
+        return request;
+      },
       getRunId: () => activeRunId.current,
       apply: (view, generation) => {
         const current = liveRef.current;
@@ -387,29 +390,39 @@ export function InkShellController({
     }
   };
 
+  const loadRunDetails = async (
+    application: ApplicationService,
+    runId: string,
+  ): Promise<{
+    view: RunView;
+    inspection?: RunInspection | undefined;
+    clarifications: string[];
+  }> => {
+    const requests = Promise.allSettled([
+      application.getRunView(runId),
+      application.inspectRun(runId, { includeStepResults: 'usage' }),
+    ]);
+    lifecycle.trackRequest(requests);
+    const [viewResult, inspectionResult] = await requests;
+    if (viewResult.status === 'rejected') throw viewResult.reason;
+    const inspection = inspectionResult.status === 'fulfilled' ? inspectionResult.value : undefined;
+    let clarifications: string[] = [];
+    if (inspection) {
+      try {
+        clarifications = await application.clarificationQuestions(inspection);
+      } catch {
+        // Clarifications are supplemental to the authoritative run view.
+      }
+    }
+    return { view: viewResult.value, inspection, clarifications };
+  };
+
   const loadInspection = async (runId: string): Promise<void> => {
     const requestId = ++inspectionRequest.current;
     const request = (async () => {
       try {
         const application = await ensureContext();
-        const requests = Promise.allSettled([
-          application.getRunView(runId),
-          application.inspectRun(runId, { includeStepResults: 'usage' }),
-        ]);
-        lifecycle.trackRequest(requests);
-        const [viewResult, inspectionResult] = await requests;
-        if (viewResult.status === 'rejected') throw viewResult.reason;
-        const view = viewResult.value;
-        const inspection =
-          inspectionResult.status === 'fulfilled' ? inspectionResult.value : undefined;
-        let clarifications: string[] = [];
-        if (inspection) {
-          try {
-            clarifications = await application.clarificationQuestions(inspection);
-          } catch {
-            // Clarifications are supplemental to the authoritative run view.
-          }
-        }
+        const { view, inspection, clarifications } = await loadRunDetails(application, runId);
         if (
           !active.current ||
           requestId !== inspectionRequest.current ||
@@ -497,21 +510,7 @@ export function InkShellController({
     if (context) {
       const application = context.application;
       try {
-        const requests = Promise.allSettled([
-          application.getRunView(run.id),
-          application.inspectRun(run.id, { includeStepResults: 'usage' }),
-        ]);
-        lifecycle.trackRequest(requests);
-        const [viewResult, inspectionResult] = await requests;
-        if (viewResult.status === 'fulfilled') view = viewResult.value;
-        if (inspectionResult.status === 'fulfilled') {
-          inspection = inspectionResult.value;
-          try {
-            clarifications = await application.clarificationQuestions(inspection);
-          } catch {
-            // Clarifications are supplemental to the authoritative run view.
-          }
-        }
+        ({ view, inspection, clarifications } = await loadRunDetails(application, run.id));
       } catch {
         view = undefined;
       }
@@ -548,99 +547,29 @@ export function InkShellController({
     dispatch({ type: 'cancel-requested' });
   };
 
-  const startLaunch = (): void => {
-    const launchInput = stateRef.current.launchInput;
-    const diagnosis = stateRef.current.diagnosis;
-    if (!launchInput || !diagnosis || launching) return;
-    setLaunching(true);
-    const executionContext = openExecutionContext();
-    const controller = lifecycle.beginOperation();
-    lifecycle.trackOperation(
-      (async () => {
-        try {
-          const refreshed = await diagnoseConfigurationFile(
-            stateRef.current.configPath,
-            stateRef.current.cwd,
-          );
-          const currentReview = profileReview(launchInput.workflow, refreshed);
-          if (
-            !refreshed.configValid ||
-            !sameProfileReview(launchInput.reviewedProfiles, currentReview)
-          ) {
-            dispatch({ type: 'diagnosed', diagnosis: refreshed });
-            dispatch({
-              type: 'error-set',
-              message: !refreshed.configValid
-                ? 'Configuration changed or became invalid; review it before launching.'
-                : 'Profile permissions or settings changed; confirm the workflow again before launching.',
-            });
-            return;
-          }
-          const application = await executionContext;
-          if (controller.signal.aborted) throw new Error('Workflow startup cancelled.');
-          attachLiveControllers(application);
-          lifecycle.subscribe(application.subscribeEvents((event) => handleLiveEvent(event)));
-          const objective = launchInput.values.objective;
-          if (!objective) throw new Error('Workflow objective must be a non-empty string');
-          dispatch({ type: 'status-set', message: `Starting ${launchInput.workflow.id}...` });
-          const run = await application.runWorkflow({
-            workflowId: launchInput.workflow.id,
-            objective,
-            input: launchInput.values,
-            signal: controller.signal,
-            onRunStarted: (startedRun) => {
-              activeRunId.current = startedRun.id;
-              setLiveValue(createLiveState(startedRun, launchInput.workflow));
-              refreshLiveView(application, startedRun.id);
-              setLiveDetail(false);
-              setLiveOffset(0);
-              dispatch({ type: 'run-started', runId: startedRun.id });
-            },
-          });
-          uiPublisherRef.current?.flush();
-          await snapshotControllerRef.current?.flush();
-          await finishRun(run);
-        } catch (reason) {
-          const current = liveRef.current;
-          if (current) {
-            await finishRun({
-              ...current.run,
-              status: current.cancellationRequested ? 'cancelled' : 'failed',
-              updatedAt: new Date().toISOString(),
-            });
-          } else {
-            dispatch({
-              type: 'error-set',
-              message: `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
-            });
-          }
-        } finally {
-          lifecycle.unsubscribe();
-          activeRunId.current = undefined;
-          setLaunching(false);
-        }
-      })(),
-    );
-  };
+  type AttachedOperation = (
+    application: ApplicationService,
+    signal: AbortSignal,
+    onRunStarted: (run: WorkflowRun) => void,
+  ) => Promise<WorkflowRun | undefined>;
 
-  const startContinuation = (
-    operation: (
-      application: ApplicationService,
-      signal: AbortSignal,
-      onRunStarted: (run: WorkflowRun) => void,
-    ) => Promise<WorkflowRun>,
-    workflowId: string,
+  const startAttachedExecution = (
+    workflow: WorkflowContract,
+    operation: AttachedOperation,
+    formatError: (reason: unknown) => string,
   ): void => {
-    const view = stateRef.current.runView;
-    if (!view || launching) return;
-    const workflow = discoverWorkflows().find((candidate) => candidate.id === workflowId);
-    if (!workflow) {
-      dispatch({ type: 'error-set', message: `Workflow ${workflowId} is unavailable.` });
+    let controller: AbortController;
+    try {
+      controller = lifecycle.beginOperation();
+    } catch (reason) {
+      dispatch({
+        type: 'error-set',
+        message: reason instanceof Error ? reason.message : String(reason),
+      });
       return;
     }
     setLaunching(true);
     const executionContext = openExecutionContext();
-    const controller = lifecycle.beginOperation();
     lifecycle.trackOperation(
       (async () => {
         try {
@@ -656,9 +585,11 @@ export function InkShellController({
             setLiveOffset(0);
             dispatch({ type: 'run-started', runId: startedRun.id });
           });
-          uiPublisherRef.current?.flush();
-          await snapshotControllerRef.current?.flush();
-          await finishRun(run);
+          if (run) {
+            uiPublisherRef.current?.flush();
+            await snapshotControllerRef.current?.flush();
+            await finishRun(run);
+          }
         } catch (reason) {
           const current = liveRef.current;
           if (current) {
@@ -668,10 +599,7 @@ export function InkShellController({
               updatedAt: new Date().toISOString(),
             });
           } else {
-            dispatch({
-              type: 'error-set',
-              message: reason instanceof Error ? reason.message : String(reason),
-            });
+            dispatch({ type: 'error-set', message: formatError(reason) });
           }
         } finally {
           lifecycle.unsubscribe();
@@ -679,6 +607,60 @@ export function InkShellController({
           setLaunching(false);
         }
       })(),
+    );
+  };
+
+  const startLaunch = (): void => {
+    const launchInput = stateRef.current.launchInput;
+    const diagnosis = stateRef.current.diagnosis;
+    if (!launchInput || !diagnosis) return;
+    startAttachedExecution(
+      launchInput.workflow,
+      async (application, signal, onRunStarted) => {
+        const refreshed = await diagnoseConfigurationFile(
+          stateRef.current.configPath,
+          stateRef.current.cwd,
+        );
+        const currentReview = profileReview(launchInput.workflow, refreshed);
+        if (
+          !refreshed.configValid ||
+          !sameProfileReview(launchInput.reviewedProfiles, currentReview)
+        ) {
+          dispatch({ type: 'diagnosed', diagnosis: refreshed });
+          dispatch({
+            type: 'error-set',
+            message: !refreshed.configValid
+              ? 'Configuration changed or became invalid; review it before launching.'
+              : 'Profile permissions or settings changed; confirm the workflow again before launching.',
+          });
+          return undefined;
+        }
+        const objective = launchInput.values.objective;
+        if (!objective) throw new Error('Workflow objective must be a non-empty string');
+        dispatch({ type: 'status-set', message: `Starting ${launchInput.workflow.id}...` });
+        return application.runWorkflow({
+          workflowId: launchInput.workflow.id,
+          objective,
+          input: launchInput.values,
+          signal,
+          onRunStarted,
+        });
+      },
+      (reason) =>
+        `Launch failed: ${reason instanceof Error ? reason.message : String(reason)}. Retry or go back to edit the workflow.`,
+    );
+  };
+
+  const startContinuation = (operation: AttachedOperation, workflowId: string): void => {
+    const view = stateRef.current.runView;
+    if (!view) return;
+    const workflow = discoverWorkflows().find((candidate) => candidate.id === workflowId);
+    if (!workflow) {
+      dispatch({ type: 'error-set', message: `Workflow ${workflowId} is unavailable.` });
+      return;
+    }
+    startAttachedExecution(workflow, operation, (reason) =>
+      reason instanceof Error ? reason.message : String(reason),
     );
   };
 
@@ -792,9 +774,10 @@ export function InkShellController({
           break;
       }
       if (next.effect === 'discover-setup-models') {
-        const models = lifecycle.context
-          ? await lifecycle.context.application.discoverModels()
-          : [];
+        const context = lifecycle.context;
+        const request = context?.application.discoverModels();
+        if (request) lifecycle.trackRequest(request);
+        const models = request ? await request : [];
         if (active.current) dispatch({ type: 'setup-models', models });
       } else if (next.effect === 'diagnose-cwd') {
         await runDiagnose(

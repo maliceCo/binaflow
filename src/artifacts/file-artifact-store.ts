@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import type { ArtifactReference } from '../core/run.js';
 import type { ArtifactStore, BoundedArtifactContent } from './artifact-store.js';
@@ -30,10 +30,17 @@ export class FileArtifactStore implements ArtifactStore {
     assertInsideRoot(realRoot, realDirectory);
 
     const temporaryPath = `${path}.tmp`;
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
     try {
-      await writeFile(temporaryPath, content, 'utf8');
+      handle = await open(temporaryPath, 'wx', 0o600);
+      await handle.writeFile(content, 'utf8');
+      await handle.sync();
+      await handle.close();
+      handle = undefined;
       await rename(temporaryPath, path);
+      await syncDirectory(directory);
     } finally {
+      await handle?.close().catch(() => undefined);
       await rm(temporaryPath, { force: true });
     }
 
@@ -54,6 +61,12 @@ export class FileArtifactStore implements ArtifactStore {
     return readFile(safePath, 'utf8');
   }
 
+  async remove(artifact: ArtifactReference): Promise<void> {
+    const safePath = await validatedReadPath(this.root, artifact.path);
+    await rm(safePath, { force: true });
+    await syncDirectory(parse(safePath).dir);
+  }
+
   async readBounded(
     artifact: ArtifactReference,
     maxBytes: number,
@@ -66,25 +79,64 @@ export class FileArtifactStore implements ArtifactStore {
     try {
       const buffer = Buffer.alloc(maxBytes + 1);
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-      const contentBytes = Math.min(bytesRead, maxBytes);
-      let safeBytes = contentBytes;
+      let contentBytes = Math.min(bytesRead, maxBytes);
+      let truncated = bytesRead > maxBytes;
+      const incompleteBytes = trailingIncompleteUtf8Bytes(buffer.subarray(0, contentBytes));
+      if (incompleteBytes > 0) {
+        contentBytes -= incompleteBytes;
+        truncated = true;
+      }
+      const safeBytes = contentBytes;
       const decoder = new TextDecoder('utf-8', { fatal: true });
-      while (safeBytes > 0) {
-        try {
-          decoder.decode(buffer.subarray(0, safeBytes));
-          break;
-        } catch {
-          safeBytes -= 1;
-        }
+      try {
+        decoder.decode(buffer.subarray(0, safeBytes));
+      } catch (error) {
+        throw new Error(
+          `Artifact contains invalid UTF-8: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       return {
         content: buffer.subarray(0, safeBytes).toString('utf8'),
-        truncated: bytesRead > maxBytes,
+        truncated,
       };
     } finally {
       await handle.close();
     }
   }
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  const handle = await open(directory, 'r');
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function trailingIncompleteUtf8Bytes(bytes: Uint8Array): number {
+  const start = Math.max(0, bytes.length - 3);
+  for (let index = bytes.length - 1; index >= start; index -= 1) {
+    const byte = bytes[index]!;
+    const expected =
+      byte >= 0xc2 && byte <= 0xdf
+        ? 2
+        : byte >= 0xe0 && byte <= 0xef
+          ? 3
+          : byte >= 0xf0 && byte <= 0xf4
+            ? 4
+            : 0;
+    if (expected === 0) continue;
+    const available = bytes.length - index;
+    if (available >= expected) return 0;
+    for (let continuation = index + 1; continuation < bytes.length; continuation += 1) {
+      const continuationByte = bytes[continuation]!;
+      if (continuationByte < 0x80 || continuationByte > 0xbf) return 0;
+    }
+    return available;
+  }
+  return 0;
 }
 
 function safeSegment(value: string): string {

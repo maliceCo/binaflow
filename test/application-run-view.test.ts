@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { getRunView } from '../src/application/run-view.js';
 import type { RunStore } from '../src/storage/run-store.js';
+import type { ApplicationArtifactStore } from '../src/application/ports.js';
 
 describe('application run view', () => {
   it('orders installed phases, exposes waiting approval, and aggregates persisted data', async () => {
     const run = workflowRun({
       workflowId: 'research-plan-build',
+      workflowVersion: 2,
       status: 'waiting',
     });
     const steps: StepRun[] = [
@@ -53,8 +55,8 @@ describe('application run view', () => {
 
     expect(view.workflow).toEqual({
       id: 'research-plan-build',
-      version: 1,
-      installedVersion: 1,
+      version: 2,
+      installedVersion: 2,
       compatible: true,
     });
     expect(view.phases.map((phase) => phase.id)).toEqual([
@@ -121,7 +123,8 @@ describe('application run view', () => {
     });
     expect(view.availableActions).toEqual([]);
     expect(view.currentPhaseId).toBe('plan');
-    expect(view.phases.map((phase) => phase.id)).toEqual(['plan', 'build']);
+    expect(view.phases.map((phase) => phase.id)).toEqual(['plan']);
+    expect(view.phases[0]?.kind).toBe('unknown');
   });
 
   it('projects clarification follow-up guidance from persisted disposition', async () => {
@@ -283,6 +286,52 @@ describe('application run view', () => {
         requiresConfirmation: true,
       },
     ]);
+  });
+
+  it('does not offer recovery after the research iteration limit is persisted', async () => {
+    const run = workflowRun({
+      workflowId: 'research-plan-build',
+      workflowVersion: 2,
+      status: 'failed',
+    });
+    const input: ArtifactReference = {
+      id: 'run-input',
+      runId: run.id,
+      stepId: 'run',
+      name: 'input',
+      kind: 'json',
+      path: 'C:/private/input.json',
+      mediaType: 'application/json',
+      sizeBytes: 24,
+    };
+    const steps: StepRun[] = [
+      { runId: run.id, stepId: 'research', profile: 'researcher', status: 'completed', attempt: 1 },
+      {
+        runId: run.id,
+        stepId: 'research-review',
+        profile: 'research-reviewer',
+        status: 'completed',
+        attempt: 1,
+      },
+      { runId: run.id, stepId: 'plan', profile: 'planner', status: 'pending', attempt: 1 },
+      { runId: run.id, stepId: 'build', profile: 'builder', status: 'pending', attempt: 1 },
+    ];
+
+    const view = await getRunView(
+      {
+        store: store(run, steps, [input]) as RunStore,
+        artifacts: {
+          read: async () => JSON.stringify({ objective: run.objective, researchIteration: 3 }),
+          readBounded: async () => ({
+            content: JSON.stringify({ objective: run.objective, researchIteration: 3 }),
+            truncated: false,
+          }),
+        } as ApplicationArtifactStore,
+      },
+      run.id,
+    );
+
+    expect(view.availableActions).toEqual([]);
   });
 });
 

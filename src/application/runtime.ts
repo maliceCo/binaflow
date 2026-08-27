@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
 import { loadConfig, loadDataDir } from '../config.js';
-import { WorkflowEngine } from '../core/engine.js';
+import { createWorkflowRuntime, WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
 import { PiModelDiscovery } from '../drivers/pi-discovery.js';
@@ -59,14 +59,14 @@ export async function openApplicationContext(
   const eventSink = createRuntimeEventSink(store, async (event) => {
     for (const listener of eventListeners) await listener(event);
   });
-  const engine = new WorkflowEngine(
-    store,
-    artifacts,
-    new PiDriver({ command: config.piCommand, cwd }),
-    eventSink,
-    { interpretDisposition: interpretWorkflowDisposition },
-  );
-  const researchCoordinator = new ResearchPlanBuildCoordinator(engine.runtime, store, artifacts);
+  const driver = new PiDriver({ command: config.piCommand, cwd });
+  const runtime = createWorkflowRuntime(store, artifacts, driver, eventSink, {
+    interpretDisposition: interpretWorkflowDisposition,
+  });
+  const engine = new WorkflowEngine(store, artifacts, driver, eventSink, {
+    interpretDisposition: interpretWorkflowDisposition,
+  });
+  const researchCoordinator = new ResearchPlanBuildCoordinator(runtime, store, artifacts);
   const application = createApplicationService({
     config,
     store,

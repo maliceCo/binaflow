@@ -4,37 +4,22 @@ import type { StepRun } from '../src/core/run.js';
 import { CliEventPresenter, printRunSummary } from '../src/cli/commands/common.js';
 
 describe('CLI event presentation', () => {
-  it('streams agent messages while keeping status and tool activity readable', () => {
+  it('removes terminal control sequences from human event output', () => {
     let output = '';
     const presenter = new CliEventPresenter(false, (text) => {
       output += text;
     });
 
-    presenter.present(event('status', 'Step plan started'));
-    presenter.present(event('text', 'hello '));
-    presenter.present(event('text', 'world'));
-    presenter.present(event('status', 'Pi tool_execution_start tool=read id=call-1'));
-    presenter.present(event('error', 'The tool failed'));
+    const escape = String.fromCharCode(27);
+    presenter.present(
+      event(
+        'text',
+        `${escape}[31mred${escape}[0m ${escape}]title${String.fromCharCode(7)}\x7f\nline`,
+      ),
+    );
     presenter.flush();
 
-    expect(output).toBe(
-      '[plan] started\n' +
-        '[plan] agent: hello world\n' +
-        '[plan] tool started tool=read id=call-1\n' +
-        '[plan] error: The tool failed\n',
-    );
-  });
-
-  it('preserves protocol detail in verbose mode', () => {
-    let output = '';
-    const presenter = new CliEventPresenter(true, (text) => {
-      output += text;
-    });
-
-    presenter.present(event('text', 'hello'));
-    presenter.present(event('status', 'Step plan completed'));
-
-    expect(output).toBe('hello\n[plan] status: Step plan completed\n');
+    expect(output).toBe('[plan] agent: red \nline\n');
   });
 
   it('renders human phases, aggregate metrics, and available actions from RunView', () => {

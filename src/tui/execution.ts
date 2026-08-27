@@ -36,14 +36,6 @@ export interface LiveState {
   costUsd?: number | undefined;
 }
 
-export interface CompletionState {
-  run: WorkflowRun;
-  steps: StepRun[];
-  artifacts: string[];
-  startedAt: string;
-  finishedAt: string;
-}
-
 export interface LiveActivityBuffer {
   readonly activity: readonly LiveActivity[];
   readonly activityBytes: number;
@@ -123,32 +115,6 @@ export function createLiveActivityBuffer(
       activity.length = 0;
       activityBytes = 0;
     },
-  };
-}
-
-export function applyStepSnapshot(
-  state: LiveState,
-  steps: StepRun[],
-  generation: number,
-  appliedGeneration: number,
-  nowMs: number = Date.now(),
-): LiveState | undefined {
-  if (generation < appliedGeneration) return undefined;
-  const byId = new Map(steps.map((step) => [step.stepId, step]));
-  return {
-    ...state,
-    steps: state.steps.map((step) => {
-      const snapshot = byId.get(step.id);
-      if (!snapshot) return step;
-      return {
-        ...step,
-        status: snapshot.status,
-        durationMs: stepDurationMs(snapshot, nowMs),
-        costUsd: snapshot.result?.costUsd,
-      };
-    }),
-    tokens: sumStepTokens(steps),
-    costUsd: sumStepCosts(steps),
   };
 }
 
@@ -324,20 +290,6 @@ export function createLiveUiPublisher(options: {
       }
     },
   };
-}
-
-export function sumStepTokens(steps: StepRun[]): number | undefined {
-  const values = steps
-    .map((step) => step.result?.usage?.totalTokens)
-    .filter((value): value is number => value !== undefined);
-  return values.length > 0 ? values.reduce((total, value) => total + value, 0) : undefined;
-}
-
-export function sumStepCosts(steps: StepRun[]): number | undefined {
-  const values = steps
-    .map((step) => step.result?.costUsd)
-    .filter((value): value is number => value !== undefined);
-  return values.length > 0 ? values.reduce((total, value) => total + value, 0) : undefined;
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {

@@ -281,6 +281,85 @@ describe('Ink shell', () => {
     expect(closed).toBe(true);
   });
 
+  it('preserves a render error when force cleanup is also requested', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const terminal = createTerminal();
+    let resolveExecution: ((run: WorkflowRun) => void) | undefined;
+    const execution = new Promise<WorkflowRun>((resolve) => {
+      resolveExecution = resolve;
+    });
+    const context = createApplicationService(
+      async (_workflow, request) => {
+        request.onRunStarted?.(createRun('running'));
+        request.signal?.addEventListener('abort', () => {
+          setTimeout(() => resolveExecution?.(createRun('cancelled')), 50);
+        });
+        return execution;
+      },
+      () => undefined,
+    );
+    let closed = false;
+    const renderError = new Error('output failed during forced cleanup');
+    const forceExit = vi.fn(() => {
+      expect(closed).toBe(true);
+    });
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      openApplicationContext: async () => ({ ...context, close: () => (closed = true) }),
+      forceExit,
+    });
+    await launchWorkflow(terminal);
+    terminal.input.push('q');
+    await terminal.output.waitFor('Cancellation requested');
+    terminal.input.push('q');
+    terminal.output.emit('error', renderError);
+
+    await expect(running).rejects.toBe(renderError);
+    expect(forceExit).toHaveBeenCalledWith('SIGINT');
+    expect(closed).toBe(true);
+  });
+
+  it('reserves one launch before opening its execution context', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const terminal = createTerminal();
+    const execute = vi.fn(async () => createRun('completed'));
+    const context = createApplicationService(execute, () => undefined);
+    let opens = 0;
+    let releaseExecutionContext!: (context: ApplicationService & { close(): void }) => void;
+    const executionContext = new Promise<ApplicationService & { close(): void }>((resolve) => {
+      releaseExecutionContext = resolve;
+    });
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      openApplicationContext: async () => {
+        opens += 1;
+        return opens === 2 ? executionContext : { ...context, close: () => undefined };
+      },
+    });
+
+    await launchWorkflow(terminal, false);
+    terminal.input.push('\r\r');
+    await waitForCondition(() => opens === 2);
+    expect(opens).toBe(2);
+    releaseExecutionContext({ ...context, close: () => undefined });
+    await terminal.output.waitFor('Run status');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Workspace status');
+    terminal.input.push('q');
+    await running;
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the footer visible and redraws the shell after resize', async () => {
     const directory = await temporaryDirectory();
     await writeConfig(directory);

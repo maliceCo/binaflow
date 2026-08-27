@@ -15,6 +15,7 @@ import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import {
   buildRunRecoveryExplanation,
   findWaitingApprovalStep,
+  isResearchIterationExhausted,
   type ApplicationInternals,
 } from './operations.js';
 
@@ -110,7 +111,7 @@ export type RunAction =
     };
 
 export async function getRunView(
-  context: Pick<ApplicationInternals, 'store'>,
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
   runId: string,
 ): Promise<RunView> {
   const run = await context.store.getRun(runId);
@@ -123,8 +124,21 @@ export async function getRunView(
   ]);
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
-  const recovery = buildRunRecoveryExplanation(run, steps, installedWorkflow);
-  const phases = buildPhases(installedWorkflow, steps, Date.now(), run.status === 'running');
+  const recoveryBase = buildRunRecoveryExplanation(run, steps, installedWorkflow);
+  const recovery = (await isResearchIterationExhausted(context, run, artifacts))
+    ? {
+        ...recoveryBase,
+        eligible: false,
+        reason: 'The research iteration limit has been reached; this run is terminal.',
+        actions: [],
+      }
+    : recoveryBase;
+  const phases = buildPhases(
+    compatible ? installedWorkflow : undefined,
+    steps,
+    Date.now(),
+    run.status === 'running',
+  );
   const pendingAction = compatible ? buildPendingAction(run, installedWorkflow, steps) : undefined;
   const followUp = clarificationFollowUp(run.status, phases);
   const availableActions = [

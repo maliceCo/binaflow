@@ -47,12 +47,7 @@ const transitions: Transition[] = [
   },
   {
     name: 'setup q cancels without saving and returns to welcome with values cleared',
-    events: [
-      diagnosed(missingConfig()),
-      useFolder(),
-      { type: 'setup-values', values: { plannerProvider: 'openai' } },
-      { type: 'setup-cancel' },
-    ],
+    events: [diagnosed(missingConfig()), useFolder(), { type: 'setup-cancel' }],
     expect: (state) => {
       expect(state.overlay).toBe('welcome');
       expect(state.setupValues).toEqual({});
@@ -277,6 +272,49 @@ describe('TUI transitions', () => {
     let state = createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH });
     for (const event of events) state = reduce(state, event);
     check(state);
+  });
+
+  it('moves an existing selection offset upward when selection moves up', () => {
+    const state = {
+      ...createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH }),
+      selection: 3,
+      offset: 3,
+    };
+
+    expect(reduce(state, { type: 'move', direction: -1, visibleRows: 3 })).toMatchObject({
+      selection: 2,
+      offset: 1,
+    });
+  });
+
+  it('starts artifact selection from the selected result step', () => {
+    let state = createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH });
+    state = reduce(state, diagnosed(validConfig()));
+    state = reduce(state, useFolder());
+    state = reduce(state, {
+      type: 'run-view-set',
+      view: inspectionSetView('completed'),
+      clarifications: [],
+    });
+    state = { ...state, detail: 'result', selection: 1 };
+
+    expect(reduce(state, { type: 'open-artifacts' }).artifactSelected).toBe(1);
+  });
+
+  it('clears transient status when authoritative run state arrives', () => {
+    const initial = {
+      ...createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH }),
+      status: 'Launching...',
+    };
+    const afterView = reduce(initial, {
+      type: 'run-view-set',
+      view: inspectionSetView('completed'),
+      clarifications: [],
+    });
+    expect(afterView.status).toBeUndefined();
+    expect(
+      reduce({ ...initial, detail: 'live' }, { type: 'run-finished', status: 'completed' }).status,
+    ).toBeUndefined();
   });
 });
 

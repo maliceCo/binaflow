@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { cliUsageError, machineMode, rejectUnsupportedJsonl } from '../protocol.js';
 import type { RunStatus } from '../../core/run.js';
 import { formatTimestamp, humanRunStatus } from '../../presentation/format.js';
+import { sanitizeTerminalText } from '../../presentation/text.js';
 
 interface RunsOptions {
   limit?: string;
@@ -86,6 +87,6 @@ function parseStatus(value: string | undefined): RunStatus | undefined {
 }
 
 function singleLine(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const normalized = sanitizeTerminalText(value).replace(/\s+/g, ' ').trim();
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
 }

@@ -1,10 +1,13 @@
 import type { AgentDriver, AgentRequest } from '../core/agent.js';
 import type { AgentUsage, AgentStepResult } from '../core/run.js';
 import type { EventSink } from '../core/events.js';
-import { JsonlProcess, type JsonObject } from '../process/jsonl-process.js';
+import { JsonlProcess, MAX_JSONL_RECORD_BYTES, type JsonObject } from '../process/jsonl-process.js';
 import { AgentDriverError } from './contract.js';
+import { isReadOnlyPiTool } from '../pi-tools.js';
 
-export const MAX_AGENT_RESULT_BYTES = 8 * 1024 * 1024;
+// JSON.stringify can expand control characters to six bytes, so reserve the
+// worst-case escaping overhead as well as the JSONL envelope.
+export const MAX_AGENT_RESULT_BYTES = Math.floor((MAX_JSONL_RECORD_BYTES - 4 * 1024) / 6);
 
 export interface PiDriverOptions {
   command?: string;
@@ -40,6 +43,7 @@ export class PiDriver implements AgentDriver {
     let eventError: unknown;
     const resultSize = { value: 0 };
     let eventProcessing = Promise.resolve();
+    let acceptingEvents = true;
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
     });
@@ -57,6 +61,7 @@ export class PiDriver implements AgentDriver {
       sendAbort();
     };
     const removeListener = process.onMessage((message) => {
+      if (!acceptingEvents) return;
       eventProcessing = eventProcessing
         .then(async () => {
           if (eventError) return;
@@ -75,6 +80,8 @@ export class PiDriver implements AgentDriver {
     });
     signal.addEventListener('abort', abortListener, { once: true });
 
+    let result: AgentStepResult | undefined;
+    let failure: unknown;
     try {
       // Profile timeout applies independently to each RPC or settling phase.
       await process.request(
@@ -100,35 +107,53 @@ export class PiDriver implements AgentDriver {
         { type: 'get_session_stats' },
         { timeoutMs: request.profile.timeoutMs, signal },
       );
-      const result: AgentStepResult = { text: finalText ?? textParts.join('') };
+      result = { text: finalText ?? textParts.join('') };
       const sessionId = readSessionId(state);
       const usage = readUsage(stats);
       const costUsd = readCost(stats);
       if (sessionId) result.sessionId = sessionId;
       if (usage) result.usage = usage;
       if (costUsd !== undefined) result.costUsd = costUsd;
-      return result;
     } catch (error) {
       if (signal.aborted) {
         sendAbort();
         await waitForSettled(settled, CANCELLATION_GRACE_MS, sendAbort).catch(() => undefined);
-        throw new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED');
-      }
-      if (error instanceof AgentDriverError) throw error;
-      if (error instanceof Error && error.message.includes('timed out')) {
+        failure = new AgentDriverError('Pi execution cancelled', 'PI_CANCELLED');
+      } else if (error instanceof AgentDriverError) {
+        failure = error;
+      } else if (error instanceof Error && error.message.includes('timed out')) {
         sendAbort();
-        throw new AgentDriverError('Pi execution timed out', 'PI_TIMEOUT', true);
+        failure = new AgentDriverError('Pi execution timed out', 'PI_TIMEOUT', true);
+      } else {
+        failure = new AgentDriverError(
+          `Pi RPC failed: ${error instanceof Error ? error.message : String(error)}`,
+          'PI_RPC_FAILED',
+          true,
+        );
       }
-      throw new AgentDriverError(
-        `Pi RPC failed: ${error instanceof Error ? error.message : String(error)}`,
-        'PI_RPC_FAILED',
-        true,
-      );
     } finally {
       signal.removeEventListener('abort', abortListener);
+      acceptingEvents = false;
       removeListener();
-      await process.terminate();
+      await eventProcessing;
+      try {
+        await process.terminate();
+      } catch (cleanupError) {
+        failure ??= cleanupError;
+      }
     }
+    if (!failure && eventError) {
+      failure =
+        eventError instanceof AgentDriverError
+          ? eventError
+          : new AgentDriverError(
+              `Pi RPC failed: ${eventError instanceof Error ? eventError.message : String(eventError)}`,
+              'PI_RPC_FAILED',
+              true,
+            );
+    }
+    if (failure) throw failure;
+    return result!;
   }
 }
 
@@ -163,10 +188,10 @@ function validateProfile(request: AgentRequest): void {
   }
   if (
     request.profile.workspaceMode === 'read-only' &&
-    request.profile.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')
+    request.profile.tools.some((tool) => !isReadOnlyPiTool(tool))
   ) {
     throw new AgentDriverError(
-      'Read-only Pi profiles cannot enable write, edit, or bash tools',
+      'Read-only Pi profiles may only enable ls, find, or read tools',
       'PI_INVALID_PROFILE',
     );
   }

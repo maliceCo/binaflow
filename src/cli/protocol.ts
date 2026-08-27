@@ -12,6 +12,96 @@ export interface CliErrorPayload {
   message: string;
 }
 
+export interface RunDto {
+  id: string;
+  workflowId: string;
+  workflowVersion: number;
+  objective: string;
+  status: WorkflowRun['status'];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StepRunDto {
+  runId: string;
+  stepId: string;
+  profile: string;
+  status: StepRun['status'];
+  attempt: number;
+  profileSnapshot?: ProfileSnapshotDto;
+  startedAt?: string;
+  finishedAt?: string;
+  result?: AgentStepResultDto;
+  disposition?: StepDispositionDto;
+  skipReason?: StepSkipReasonDto;
+  error?: StepErrorDto;
+  approval?: ApprovalDto;
+}
+
+export interface ProfileSnapshotDto {
+  driver: string;
+  provider?: string;
+  model: string;
+  thinking?: string;
+  tools: string[];
+  workspaceMode: 'read-only' | 'read-write';
+  projectTrust?: 'never' | 'always';
+  timeoutMs: number;
+  retryLimit: number;
+}
+
+export interface AgentStepResultDto {
+  text: string;
+  sessionId?: string;
+  usage?: AgentUsageDto;
+  costUsd?: number;
+}
+
+export interface AgentUsageDto {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
+export type StepDispositionDto =
+  { kind: 'continue' } | { kind: 'stop'; code: string; message: string };
+
+export interface StepSkipReasonDto {
+  code: string;
+  message: string;
+}
+
+export interface StepErrorDto {
+  message: string;
+  code?: string;
+  retryable: boolean;
+}
+
+export interface ApprovalDto {
+  decision?: 'approved' | 'rejected';
+  feedback?: string;
+  decidedAt?: string;
+}
+
+export interface ArtifactDto {
+  id: string;
+  runId: string;
+  stepId: string;
+  name: string;
+  kind: ArtifactReference['kind'];
+  path: string;
+  mediaType: string;
+  sizeBytes: number;
+}
+
+export interface EventDto {
+  runId: string;
+  stepId: string;
+  type: NormalizedEvent['type'];
+  message: string;
+  occurredAt: string;
+}
+
 export interface CliResult<T> {
   protocol: typeof CLI_PROTOCOL;
   version: typeof CLI_PROTOCOL_VERSION;
@@ -42,7 +132,7 @@ export interface RunEventRecord {
   version: typeof CLI_PROTOCOL_VERSION;
   type: 'event';
   sequence: number;
-  event: NormalizedEvent;
+  event: EventDto;
 }
 
 export interface RunFinishedRecord {
@@ -50,9 +140,9 @@ export interface RunFinishedRecord {
   version: typeof CLI_PROTOCOL_VERSION;
   type: 'run.finished';
   command: string;
-  run: WorkflowRun;
-  steps: StepRun[];
-  artifacts: ArtifactReference[];
+  run: RunDto;
+  steps: StepRunDto[];
+  artifacts: ArtifactDto[];
 }
 
 export interface RunFailedRecord {
@@ -130,6 +220,61 @@ export function writeJsonl(
   process.stdout.write(`${JSON.stringify(record)}\n`);
 }
 
+export function toRunDto(run: WorkflowRun): RunDto {
+  return {
+    id: run.id,
+    workflowId: run.workflowId,
+    workflowVersion: run.workflowVersion,
+    objective: run.objective,
+    status: run.status,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
+  };
+}
+
+export function toStepRunDto(step: StepRun): StepRunDto {
+  return {
+    runId: step.runId,
+    stepId: step.stepId,
+    profile: step.profile,
+    status: step.status,
+    attempt: step.attempt,
+    ...(step.profileSnapshot
+      ? { profileSnapshot: toProfileSnapshotDto(step.profileSnapshot) }
+      : {}),
+    ...(step.startedAt ? { startedAt: step.startedAt } : {}),
+    ...(step.finishedAt ? { finishedAt: step.finishedAt } : {}),
+    ...(step.result ? { result: toResultDto(step.result) } : {}),
+    ...(step.disposition ? { disposition: toDispositionDto(step.disposition) } : {}),
+    ...(step.skipReason ? { skipReason: toSkipReasonDto(step.skipReason) } : {}),
+    ...(step.error ? { error: toErrorDto(step.error) } : {}),
+    ...(step.approval ? { approval: toApprovalDto(step.approval) } : {}),
+  };
+}
+
+export function toArtifactDto(artifact: ArtifactReference): ArtifactDto {
+  return {
+    id: artifact.id,
+    runId: artifact.runId,
+    stepId: artifact.stepId,
+    name: artifact.name,
+    kind: artifact.kind,
+    path: artifact.path,
+    mediaType: artifact.mediaType,
+    sizeBytes: artifact.sizeBytes,
+  };
+}
+
+export function toEventDto(event: NormalizedEvent): EventDto {
+  return {
+    runId: event.runId,
+    stepId: event.stepId,
+    type: event.type,
+    message: event.message,
+    occurredAt: event.occurredAt,
+  };
+}
+
 export function runStartedRecord(
   command: string,
   runId: string,
@@ -151,7 +296,7 @@ export function runEventRecord(sequence: number, event: NormalizedEvent): RunEve
     version: CLI_PROTOCOL_VERSION,
     type: 'event',
     sequence,
-    event,
+    event: toEventDto(event),
   };
 }
 
@@ -225,9 +370,74 @@ export function runFinishedRecord(
     version: CLI_PROTOCOL_VERSION,
     type: 'run.finished',
     command,
-    run,
-    steps,
-    artifacts,
+    run: toRunDto(run),
+    steps: steps.map(toStepRunDto),
+    artifacts: artifacts.map(toArtifactDto),
+  };
+}
+
+function toResultDto(result: NonNullable<StepRun['result']>): NonNullable<StepRunDto['result']> {
+  return {
+    text: result.text,
+    ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+    ...(result.usage
+      ? {
+          usage: {
+            ...(result.usage.inputTokens !== undefined
+              ? { inputTokens: result.usage.inputTokens }
+              : {}),
+            ...(result.usage.outputTokens !== undefined
+              ? { outputTokens: result.usage.outputTokens }
+              : {}),
+            ...(result.usage.totalTokens !== undefined
+              ? { totalTokens: result.usage.totalTokens }
+              : {}),
+          },
+        }
+      : {}),
+    ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
+  };
+}
+
+function toProfileSnapshotDto(
+  snapshot: NonNullable<StepRun['profileSnapshot']>,
+): ProfileSnapshotDto {
+  return {
+    driver: snapshot.driver,
+    ...(snapshot.provider ? { provider: snapshot.provider } : {}),
+    model: snapshot.model,
+    ...(snapshot.thinking ? { thinking: snapshot.thinking } : {}),
+    tools: [...snapshot.tools],
+    workspaceMode: snapshot.workspaceMode,
+    ...(snapshot.projectTrust ? { projectTrust: snapshot.projectTrust } : {}),
+    timeoutMs: snapshot.timeoutMs,
+    retryLimit: snapshot.retryLimit,
+  };
+}
+
+function toDispositionDto(disposition: NonNullable<StepRun['disposition']>): StepDispositionDto {
+  return disposition.kind === 'continue'
+    ? { kind: 'continue' }
+    : { kind: 'stop', code: disposition.code, message: disposition.message };
+}
+
+function toSkipReasonDto(reason: NonNullable<StepRun['skipReason']>): StepSkipReasonDto {
+  return { code: reason.code, message: reason.message };
+}
+
+function toErrorDto(error: NonNullable<StepRun['error']>): StepErrorDto {
+  return {
+    message: error.message,
+    ...(error.code ? { code: error.code } : {}),
+    retryable: error.retryable,
+  };
+}
+
+function toApprovalDto(approval: NonNullable<StepRun['approval']>): ApprovalDto {
+  return {
+    ...(approval.decision ? { decision: approval.decision } : {}),
+    ...(approval.feedback ? { feedback: approval.feedback } : {}),
+    ...(approval.decidedAt ? { decidedAt: approval.decidedAt } : {}),
   };
 }
 

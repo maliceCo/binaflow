@@ -20,6 +20,7 @@ export {
   explainRunRecovery,
   findWaitingApprovalStep,
   inspectRun,
+  isResearchIterationExhausted,
   listRunEvents,
   listRuns,
   markRunInterrupted,

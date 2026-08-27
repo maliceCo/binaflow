@@ -43,7 +43,7 @@ export function DiagnosisScreen({
       title="Diagnosis"
       subtitle="Configuration readiness"
       status={refreshing ? 'refreshing diagnosis...' : (error ?? '')}
-      footer="j/k or arrows scroll | PageUp/PageDown page | r refresh | q back"
+      footer="j/k or arrows scroll | r refresh | q quit"
       colors={colors}
       border={false}
     >

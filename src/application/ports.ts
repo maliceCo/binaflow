@@ -3,6 +3,7 @@ import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
+import type { WorkflowRuntime } from '../core/workflow-runtime.js';
 
 export interface ApplicationArtifactStore {
   read(artifact: ArtifactReference): Promise<string>;
@@ -18,6 +19,17 @@ export interface ApplicationArtifactStore {
 export interface WorkflowExecutor {
   execute(workflow: WorkflowDefinition, request: ExecuteWorkflowRequest): Promise<WorkflowRun>;
 }
+
+export type ResearchWorkflowRuntime = Pick<
+  WorkflowRuntime,
+  | 'resolveInput'
+  | 'prepareRun'
+  | 'notifyRunStarted'
+  | 'executeStep'
+  | 'skipStep'
+  | 'saveRunStatus'
+  | 'emitStatus'
+>;
 
 export interface ApplicationRunListQuery {
   limit?: number;

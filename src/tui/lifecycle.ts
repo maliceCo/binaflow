@@ -103,6 +103,7 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
       return forceSignal;
     },
     beginOperation() {
+      if (stopping) throw new Error('Application context is closing.');
       if (operationActive || operation) throw new Error('An attached operation is already active.');
       controller = new AbortController();
       cancellationRequested = false;

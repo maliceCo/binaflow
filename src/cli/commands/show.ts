@@ -1,5 +1,13 @@
 import type { Command } from 'commander';
-import { machineMode, rejectUnsupportedJsonl } from '../protocol.js';
+import {
+  machineMode,
+  rejectUnsupportedJsonl,
+  toArtifactDto,
+  toEventDto,
+  toRunDto,
+  toStepRunDto,
+} from '../protocol.js';
+import { sanitizeTerminalText } from '../../presentation/text.js';
 
 export function registerShowCommand(cli: Command): void {
   cli
@@ -28,11 +36,11 @@ export function registerShowCommand(cli: Command): void {
             });
             const { run, steps, artifacts, eventCount, events } = inspection;
             printMachineResult('show', {
-              run,
-              steps,
-              artifacts,
+              run: toRunDto(run),
+              steps: steps.map(toStepRunDto),
+              artifacts: artifacts.map(toArtifactDto),
               eventCount,
-              ...(options.events ? { events: events ?? [] } : {}),
+              ...(options.events ? { events: (events ?? []).map(toEventDto) } : {}),
             });
             return;
           }
@@ -46,7 +54,7 @@ export function registerShowCommand(cli: Command): void {
             console.log(`\nEvents (${inspection.events.length})`);
             for (const event of inspection.events) {
               console.log(
-                `  ${event.occurredAt}  [${event.stepId}] ${event.type}: ${event.message}`,
+                `  ${event.occurredAt}  [${event.stepId}] ${event.type}: ${sanitizeTerminalText(event.message)}`,
               );
             }
           } else if (view.eventCount > 0) {

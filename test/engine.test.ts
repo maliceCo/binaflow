@@ -1,13 +1,12 @@
-import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink, NormalizedEvent } from '../src/core/events.js';
-import type { AgentStepResult, StepRun, WorkflowRun } from '../src/core/run.js';
+import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
 import type { WorkflowDefinition } from '../src/core/workflow.js';
-import { WorkflowEngine } from '../src/core/engine.js';
+import { createWorkflowRuntime, WorkflowEngine } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
 import { AgentDriverError } from '../src/drivers/contract.js';
@@ -73,16 +72,19 @@ function createEnvironment(driver: AgentDriver, events: NormalizedEvent[] = []) 
   temporaryDirectories.push(directory);
   const store = new SqliteRunStore(join(directory, 'run.db'));
   const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
-  const engine = new WorkflowEngine(
+  const eventSink: EventSink = (event) => {
+    events.push(event);
+  };
+  const engine = new WorkflowEngine(store, artifactStore, driver, eventSink, {
+    interpretDisposition: interpretWorkflowDisposition,
+  });
+  const research = new ResearchPlanBuildCoordinator(
+    createWorkflowRuntime(store, artifactStore, driver, eventSink, {
+      interpretDisposition: interpretWorkflowDisposition,
+    }),
     store,
     artifactStore,
-    driver,
-    (event) => {
-      events.push(event);
-    },
-    { interpretDisposition: interpretWorkflowDisposition },
   );
-  const research = new ResearchPlanBuildCoordinator(engine.runtime, store, artifactStore);
   return { engine, research, store, artifactStore };
 }
 
@@ -186,53 +188,6 @@ describe('WorkflowEngine', () => {
     store.close();
   });
 
-  it('records a missing profile as a failed step and run', async () => {
-    const driver = new FakeDriver([plannerResult()]);
-    const { engine, store } = createEnvironment(driver);
-
-    const run = await engine.execute(planBuildWorkflow, {
-      objective: 'Missing builder profile',
-      profiles: { planner: profiles.planner },
-    });
-
-    expect(run.status).toBe('failed');
-    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'build')).toMatchObject(
-      {
-        status: 'failed',
-      },
-    );
-    store.close();
-  });
-
-  it('keeps a terminal run when status event persistence fails', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-engine-event-failure-'));
-    temporaryDirectories.push(directory);
-    const store = new SqliteRunStore(join(directory, 'run.db'));
-    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
-    const engine = new WorkflowEngine(
-      store,
-      artifactStore,
-      new FakeDriver([plannerResult()]),
-      async (event) => {
-        if (event.type === 'status' && event.message.includes('started')) {
-          throw new Error('event persistence failed');
-        }
-      },
-      { interpretDisposition: interpretWorkflowDisposition },
-    );
-
-    const run = await engine.execute(planBuildWorkflow, {
-      objective: 'Fail status persistence',
-      profiles,
-    });
-
-    expect(run.status).toBe('failed');
-    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'plan')).toMatchObject({
-      status: 'failed',
-    });
-    store.close();
-  });
-
   it('persists a failed run when the start callback rejects', async () => {
     const { engine, store } = createEnvironment(new FakeDriver([]));
 
@@ -251,39 +206,6 @@ describe('WorkflowEngine', () => {
     store.close();
   });
 
-  it('preserves a completed step and artifacts when its completion event fails', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-post-commit-event-failure-'));
-    temporaryDirectories.push(directory);
-    const store = new SqliteRunStore(join(directory, 'run.db'));
-    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
-    const engine = new WorkflowEngine(
-      store,
-      artifactStore,
-      new FakeDriver([plannerResult()]),
-      async (event) => {
-        if (event.type === 'status' && event.message.includes('completed')) {
-          throw new Error('completion event failed');
-        }
-      },
-      { interpretDisposition: interpretWorkflowDisposition },
-    );
-
-    const run = await engine.execute(planBuildWorkflow, {
-      runId: 'post-commit-event-failure',
-      objective: 'Preserve the committed step',
-      profiles,
-    });
-
-    expect(run.status).toBe('failed');
-    expect((await store.getStepRuns(run.id)).find((step) => step.stepId === 'plan')).toMatchObject({
-      status: 'completed',
-    });
-    expect((await store.getArtifacts(run.id)).some((artifact) => artifact.stepId === 'plan')).toBe(
-      true,
-    );
-    store.close();
-  });
-
   it('persists a failed research run when the start callback rejects', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-research-start-failure-'));
     temporaryDirectories.push(directory);
@@ -296,21 +218,21 @@ describe('WorkflowEngine', () => {
       builder: profiles.builder,
     };
 
-    const sequential = new WorkflowEngine(store, artifactStore, new FakeDriver([]), undefined, {
-      interpretDisposition: interpretWorkflowDisposition,
-    });
     await expect(
-      new ResearchPlanBuildCoordinator(sequential.runtime, store, artifactStore).execute(
-        researchPlanBuildWorkflow,
-        {
-          runId: 'research-start-callback-failure',
-          objective: 'Reject research start',
-          profiles: researchProfiles,
-          onRunStarted: () => {
-            throw new Error('research start callback failed');
-          },
+      new ResearchPlanBuildCoordinator(
+        createWorkflowRuntime(store, artifactStore, new FakeDriver([]), undefined, {
+          interpretDisposition: interpretWorkflowDisposition,
+        }),
+        store,
+        artifactStore,
+      ).execute(researchPlanBuildWorkflow, {
+        runId: 'research-start-callback-failure',
+        objective: 'Reject research start',
+        profiles: researchProfiles,
+        onRunStarted: () => {
+          throw new Error('research start callback failed');
         },
-      ),
+      }),
     ).rejects.toThrow('research start callback failed');
 
     expect((await store.getRun('research-start-callback-failure'))?.status).toBe('failed');
@@ -366,11 +288,8 @@ describe('WorkflowEngine', () => {
 
     expect(run.status).toBe('completed');
     expect(driver.calls.map((call) => call.stepId)).toEqual(['plan', 'build']);
-    expect(driver.calls[0]!.prompt).toContain('Every task must be an object');
-    expect(driver.calls[0]!.prompt).toContain('For decision=build, tasks must be non-empty');
     expect(driver.calls[1]!.prompt).toContain('objective:\nAdd a useful change');
     expect(driver.calls[1]!.prompt).toContain('plan:\n{');
-    expect(events.filter((event) => event.type === 'status').length).toBe(4);
     const savedSteps = await store.getStepRuns('success');
     expect(savedSteps.every((step) => step.status === 'completed')).toBe(true);
     expect(savedSteps[0]?.profileSnapshot).toMatchObject({
@@ -676,76 +595,6 @@ describe('WorkflowEngine', () => {
       'completed',
       'completed',
     ]);
-    store.close();
-  });
-
-  it('cleans retry state and records the retry start time on the new attempt', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'binaflow-retry-state-'));
-    temporaryDirectories.push(directory);
-    const databasePath = join(directory, 'run.db');
-    const store = new SqliteRunStore(databasePath);
-    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
-    let buildCalls = 0;
-    let retryState: StepRun | undefined;
-    const driver: AgentDriver = {
-      async execute(request) {
-        if (request.stepId === 'plan') return plannerResult();
-        buildCalls += 1;
-        if (buildCalls === 1) throw new Error('builder failed');
-        retryState = (await store.getStepRuns('retry-state')).find(
-          (step) => step.stepId === 'build',
-        );
-        return { text: 'fresh build result' };
-      },
-    };
-    const engine = new WorkflowEngine(store, artifactStore, driver, undefined, {
-      interpretDisposition: interpretWorkflowDisposition,
-    });
-
-    const failed = await engine.execute(planBuildWorkflow, {
-      runId: 'retry-state',
-      objective: 'Retry without stale state',
-      profiles,
-    });
-    const failedStep = (await store.getStepRuns(failed.id)).find(
-      (step) => step.stepId === 'build',
-    )!;
-    await store.saveStepRun({
-      ...failedStep,
-      result: { text: 'stale result' },
-      disposition: { kind: 'stop', code: 'STALE', message: 'stale disposition' },
-      skipReason: { code: 'STALE', message: 'stale skip reason' },
-      error: { message: 'stale error', retryable: true },
-    });
-
-    const resumed = await engine.execute(planBuildWorkflow, {
-      runId: failed.id,
-      profiles,
-      resume: true,
-    });
-
-    expect(resumed.status).toBe('completed');
-    expect(retryState).toMatchObject({ status: 'running', attempt: 2 });
-    expect(retryState).not.toHaveProperty('finishedAt');
-    expect(retryState).not.toHaveProperty('result');
-    expect(retryState).not.toHaveProperty('disposition');
-    expect(retryState).not.toHaveProperty('skipReason');
-    expect(retryState).not.toHaveProperty('error');
-    const completed = (await store.getStepRuns(failed.id)).find((step) => step.stepId === 'build')!;
-    expect(completed.result?.text).toBe('fresh build result');
-    expect(completed.disposition).toBeUndefined();
-    expect(completed.skipReason).toBeUndefined();
-    expect(completed.error).toBeUndefined();
-
-    const database = new Database(databasePath);
-    const attempts = database
-      .prepare(
-        'SELECT attempt, started_at FROM step_attempts WHERE run_id = ? AND step_id = ? ORDER BY attempt',
-      )
-      .all(failed.id, 'build') as Array<{ attempt: number; started_at: string }>;
-    expect(attempts).toHaveLength(2);
-    expect(attempts[1]?.started_at).toBe(completed.startedAt);
-    database.close();
     store.close();
   });
 

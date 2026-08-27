@@ -1,11 +1,5 @@
 import type { Command } from 'commander';
-import {
-  exitCodeFor,
-  machineMode,
-  runStartedRecord,
-  writeJsonl,
-  writeJsonlFailure,
-} from '../protocol.js';
+import { machineMode, runStartedRecord, writeJsonl } from '../protocol.js';
 
 export function registerResumeCommand(cli: Command): void {
   cli
@@ -14,65 +8,57 @@ export function registerResumeCommand(cli: Command): void {
     .argument('<run-id>', 'run ID')
     .action(async (runId: string, _options: unknown, command: Command) => {
       const {
-        installSignalHandlers,
-        openContext,
         printRunSummary,
         printMachineRunResult,
         printHumanProgress,
         rootOptions,
+        runAttachedCli,
       } = await import('./common.js');
       const optionsAtRoot = rootOptions(command);
       const mode = machineMode(optionsAtRoot);
-      const context = await openContext(optionsAtRoot);
-      const controller = new AbortController();
-      const signalHandlers = installSignalHandlers(controller, runId);
-      try {
-        let started = false;
-        try {
-          const result = await context.application.resumeWorkflow({
-            runId,
-            signal: controller.signal,
-            onRunStarted: (startedRun) => {
-              started = true;
-              if (!mode) {
+      await runAttachedCli(optionsAtRoot, runId, 'resume', async (context, lifecycle) => {
+        const result = await context.application.resumeWorkflow({
+          runId,
+          signal: lifecycle.signal,
+          onRunStarted: (startedRun) => {
+            lifecycle.markStarted();
+            if (!mode) {
+              lifecycle.streamFailure.write(() =>
                 printHumanProgress(
                   `Resuming run ${startedRun.id}  workflow=${startedRun.workflowId}`,
-                );
-              }
-              if (mode === 'jsonl') {
-                writeJsonl(runStartedRecord('resume', startedRun.id, startedRun.workflowId));
-              }
-            },
-          });
-          const run = result.run;
-          if (mode === 'jsonl' && result.alreadyCompleted) {
-            started = true;
-            writeJsonl(runStartedRecord('resume', run.id, run.workflowId));
-          }
-          if (mode) await printMachineRunResult('resume', run, context, mode);
-          else {
-            const inspection = await context.application.inspectRun(run.id, {
-              includeStepResults: true,
-            });
-            const view = await context.application.getRunView(run.id);
-            printRunSummary(view, inspection.steps);
-          }
-          if (run.status === 'failed' || run.status === 'cancelled') {
-            process.exitCode = run.status === 'cancelled' ? 130 : 1;
-          }
-        } catch (error) {
-          if (mode === 'jsonl' && started) {
-            writeJsonlFailure('resume', runId, error);
-            process.exitCode = exitCodeFor(error);
-            return;
-          }
-          throw error;
-        } finally {
-          signalHandlers.remove();
+                ),
+              );
+            }
+            if (mode === 'jsonl') {
+              lifecycle.streamFailure.write(() =>
+                writeJsonl(runStartedRecord('resume', startedRun.id, startedRun.workflowId)),
+              );
+            }
+          },
+        });
+        const run = result.run;
+        if (mode === 'jsonl' && result.alreadyCompleted) {
+          lifecycle.markStarted();
+          lifecycle.streamFailure.write(() =>
+            writeJsonl(runStartedRecord('resume', run.id, run.workflowId)),
+          );
         }
-      } finally {
-        context.close();
-        signalHandlers.completeCleanup();
-      }
+        if (lifecycle.streamFailure.failed) {
+          process.exitCode = 1;
+          return;
+        }
+        if (mode) {
+          await printMachineRunResult('resume', run, context, mode, lifecycle.streamFailure.write);
+        } else {
+          const inspection = await context.application.inspectRun(run.id, {
+            includeStepResults: true,
+          });
+          const view = await context.application.getRunView(run.id);
+          lifecycle.streamFailure.write(() => printRunSummary(view, inspection.steps));
+        }
+        if (run.status === 'failed' || run.status === 'cancelled') {
+          process.exitCode = run.status === 'cancelled' ? 130 : 1;
+        }
+      });
     });
 }

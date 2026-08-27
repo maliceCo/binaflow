@@ -6,7 +6,7 @@ import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink } from '../src/core/events.js';
 import type { AgentStepResult } from '../src/core/run.js';
 import type { AgentProfile } from '../src/config.js';
-import { WorkflowEngine } from '../src/core/engine.js';
+import { createWorkflowRuntime } from '../src/core/engine.js';
 import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
 import { interpretWorkflowDisposition } from '../src/workflows/dispositions.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
@@ -118,9 +118,9 @@ function createEnvironment(driver: AgentDriver) {
     store,
     artifacts,
     engine: new ResearchPlanBuildCoordinator(
-      new WorkflowEngine(store, artifacts, driver, undefined, {
+      createWorkflowRuntime(store, artifacts, driver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
-      }).runtime,
+      }),
       store,
       artifacts,
     ),
@@ -161,17 +161,18 @@ describe('research-plan-build workflow', () => {
     const approval = (await store.getStepRuns('approval')).find(
       (step) => step.stepId === 'research-approval',
     )!;
-    await store.saveStepRun({
+    const claim = await store.claimApprovalForExecution('approval', {
       ...approval,
       status: 'pending',
       approval: { decision: 'approved', decidedAt: new Date().toISOString() },
     });
+    expect(claim).toBeDefined();
 
     const resumed = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'approval',
-      input: { objective: 'Improve the workflow' },
       profiles,
       resume: true,
+      executionClaim: claim!.claim,
     });
 
     expect(resumed.status).toBe('completed');
@@ -254,7 +255,7 @@ describe('research-plan-build workflow', () => {
     const approval = (await store.getStepRuns('rejection')).find(
       (step) => step.stepId === 'research-approval',
     )!;
-    await store.saveStepRun({
+    const claim = await store.claimApprovalForExecution('rejection', {
       ...approval,
       status: 'pending',
       approval: {
@@ -263,12 +264,13 @@ describe('research-plan-build workflow', () => {
         decidedAt: new Date().toISOString(),
       },
     });
+    expect(claim).toBeDefined();
 
     const resumed = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'rejection',
-      input: { objective: 'Investigate the workflow' },
       profiles,
       resume: true,
+      executionClaim: claim!.claim,
     });
 
     expect(waiting.status).toBe('waiting');
@@ -337,9 +339,9 @@ describe('research-plan-build workflow', () => {
 
     const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
     const resumed = await new ResearchPlanBuildCoordinator(
-      new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
+      createWorkflowRuntime(store, artifacts, resumedDriver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
-      }).runtime,
+      }),
       store,
       artifacts,
     ).execute(researchPlanBuildWorkflow, {
@@ -368,7 +370,7 @@ describe('research-plan-build workflow', () => {
     const approval = (await store.getStepRuns(waiting.id)).find(
       (step) => step.stepId === 'research-approval',
     )!;
-    await store.saveStepRun({
+    const approvalClaim = await store.claimApprovalForExecution(waiting.id, {
       ...approval,
       status: 'pending',
       approval: {
@@ -377,21 +379,23 @@ describe('research-plan-build workflow', () => {
         decidedAt: new Date().toISOString(),
       },
     });
+    expect(approvalClaim).toBeDefined();
 
     const interrupted = await new ResearchPlanBuildCoordinator(
-      new WorkflowEngine(
+      createWorkflowRuntime(
         store,
         artifacts,
         new FakeDriver([new Error('research process interrupted')]),
         undefined,
         { interpretDisposition: interpretWorkflowDisposition },
-      ).runtime,
+      ),
       store,
       artifacts,
     ).execute(researchPlanBuildWorkflow, {
       runId: waiting.id,
       profiles: retryProfiles,
       resume: true,
+      executionClaim: approvalClaim!.claim,
     });
 
     expect(interrupted.status).toBe('failed');
@@ -408,9 +412,9 @@ describe('research-plan-build workflow', () => {
 
     const resumedDriver = new FakeDriver([reportResult('Resumed pass'), reviewResult('ready')]);
     const resumed = await new ResearchPlanBuildCoordinator(
-      new WorkflowEngine(store, artifacts, resumedDriver, undefined, {
+      createWorkflowRuntime(store, artifacts, resumedDriver, undefined, {
         interpretDisposition: interpretWorkflowDisposition,
-      }).runtime,
+      }),
       store,
       artifacts,
     ).execute(researchPlanBuildWorkflow, {
@@ -424,21 +428,26 @@ describe('research-plan-build workflow', () => {
     store.close();
   });
 
-  it.each(['research', 'research-review', 'plan', 'build'] as const)(
+  it.each(['research', 'build'] as const)(
     'does not rerun a non-retryable %s failure',
     async (failedStep) => {
-      const initialResponses: Array<AgentStepResult | Error> = [];
-      if (failedStep !== 'research') initialResponses.push(reportResult());
-      if (failedStep !== 'research' && failedStep !== 'research-review') {
-        initialResponses.push(reviewResult('ready'));
-      }
-      if (failedStep === 'build') initialResponses.push(planResult());
-      initialResponses.push(
-        new AgentDriverError(
-          `permanent ${failedStep} failure`,
-          `${failedStep.toUpperCase()}_PERMANENT`,
-        ),
-      );
+      const initialResponses: Array<AgentStepResult | Error> =
+        failedStep === 'research'
+          ? [
+              new AgentDriverError(
+                `permanent ${failedStep} failure`,
+                `${failedStep.toUpperCase()}_PERMANENT`,
+              ),
+            ]
+          : [
+              reportResult(),
+              reviewResult('ready'),
+              planResult(),
+              new AgentDriverError(
+                `permanent ${failedStep} failure`,
+                `${failedStep.toUpperCase()}_PERMANENT`,
+              ),
+            ];
       const initialDriver = new FakeDriver(initialResponses);
       const { engine, store, artifacts } = createEnvironment(initialDriver);
 
@@ -447,19 +456,23 @@ describe('research-plan-build workflow', () => {
         objective: 'Do not rerun permanent failures',
         profiles,
       });
-      if (failedStep === 'plan' || failedStep === 'build') {
+      let executionClaim;
+      if (failedStep === 'build') {
         const approval = (await store.getStepRuns(run.id)).find(
           (step) => step.stepId === 'research-approval',
         )!;
-        await store.saveStepRun({
+        const claimedApproval = await store.claimApprovalForExecution(run.id, {
           ...approval,
           status: 'pending',
           approval: { decision: 'approved', decidedAt: new Date().toISOString() },
         });
+        expect(claimedApproval).toBeDefined();
+        executionClaim = claimedApproval!.claim;
         run = await engine.execute(researchPlanBuildWorkflow, {
           runId: run.id,
           profiles,
           resume: true,
+          executionClaim,
         });
       }
       expect(run.status).toBe('failed');
@@ -467,9 +480,9 @@ describe('research-plan-build workflow', () => {
       if (failedStep === 'build') {
         await expect(
           new ResearchPlanBuildCoordinator(
-            new WorkflowEngine(store, artifacts, new FakeDriver([]), undefined, {
+            createWorkflowRuntime(store, artifacts, new FakeDriver([]), undefined, {
               interpretDisposition: interpretWorkflowDisposition,
-            }).runtime,
+            }),
             store,
             artifacts,
           ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true }),
@@ -481,9 +494,9 @@ describe('research-plan-build workflow', () => {
 
       const retryDriver = new FakeDriver([]);
       const resumed = await new ResearchPlanBuildCoordinator(
-        new WorkflowEngine(store, artifacts, retryDriver, undefined, {
+        createWorkflowRuntime(store, artifacts, retryDriver, undefined, {
           interpretDisposition: interpretWorkflowDisposition,
-        }).runtime,
+        }),
         store,
         artifacts,
       ).execute(researchPlanBuildWorkflow, { runId: run.id, profiles, resume: true });

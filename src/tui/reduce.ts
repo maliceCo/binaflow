@@ -150,9 +150,6 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
       return nextSetupStep(next);
     }
-    case 'setup-values':
-      if (state.overlay !== 'setup') return state;
-      return { ...state, setupValues: event.values };
     case 'setup-models':
       return { ...clearField(state, 'effect'), setupModels: event.models };
     case 'setup-save':
@@ -288,10 +285,11 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
     case 'run-finished':
       if (state.runView?.status === event.status) {
-        return { ...state, cancellationRequested: false };
+        return { ...state, status: undefined, cancellationRequested: false };
       }
       return {
         ...state,
+        status: undefined,
         detail:
           event.status === 'waiting'
             ? 'approval'
@@ -321,7 +319,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         detail: 'artifacts',
         selection: 0,
         offset: 0,
-        artifactSelected: 0,
+        artifactSelected: state.detail === 'result' ? state.selection : 0,
         artifactOffset: 0,
         artifactContentOffset: 0,
       };
@@ -367,6 +365,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
               : 'inspect';
       const base = {
         ...state,
+        status: undefined,
         runView: event.view,
         clarifications: event.clarifications,
         detail,
@@ -395,13 +394,6 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return {
         ...clearField(state, 'error'),
         overlay: 'recovery-confirm',
-        inputValue: '',
-      };
-    case 'open-rejection-feedback':
-      if (state.detail !== 'approval') return state;
-      return {
-        ...clearField(state, 'error'),
-        overlay: 'rejection-feedback',
         inputValue: '',
       };
     case 'close-detail-prompt':
@@ -523,13 +515,12 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     return {
       ...state,
       workflowSelected: clamp(state.workflowSelected + direction, count),
-      workflowOffset: selectionOffset(
-        state.workflowSelected,
-        state.workflowOffset,
+      workflowOffset: moveSelection(
+        { offset: state.workflowOffset, selected: state.workflowSelected },
         direction,
         count,
         visibleRows,
-      ),
+      ).offset,
     };
   }
   if (state.focus === 'runs') {
@@ -538,7 +529,12 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     return {
       ...state,
       runSelected: clamp(state.runSelected + direction, count),
-      runOffset: selectionOffset(state.runSelected, state.runOffset, direction, count, visibleRows),
+      runOffset: moveSelection(
+        { offset: state.runOffset, selected: state.runSelected },
+        direction,
+        count,
+        visibleRows,
+      ).offset,
     };
   }
 
@@ -721,18 +717,6 @@ function previousSetupStep(state: TuiState): TuiState {
 
 function clamp(selected: number, count: number): number {
   return Math.max(0, Math.min(count - 1, selected));
-}
-
-function selectionOffset(
-  selected: number,
-  offset: number,
-  direction: -1 | 1,
-  count: number,
-  visibleRows: number,
-): number {
-  const next = clamp(selected + direction, count);
-  const rows = Math.max(1, visibleRows);
-  return Math.max(0, Math.min(Math.max(0, count - rows), Math.max(offset, next - rows + 1)));
 }
 
 function clearField<T extends object, K extends keyof T>(state: T, key: K): T {

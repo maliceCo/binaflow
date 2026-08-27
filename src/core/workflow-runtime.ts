@@ -66,69 +66,64 @@ export class WorkflowRuntime {
     let failed = false;
     let cancelled = false;
 
-    try {
-      for (const step of resolveStepOrder(workflow)) {
-        if (request.signal?.aborted) {
-          run = await this.saveRunStatus(run, 'cancelled');
-          return run;
-        }
-        const existing = stepRuns.get(step.id);
-        if (existing?.status === 'completed') continue;
-
-        const blockedDependency = step.dependsOn.find((dependency) =>
-          isBlocked(statuses.get(dependency)),
-        );
-        if (blockedDependency) {
-          const skipped = await this.skipStep(run.id, step, existing, {
-            code: 'UPSTREAM_STEP_BLOCKED',
-            message: `Dependency ${blockedDependency} did not complete successfully`,
-          });
-          stepRuns.set(step.id, skipped);
-          statuses.set(step.id, skipped.status);
-          continue;
-        }
-
-        const stoppingDependency = step.dependsOn.find(
-          (dependency) => stepRuns.get(dependency)?.disposition?.kind === 'stop',
-        );
-        if (stoppingDependency) {
-          const disposition = stepRuns.get(stoppingDependency)?.disposition;
-          const skipped = await this.skipStep(run.id, step, existing, {
-            code: disposition?.kind === 'stop' ? disposition.code : 'UPSTREAM_STEP_STOPPED',
-            message:
-              disposition?.kind === 'stop'
-                ? `Dependency ${stoppingDependency} stopped: ${disposition.message}`
-                : `Dependency ${stoppingDependency} stopped before this step`,
-          });
-          stepRuns.set(step.id, skipped);
-          statuses.set(step.id, skipped.status);
-          continue;
-        }
-
-        if (existing && !isStepRetryEligible(existing, request.resume === true)) {
-          failed = true;
-          statuses.set(step.id, existing.status);
-          await this.emitStatus(run.id, step.id, `Step ${step.id} is not retryable`);
-          continue;
-        }
-
-        try {
-          const result = await this.executeStep(run, step, existing, input, artifacts, request);
-          stepRuns.set(step.id, result.stepRun);
-          statuses.set(step.id, result.stepRun.status);
-          artifacts.push(...result.artifacts);
-        } catch (error) {
-          if (!(error instanceof StepExecutionFailure)) throw error;
-          const failure = error.stepRun;
-          cancelled ||= failure.status === 'cancelled';
-          failed ||= failure.status === 'failed';
-          stepRuns.set(step.id, failure);
-          statuses.set(step.id, failure.status);
-        }
+    for (const step of resolveStepOrder(workflow)) {
+      if (request.signal?.aborted) {
+        run = await this.saveRunStatus(run, 'cancelled');
+        return run;
       }
-    } catch {
-      run = await this.saveRunStatus(run, 'failed');
-      return run;
+      const existing = stepRuns.get(step.id);
+      if (existing?.status === 'completed') continue;
+
+      const blockedDependency = step.dependsOn.find((dependency) =>
+        isBlocked(statuses.get(dependency)),
+      );
+      if (blockedDependency) {
+        const skipped = await this.skipStep(run.id, step, existing, {
+          code: 'UPSTREAM_STEP_BLOCKED',
+          message: `Dependency ${blockedDependency} did not complete successfully`,
+        });
+        stepRuns.set(step.id, skipped);
+        statuses.set(step.id, skipped.status);
+        continue;
+      }
+
+      const stoppingDependency = step.dependsOn.find(
+        (dependency) => stepRuns.get(dependency)?.disposition?.kind === 'stop',
+      );
+      if (stoppingDependency) {
+        const disposition = stepRuns.get(stoppingDependency)?.disposition;
+        const skipped = await this.skipStep(run.id, step, existing, {
+          code: disposition?.kind === 'stop' ? disposition.code : 'UPSTREAM_STEP_STOPPED',
+          message:
+            disposition?.kind === 'stop'
+              ? `Dependency ${stoppingDependency} stopped: ${disposition.message}`
+              : `Dependency ${stoppingDependency} stopped before this step`,
+        });
+        stepRuns.set(step.id, skipped);
+        statuses.set(step.id, skipped.status);
+        continue;
+      }
+
+      if (existing && !isStepRetryEligible(existing, request.resume === true)) {
+        failed = true;
+        statuses.set(step.id, existing.status);
+        await this.emitStatus(run.id, step.id, `Step ${step.id} is not retryable`);
+        continue;
+      }
+
+      try {
+        const result = await this.executeStep(run, step, existing, input, artifacts, request);
+        stepRuns.set(step.id, result.stepRun);
+        statuses.set(step.id, result.stepRun.status);
+        artifacts.push(...result.artifacts);
+      } catch (error) {
+        if (!(error instanceof StepExecutionFailure)) throw error;
+        const failure = error.stepRun;
+        cancelled ||= failure.status === 'cancelled';
+        failed ||= failure.status === 'failed';
+        stepRuns.set(step.id, failure);
+        statuses.set(step.id, failure.status);
+      }
     }
 
     run = await this.saveRunStatus(run, cancelled ? 'cancelled' : failed ? 'failed' : 'completed');
@@ -256,6 +251,7 @@ export class WorkflowRuntime {
         startedAt,
       };
       let completedPersisted = false;
+      const savedArtifacts: ArtifactReference[] = [];
 
       try {
         await this.runStore.saveStepRun(running);
@@ -266,7 +262,8 @@ export class WorkflowRuntime {
         const resolvedInputs = await resolveInputs(step, input, artifacts, this.artifactStore);
         const eventQueue = createSerializedEventSink(this.eventSink);
         let result: AgentStepResult | undefined;
-        let executionError: unknown;
+        let driverFailed = false;
+        let driverError: unknown;
         try {
           result = await this.driver.execute(
             {
@@ -279,19 +276,16 @@ export class WorkflowRuntime {
             request.signal ?? new AbortController().signal,
           );
         } catch (error) {
-          executionError = error;
+          driverFailed = true;
+          driverError = error;
         }
-        try {
-          await eventQueue.flush();
-        } catch (error) {
-          executionError ??= error;
-        }
-        if (executionError) throw executionError;
+        await eventQueue.flush();
+        if (driverFailed) throw new DriverStepFailure(driverError);
         if (!result) throw new Error('Agent driver returned no result');
         const stepOutput = this.createOutputContents(step, result);
-        const savedArtifacts = await Promise.all(
-          step.outputs.map((outputDefinition) =>
-            this.artifactStore.write(
+        for (const outputDefinition of step.outputs) {
+          savedArtifacts.push(
+            await this.artifactStore.write(
               run.id,
               step.id,
               outputDefinition.name,
@@ -299,8 +293,8 @@ export class WorkflowRuntime {
               stepOutput.contents.get(outputDefinition.name) ?? result.text,
               outputDefinition.format === 'json' ? 'application/json' : 'text/plain',
             ),
-          ),
-        );
+          );
+        }
         const completed: StepRun = {
           ...running,
           status: 'completed',
@@ -317,15 +311,41 @@ export class WorkflowRuntime {
         return { stepRun: completed, artifacts: savedArtifacts };
       } catch (error) {
         if (completedPersisted) throw error;
+        await this.removeArtifacts(savedArtifacts, run.id, step.id);
         if (error instanceof PlannerSchemaError && !repairAttempted) {
-          await this.recordAttemptFailure(run.id, step, running, error, true);
+          await this.recordAttemptFailure(step, running, error, true);
           pending = createPendingRetry(running);
           await this.runStore.saveStepRun(pending);
           repairAttempted = true;
           continue;
         }
-        const failure = await this.recordFailure(run.id, step, running, error, request);
-        throw new StepExecutionFailure(failure);
+        if (error instanceof PlannerSchemaError) {
+          const failure = await this.recordFailure(run.id, step, running, error, request);
+          throw new StepExecutionFailure(failure);
+        }
+        if (error instanceof DriverStepFailure) {
+          const failure = await this.recordFailure(run.id, step, running, error.cause, request);
+          throw new StepExecutionFailure(failure);
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async removeArtifacts(
+    artifacts: ArtifactReference[],
+    runId: string,
+    stepId: string,
+  ): Promise<void> {
+    for (const artifact of artifacts) {
+      try {
+        await this.artifactStore.remove(artifact);
+      } catch (error) {
+        await this.emitStatus(
+          runId,
+          stepId,
+          `Artifact cleanup failed for ${artifact.name}: ${error instanceof Error ? error.message : String(error)}`,
+        ).catch(() => undefined);
       }
     }
   }
@@ -421,26 +441,17 @@ export class WorkflowRuntime {
       finishedAt: new Date().toISOString(),
       error: stepError,
     };
-    await this.recordAttemptFailure(
-      runId,
-      step,
-      failure,
-      error,
-      stepError.retryable,
-      failure.status,
-    );
+    await this.recordAttemptFailure(step, failure, error, stepError.retryable, failure.status);
     return failure;
   }
 
   private async recordAttemptFailure(
-    runId: string,
     step: AgentStep,
     stepRun: StepRun,
     error: unknown,
     retryable: boolean,
     status: StepRun['status'] = 'failed',
   ): Promise<void> {
-    void runId;
     const failure: StepRun = {
       ...stepRun,
       status,
@@ -686,6 +697,10 @@ function snapshotProfile(profile: AgentProfile): AgentProfileSnapshot {
 
 class PlannerSchemaError extends Error {}
 
+class DriverStepFailure {
+  constructor(readonly cause: unknown) {}
+}
+
 function createSerializedEventSink(sink: EventSink): {
   emit: EventSink;
   flush(): Promise<void>;
@@ -711,8 +726,14 @@ function createSerializedEventSink(sink: EventSink): {
     emit,
     async flush(): Promise<void> {
       await queue;
+      let flushError: unknown;
+      try {
+        await sink.flush?.();
+      } catch (error) {
+        flushError = error;
+      }
       if (failed) throw firstError;
-      await sink.flush?.();
+      if (flushError) throw flushError;
     },
   };
 }

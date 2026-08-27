@@ -55,6 +55,19 @@ describe('application runtime event buffering', () => {
     expect(saveEvents.mock.calls[0]?.[0]).toHaveLength(2);
     expect(saveEvents.mock.calls[1]?.[0]).toHaveLength(2);
   });
+
+  it('persists buffered text even when the observer fails', async () => {
+    const saveEvents = vi.fn<RunStore['saveEvents']>().mockResolvedValue(undefined);
+    const saveEvent = vi.fn<RunStore['saveEvent']>().mockResolvedValue(undefined);
+    const observer = vi.fn().mockRejectedValue(new Error('render failed'));
+    const sink = createRuntimeEventSink({ saveEvents, saveEvent } as unknown as RunStore, observer);
+
+    const event = textEvent('accepted');
+    await expect(sink(event)).rejects.toThrow('render failed');
+    await sink.flush?.();
+
+    expect(saveEvents).toHaveBeenCalledWith([event]);
+  });
 });
 
 describe('application capability composition', () => {

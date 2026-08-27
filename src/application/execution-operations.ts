@@ -1,4 +1,5 @@
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
+import { randomUUID } from 'node:crypto';
 import { WorkflowVersionMismatchError } from '../core/execute-request.js';
 import {
   retryableWorkflowStepIds,
@@ -9,12 +10,14 @@ import type { ExecutionClaim } from '../core/ports.js';
 import type { StepRun, WorkflowRun } from '../core/run.js';
 import { resolveWorkflow } from '../workflows/catalog.js';
 import {
+  MAX_RESEARCH_ITERATIONS,
+  RESEARCH_ITERATION_INPUT,
   researchPlanBuildWorkflow,
   type WorkflowApprovalDefinition,
 } from '../workflows/research-plan-build.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
 import type { ApplicationInternals } from './context.js';
-import { findWaitingApprovalStep } from './run-operations.js';
+import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
 import { validateWorkflowProfiles } from './workflow-operations.js';
 
 export interface RunWorkflowRequest {
@@ -31,14 +34,21 @@ export async function runWorkflow(
   request: RunWorkflowRequest,
 ): Promise<WorkflowRun> {
   const workflow = resolveAndValidateWorkflow(context, request.workflowId);
-  return executeWorkflow(context, workflow, {
-    objective: request.objective,
-    input: { ...request.input, objective: request.objective },
-    profiles: context.config.profiles,
-    ...(request.runId ? { runId: request.runId } : {}),
-    ...(request.signal ? { signal: request.signal } : {}),
-    ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
-  });
+  const runId = request.runId ?? randomUUID();
+  try {
+    return await executeWorkflow(context, workflow, {
+      runId,
+      objective: request.objective,
+      input: { ...request.input, objective: request.objective },
+      profiles: context.config.profiles,
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+    });
+  } catch (error) {
+    await context.store.releaseExecution(runId).catch(() => undefined);
+    await context.store.markRunInterrupted(runId).catch(() => undefined);
+    throw error;
+  }
 }
 
 export interface ResumeWorkflowRequest {
@@ -56,7 +66,7 @@ export async function resumeWorkflow(
   context: ApplicationInternals,
   request: ResumeWorkflowRequest,
 ): Promise<ResumeWorkflowResult> {
-  let previous = await context.store.getRun(request.runId);
+  const previous = await context.store.getRun(request.runId);
   if (!previous) throw new Error(`Unknown run: ${request.runId}`);
   if (previous.status === 'completed') {
     return { run: previous, alreadyCompleted: true };
@@ -65,11 +75,7 @@ export async function resumeWorkflow(
   validatePersistedRunCompatibility(previous, workflow);
   await preflightPersistedInput(context, previous, workflow);
   if (previous.status === 'running') {
-    const interrupted = await context.store.markRunInterrupted(previous.id);
-    if (!interrupted) {
-      throw new Error(`Run ${previous.id} could not be recovered from running state`);
-    }
-    previous = interrupted;
+    throw new Error(`Run ${previous.id} is still running; mark it interrupted before recovery`);
   }
   await validateResumeEligibility(context, previous, workflow);
   const claim = await claimRunForExecution(context, previous.id, [
@@ -186,11 +192,17 @@ function validatePersistedRunCompatibility(run: WorkflowRun, workflow: WorkflowD
 }
 
 async function validateResumeEligibility(
-  context: Pick<ApplicationInternals, 'store'>,
+  context: Pick<ApplicationInternals, 'store' | 'artifacts'>,
   run: WorkflowRun,
   workflow: WorkflowDefinition,
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
+  if (
+    run.workflowId === researchPlanBuildWorkflow.id &&
+    (await isResearchIterationExhausted(context, run))
+  ) {
+    throw new Error(`Run ${run.id} has reached the research iteration limit and is terminal`);
+  }
   const steps = await context.store.getStepRuns(run.id);
   const retryable = retryableWorkflowStepIds(workflow, steps).length > 0;
   if (!retryable && !workflowStepsCompleted(workflow, steps)) {
@@ -221,6 +233,17 @@ async function preflightPersistedInput(
   }
   if (!isRecord(input)) throw new Error('Persisted run input must be a JSON object');
   validateWorkflowInput(workflow, input);
+  if (workflow.id === researchPlanBuildWorkflow.id) {
+    const iteration = input[RESEARCH_ITERATION_INPUT];
+    if (
+      typeof iteration !== 'number' ||
+      !Number.isInteger(iteration) ||
+      iteration < 0 ||
+      iteration >= MAX_RESEARCH_ITERATIONS
+    ) {
+      throw new Error('Persisted research iteration is invalid');
+    }
+  }
 }
 
 async function executeClaimedWorkflow(

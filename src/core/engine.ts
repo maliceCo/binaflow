@@ -8,7 +8,7 @@ import type { ExecuteWorkflowRequest } from './execute-request.js';
 export type { OutputDispositionInterpreter } from './workflow-runtime.js';
 
 export class WorkflowEngine {
-  readonly runtime: WorkflowRuntime;
+  private readonly runtime: WorkflowRuntime;
 
   constructor(
     runStore: WorkflowExecutionStore,
@@ -26,4 +26,14 @@ export class WorkflowEngine {
   ): Promise<import('./run.js').WorkflowRun> {
     return this.runtime.executeSequential(workflow, request);
   }
+}
+
+export function createWorkflowRuntime(
+  runStore: WorkflowExecutionStore,
+  artifactStore: WorkflowArtifactStore,
+  driver: AgentDriver,
+  eventSink: EventSink = () => undefined,
+  options: WorkflowRuntimeOptions = {},
+): WorkflowRuntime {
+  return new WorkflowRuntime(runStore, artifactStore, driver, eventSink, options);
 }

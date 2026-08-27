@@ -46,8 +46,8 @@ export function registerUpdateCommand(cli: Command): void {
         }
         return;
       }
-      const result = await checkForUpdate(options.channel);
       if (options.check) {
+        const result = await checkForUpdate(options.channel);
         if (mode) {
           writeJsonResult('update', {
             action: 'check',

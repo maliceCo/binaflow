@@ -14,7 +14,7 @@
     "dist/src"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "build:bundle": "pnpm run build && node scripts/build-linux-bundle.mjs",
     "build:testrelease": "pnpm run build && node scripts/build-testrelease.mjs",
     "format": "prettier --write .",

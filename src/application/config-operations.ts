@@ -75,17 +75,19 @@ export async function listWorkspaceEntries(path: string): Promise<WorkspaceEntry
     parse(path).root === path
       ? []
       : [{ path: parentWorkspacePath(path), name: '..', isParent: true, hasBinaflow: false }];
-  for (const entry of directories) {
-    const full = resolve(path, entry.name);
-    let hasBinaflow = false;
-    try {
-      hasBinaflow = await configurationExists('.binaflow/config.json', full);
-    } catch {
-      hasBinaflow = false;
-    }
-    entries.push({ path: full, name: entry.name, isParent: false, hasBinaflow });
-  }
-  return entries;
+  const childEntries = await Promise.all(
+    directories.map(async (entry) => {
+      const full = resolve(path, entry.name);
+      let hasBinaflow = false;
+      try {
+        hasBinaflow = await configurationExists('.binaflow/config.json', full);
+      } catch {
+        hasBinaflow = false;
+      }
+      return { path: full, name: entry.name, isParent: false, hasBinaflow };
+    }),
+  );
+  return [...entries, ...childEntries];
 }
 
 export interface ProfileDiagnosis {

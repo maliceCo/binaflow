@@ -8,6 +8,8 @@ import {
 import { resolveWorkflow } from '../workflows/catalog.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
 import {
+  MAX_RESEARCH_ITERATIONS,
+  RESEARCH_ITERATION_INPUT,
   researchPlanBuildWorkflow,
   type WorkflowApprovalDefinition,
 } from '../workflows/research-plan-build.js';
@@ -18,6 +20,7 @@ import type {
   ApplicationRunListQuery,
   ApplicationRunStore,
 } from './ports.js';
+import type { ApplicationInternals } from './context.js';
 
 const DEFAULT_RUN_EVENT_LIMIT = 50;
 const MAX_RUN_EVENT_LIMIT = 100;
@@ -46,13 +49,52 @@ export interface RunRecoveryAction {
 }
 
 export async function explainRunRecovery(
-  context: RunStoreContext<'getRun' | 'getStepRuns'>,
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
   runId: string,
 ): Promise<RunRecoveryExplanation> {
   const run = await context.store.getRun(runId);
   if (!run) throw new Error(`Unknown run: ${runId}`);
   const steps = await context.store.getStepRuns(runId);
-  return buildRunRecoveryExplanation(run, steps, resolveRecoveryWorkflow(run.workflowId));
+  const explanation = buildRunRecoveryExplanation(
+    run,
+    steps,
+    resolveRecoveryWorkflow(run.workflowId),
+  );
+  return (await isResearchIterationExhausted(context, run))
+    ? {
+        ...explanation,
+        eligible: false,
+        reason: 'The research iteration limit has been reached; this run is terminal.',
+        actions: [],
+      }
+    : explanation;
+}
+
+export async function isResearchIterationExhausted(
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
+  run: WorkflowRun,
+  artifacts?: ArtifactReference[],
+): Promise<boolean> {
+  if (run.workflowId !== researchPlanBuildWorkflow.id || !context.artifacts) return false;
+  const inputArtifact = (artifacts ?? (await context.store.getArtifacts(run.id))).find(
+    (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+  );
+  if (!inputArtifact) return artifacts !== undefined;
+  try {
+    const input = JSON.parse(await context.artifacts.read(inputArtifact)) as Record<
+      string,
+      unknown
+    >;
+    const iteration = input[RESEARCH_ITERATION_INPUT];
+    return (
+      typeof iteration !== 'number' ||
+      !Number.isInteger(iteration) ||
+      iteration < 0 ||
+      iteration >= MAX_RESEARCH_ITERATIONS
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function buildRunRecoveryExplanation(

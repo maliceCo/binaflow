@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import {
   mkdir,
   mkdtemp,
@@ -17,7 +17,8 @@ import { basename, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { VERSION } from '../version.js';
 import {
   compareVersions,
-  downloadAsset,
+  downloadAssetToFile,
+  downloadChecksumAsset,
   findLatestRelease,
   parseChecksum,
   type FetchLike,
@@ -54,42 +55,28 @@ export async function installUpdate(
     }
     if (!check.available)
       throw new Error(`Binaflow ${VERSION} is already at the newest ${channel} release`);
-    const archive = await downloadAsset(check.release.asset, fetcher);
-    const checksum = parseChecksum(
-      new TextDecoder().decode(await downloadAsset(check.release.checksumAsset, fetcher)),
-      check.release.asset.name,
-    );
-    const actual = createHash('sha256').update(archive).digest('hex');
-    if (actual !== checksum)
-      throw new Error(`SHA-256 verification failed for ${check.release.asset.name}`);
-    await stageAndActivate(paths, check.release, archive);
+    await stageAndActivate(paths, check.release, fetcher);
     return check.release;
-  });
-}
-
-export async function rollbackUpdate(): Promise<string> {
-  const paths = installPaths(managedInstallRoot());
-  return withInstallLock(paths, async () => {
-    await validateInstallLayout(paths);
-    const currentTarget = await readlink(paths.current).catch(() => undefined);
-    const previousTarget = await readlink(paths.previous).catch(() => undefined);
-    if (!previousTarget) throw new Error('No previous Binaflow version is available for rollback');
-    await activate(paths, previousTarget, currentTarget);
-    return basename(previousTarget);
   });
 }
 
 async function stageAndActivate(
   paths: InstallPaths,
   release: ReleaseInfo,
-  archive: Uint8Array,
+  fetcher?: FetchLike,
 ): Promise<void> {
   await validateInstallLayout(paths);
   await mkdir(paths.versions, { recursive: true, mode: 0o755 });
   const stagingParent = await mkdtemp(join(paths.root, '.staging-'));
   const archivePath = join(stagingParent, release.asset.name);
   try {
-    await writeFile(archivePath, archive, { mode: 0o600 });
+    const actual = await downloadAssetToFile(release.asset, archivePath, fetcher);
+    const checksum = parseChecksum(
+      new TextDecoder().decode(await downloadChecksumAsset(release.checksumAsset, fetcher)),
+      release.asset.name,
+    );
+    if (actual !== checksum)
+      throw new Error(`SHA-256 verification failed for ${release.asset.name}`);
     await validateArchive(archivePath);
     await execFileAsync(
       'tar',
@@ -117,6 +104,18 @@ async function stageAndActivate(
   } finally {
     await rm(stagingParent, { recursive: true, force: true });
   }
+}
+
+export async function rollbackUpdate(): Promise<string> {
+  const paths = installPaths(managedInstallRoot());
+  return withInstallLock(paths, async () => {
+    await validateInstallLayout(paths);
+    const currentTarget = await readlink(paths.current).catch(() => undefined);
+    const previousTarget = await readlink(paths.previous).catch(() => undefined);
+    if (!previousTarget) throw new Error('No previous Binaflow version is available for rollback');
+    await activate(paths, previousTarget, currentTarget);
+    return basename(previousTarget);
+  });
 }
 
 async function activate(
@@ -200,37 +199,73 @@ async function smokeTest(bundleRoot: string): Promise<void> {
 async function withInstallLock<T>(paths: InstallPaths, action: () => Promise<T>): Promise<T> {
   await mkdir(paths.root, { recursive: true, mode: 0o755 });
   await validateInstallLayout(paths);
-  try {
-    await mkdir(paths.lock, { mode: 0o700 });
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-      if (await staleLockOwner(paths.lock)) {
+  let ownerToken: string | undefined;
+  while (!ownerToken) {
+    let createdLock = false;
+    try {
+      await mkdir(paths.lock, { mode: 0o700 });
+      createdLock = true;
+      const token = randomUUID();
+      await writeFile(join(paths.lock, 'owner.json'), JSON.stringify({ pid: process.pid, token }), {
+        encoding: 'utf8',
+        flag: 'wx',
+      });
+      ownerToken = token;
+    } catch (error) {
+      if (createdLock) {
         await rm(paths.lock, { recursive: true, force: true });
-        await mkdir(paths.lock, { mode: 0o700 });
-      } else {
+        throw error;
+      }
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+      const staleToken = await staleLockOwner(paths.lock);
+      if (!staleToken) {
         throw new Error('Another Binaflow update is already in progress');
       }
-    } else {
-      throw error;
+      const quarantine = `${paths.lock}.stale-${randomUUID()}`;
+      try {
+        await rename(paths.lock, quarantine);
+      } catch (renameError) {
+        if (
+          renameError instanceof Error &&
+          'code' in renameError &&
+          renameError.code === 'ENOENT'
+        ) {
+          continue;
+        }
+        throw renameError;
+      }
+      const quarantinedToken = await lockToken(quarantine);
+      if (quarantinedToken !== staleToken) {
+        await restoreQuarantinedLock(quarantine, paths.lock);
+        continue;
+      }
+      await rm(quarantine, { recursive: true, force: true });
     }
   }
   try {
-    await writeFile(join(paths.lock, 'owner.json'), JSON.stringify({ pid: process.pid }), {
-      encoding: 'utf8',
-      flag: 'wx',
-    });
     return await action();
   } finally {
-    await rm(paths.lock, { recursive: true, force: true });
+    await removeOwnedLock(paths.lock, ownerToken);
   }
 }
 
-async function staleLockOwner(lockPath: string): Promise<boolean> {
+async function removeOwnedLock(lockPath: string, token: string): Promise<void> {
+  try {
+    const owner = JSON.parse(await readFile(join(lockPath, 'owner.json'), 'utf8')) as {
+      token?: unknown;
+    };
+    if (owner.token === token) await rm(lockPath, { recursive: true, force: true });
+  } catch {
+    // The lock may already have been quarantined or removed by its owner.
+  }
+}
+
+async function staleLockOwner(lockPath: string): Promise<string | undefined> {
   let owner: unknown;
   try {
     owner = JSON.parse(await readFile(join(lockPath, 'owner.json'), 'utf8'));
   } catch {
-    return false;
+    return undefined;
   }
   if (
     typeof owner !== 'object' ||
@@ -240,13 +275,39 @@ async function staleLockOwner(lockPath: string): Promise<boolean> {
     !Number.isInteger(owner.pid) ||
     owner.pid < 1
   ) {
-    return false;
+    return undefined;
   }
+  const token = await lockToken(lockPath);
+  if (!token) return undefined;
   try {
     process.kill(owner.pid, 0);
-    return false;
+    return undefined;
   } catch (error) {
-    return error instanceof Error && 'code' in error && error.code === 'ESRCH';
+    return error instanceof Error && 'code' in error && error.code === 'ESRCH' ? token : undefined;
+  }
+}
+
+async function lockToken(lockPath: string): Promise<string | undefined> {
+  try {
+    const owner = JSON.parse(await readFile(join(lockPath, 'owner.json'), 'utf8')) as {
+      token?: unknown;
+    };
+    return typeof owner.token === 'string' ? owner.token : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function restoreQuarantinedLock(quarantine: string, lockPath: string): Promise<void> {
+  try {
+    await readFile(join(lockPath, 'owner.json'), 'utf8');
+    return;
+  } catch {
+    try {
+      await rename(quarantine, lockPath);
+    } catch {
+      // A competing owner may have recreated the lock; never remove it.
+    }
   }
 }
 
@@ -285,9 +346,17 @@ function assertInstallTarget(paths: InstallPaths, target: string): void {
 }
 
 function resolvePath(path: string): string {
-  return path.replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
+  const normalized = path.replaceAll('\\', '/').replace(/\/+$/, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function isWithin(root: string, path: string): boolean {
-  return path.startsWith(`${root}/`);
+  const pathRelativeToRoot = relative(root, path);
+  const normalizedRelative = pathRelativeToRoot.replaceAll('\\', '/');
+  return (
+    pathRelativeToRoot !== '' &&
+    pathRelativeToRoot !== '..' &&
+    !normalizedRelative.startsWith('../') &&
+    !isAbsolute(pathRelativeToRoot)
+  );
 }

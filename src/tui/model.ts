@@ -67,7 +67,7 @@ export interface TuiState {
   quitRequested: boolean;
   effect?: TuiEffect;
   error?: string;
-  status?: string;
+  status?: string | undefined;
   folderEntries?: FolderEntry[];
   folderFilter: string;
   selection: number;
@@ -144,7 +144,6 @@ export type TuiEvent =
   | { type: 'setup-next' }
   | { type: 'setup-back' }
   | { type: 'setup-cancel' }
-  | { type: 'setup-values'; values: SetupValues }
   | { type: 'setup-models'; models: AgentModel[] }
   | { type: 'setup-save' }
   | { type: 'setup-written' }
@@ -165,7 +164,6 @@ export type TuiEvent =
   | { type: 'open-artifacts' }
   | { type: 'open-launch' }
   | { type: 'open-recovery-confirm' }
-  | { type: 'open-rejection-feedback' }
   | { type: 'close-detail-prompt' }
   | { type: 'recovery-confirmed' }
   | { type: 'rejection-submitted'; feedback: string }

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 
@@ -44,6 +44,7 @@ export class JsonlProcess {
   private closed = false;
   private exitCode: number | null = null;
   private exitSignal: NodeJS.Signals | null = null;
+  private terminationPromise: Promise<void> | undefined;
 
   constructor(options: JsonlProcessOptions) {
     this.exitPromise = new Promise<void>((resolve) => {
@@ -54,6 +55,7 @@ export class JsonlProcess {
       env: options.env,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      detached: process.platform !== 'win32',
     });
     this.child.stdout.on('data', (chunk: Buffer) => this.readStdout(this.decoder.write(chunk)));
     this.child.stdout.on('end', () => this.readStdout(this.decoder.end(), true));
@@ -72,15 +74,18 @@ export class JsonlProcess {
     });
     this.child.on('error', (error) => {
       this.fail(error);
-      this.resolveExit();
     });
     this.child.on('exit', (code, signal) => {
       this.exitCode = code;
       this.exitSignal = signal;
+    });
+    this.child.on('close', () => {
       this.resolveExit();
       if (!this.closed) {
         this.fail(
-          new Error(`JSONL process exited (${code ?? 'unknown'}, ${signal ?? 'no signal'})`),
+          new Error(
+            `JSONL process exited (${this.exitCode ?? 'unknown'}, ${this.exitSignal ?? 'no signal'})`,
+          ),
         );
       }
     });
@@ -153,32 +158,34 @@ export class JsonlProcess {
   }
 
   async terminate(): Promise<void> {
+    if (this.terminationPromise) return this.terminationPromise;
+    this.terminationPromise = this.terminateOwnedProcess();
+    return this.terminationPromise;
+  }
+
+  private async terminateOwnedProcess(): Promise<void> {
     if (!this.closed) {
       this.closed = true;
       this.rejectPending(new Error('JSONL process terminated'));
       this.child.stdin.destroy();
     }
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
-    this.child.kill();
-    await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
-    if (this.child.exitCode === null && this.child.signalCode === null) {
-      this.child.kill('SIGKILL');
-      await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS);
+    if (this.exitCode === null && this.exitSignal === null) {
+      await signalProcessTree(this.child, false);
     }
+    if (await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS)) {
+      // A parent may exit before a platform has reaped every descendant.
+      await signalProcessTree(this.child, true);
+      return;
+    }
+    await signalProcessTree(this.child, true);
+    if (await waitForExit(this.exitPromise, PROCESS_TERMINATION_GRACE_MS)) return;
+    throw new Error('JSONL process did not terminate after forced termination');
   }
 
   private readStdout(chunk: string, final = false): void {
     if (chunk.length > 0) {
       this.stdoutBuffer += chunk;
       this.stdoutBufferBytes += Buffer.byteLength(chunk, 'utf8');
-      if (this.stdoutBufferBytes > MAX_JSONL_RECORD_BYTES) {
-        this.stdoutBuffer = '';
-        this.stdoutBufferBytes = 0;
-        this.fail(
-          new Error(`JSONL record exceeded maximum size of ${MAX_JSONL_RECORD_BYTES} UTF-8 bytes`),
-        );
-        return;
-      }
     }
     let newlineIndex = this.stdoutBuffer.indexOf('\n');
     while (newlineIndex >= 0) {
@@ -186,8 +193,16 @@ export class JsonlProcess {
       this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
       this.stdoutBufferBytes = Buffer.byteLength(this.stdoutBuffer, 'utf8');
       if (line.endsWith('\r')) line = line.slice(0, -1);
+      if (Buffer.byteLength(line, 'utf8') > MAX_JSONL_RECORD_BYTES) {
+        this.failRecordTooLarge();
+        return;
+      }
       this.readLine(line);
       newlineIndex = this.stdoutBuffer.indexOf('\n');
+    }
+    if (this.stdoutBufferBytes > MAX_JSONL_RECORD_BYTES) {
+      this.failRecordTooLarge();
+      return;
     }
     if (final && this.stdoutBuffer.length > 0) {
       const line = this.stdoutBuffer.endsWith('\r')
@@ -195,8 +210,20 @@ export class JsonlProcess {
         : this.stdoutBuffer;
       this.stdoutBuffer = '';
       this.stdoutBufferBytes = 0;
+      if (Buffer.byteLength(line, 'utf8') > MAX_JSONL_RECORD_BYTES) {
+        this.failRecordTooLarge();
+        return;
+      }
       this.readLine(line);
     }
+  }
+
+  private failRecordTooLarge(): void {
+    this.stdoutBuffer = '';
+    this.stdoutBufferBytes = 0;
+    this.fail(
+      new Error(`JSONL record exceeded maximum size of ${MAX_JSONL_RECORD_BYTES} UTF-8 bytes`),
+    );
   }
 
   private readLine(line: string): void {
@@ -252,7 +279,7 @@ export class JsonlProcess {
       ? `${error.message}; stderr: ${this.stderrText.trim()}`
       : error.message;
     this.rejectPending(new Error(details));
-    if (this.child.exitCode === null) this.child.kill();
+    void this.terminate().catch(() => undefined);
   }
 
   private rejectPending(error: Error): void {
@@ -271,16 +298,36 @@ function listenerError(kind: 'message' | 'stderr', error: unknown): Error {
   );
 }
 
-async function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<void> {
+async function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<boolean> {
   let timer: NodeJS.Timeout | undefined;
   try {
-    await Promise.race([
-      exit,
-      new Promise<void>((resolve) => {
-        timer = setTimeout(resolve, timeoutMs);
+    return await Promise.race([
+      exit.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
       }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+async function signalProcessTree(
+  child: ChildProcessWithoutNullStreams,
+  force: boolean,
+): Promise<void> {
+  if (child.pid === undefined) return;
+  if (process.platform === 'win32') {
+    await new Promise<void>((resolve) => {
+      execFile('taskkill.exe', ['/PID', String(child.pid), '/T', ...(force ? ['/F'] : [])], () =>
+        resolve(),
+      );
+    });
+    return;
+  }
+  try {
+    process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
   }
 }

@@ -14,6 +14,7 @@ export interface WorkflowArtifactStore {
     content: string,
     mediaType: string,
   ): Promise<ArtifactReference>;
+  remove(artifact: ArtifactReference): Promise<void>;
   read(artifact: ArtifactReference): Promise<string>;
 }
 
@@ -21,16 +22,7 @@ export interface WorkflowExecutionStore {
   createRun(run: WorkflowRun, artifacts?: ArtifactReference[]): Promise<void>;
   getRun(runId: string): Promise<WorkflowRun | undefined>;
   claimRun(runId: string, eligibleStatuses: readonly RunStatus[]): Promise<WorkflowRun | undefined>;
-  claimRunForExecution(
-    runId: string,
-    eligibleStatuses: readonly RunStatus[],
-  ): Promise<{ run: WorkflowRun; claim: ExecutionClaim } | undefined>;
-  claimApprovalForExecution(
-    runId: string,
-    approvalStep: StepRun,
-  ): Promise<{ run: WorkflowRun; claim: ExecutionClaim } | undefined>;
   assertExecutionClaim(claim: ExecutionClaim): Promise<void>;
-  assertExecutionOwner(runId: string): Promise<void>;
   saveRun(run: WorkflowRun, expectedStatus: RunStatus): Promise<void>;
   saveStepRun(stepRun: StepRun): Promise<void>;
   getStepRuns(runId: string): Promise<StepRun[]>;

@@ -27,7 +27,6 @@ interface InkShellProps extends InkApplicationContext {
   lifecycle: AttachedExecutionLifecycle<ApplicationContext>;
   openApplicationContext?: InkShellOptions['openApplicationContext'] | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
-  hasInjectedContext?: boolean;
 }
 
 export async function runInkShell(options: InkShellOptions = {}): Promise<void> {
@@ -37,6 +36,7 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
     options.applicationContext ? asApplicationContext(options.applicationContext) : undefined,
   );
   let signalHandler: ((signal: NodeJS.Signals) => boolean) | undefined;
+  let failure: unknown;
   try {
     await runInkApplication(
       { ...options, onSignal: (signal) => signalHandler?.(signal) ?? false },
@@ -52,21 +52,27 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
               if (signalHandler === handler) signalHandler = undefined;
             };
           }}
-          hasInjectedContext={
-            options.applicationContext !== undefined || options.openApplicationContext !== undefined
-          }
           {...context}
         />
       ),
     );
-  } finally {
-    if (!lifecycle.forceSignal) await lifecycle.shutdown();
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await lifecycle.shutdown();
+  } catch (error) {
+    failure ??= error;
   }
   const signal = lifecycle.forceSignal;
   if (signal) {
-    await lifecycle.shutdown();
-    (options.forceExit ?? ((value) => process.kill(process.pid, value)))(signal);
+    try {
+      (options.forceExit ?? ((value) => process.kill(process.pid, value)))(signal);
+    } catch (error) {
+      failure ??= error;
+    }
   }
+  if (failure) throw failure;
 }
 
 export function asApplicationContext(input: ApplicationContextInput): ApplicationContext {

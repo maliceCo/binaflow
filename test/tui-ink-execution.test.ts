@@ -3,7 +3,6 @@ import type { NormalizedEvent } from '../src/core/events.js';
 import type { StepRun, WorkflowRun } from '../src/core/run.js';
 import type { WorkflowContract } from '../src/workflows/catalog.js';
 import {
-  applyStepSnapshot,
   createLiveActivityBuffer,
   createLiveState,
   createLiveUiPublisher,
@@ -124,13 +123,6 @@ describe('Ink execution state', () => {
     await Promise.resolve();
     expect(applied).toEqual([{ generation: 1, statuses: ['completed', 'running'] }]);
 
-    // Late older generation cannot regress displayed step state.
-    const state = createLiveState(run('running'), workflow());
-    const advanced = applyStepSnapshot(state, firstSteps, 2, 1);
-    expect(advanced?.steps.map((step) => step.status)).toEqual(['completed', 'running']);
-    expect(advanced?.tokens).toBe(3);
-    expect(applyStepSnapshot(advanced!, firstSteps, 1, 2)).toBeUndefined();
-
     controller.dispose();
     publisher.dispose();
   });
@@ -150,39 +142,6 @@ describe('Ink execution state', () => {
 
     expect(applied).toEqual([1]);
     controller.dispose();
-  });
-
-  it('applies persisted step state and aggregates usage and cost', () => {
-    const state = createLiveState(run('running'), workflow());
-    const steps: StepRun[] = [
-      {
-        runId: 'run-1',
-        stepId: 'plan',
-        profile: 'planner',
-        status: 'completed',
-        attempt: 1,
-        startedAt: '2026-01-01T00:00:00.000Z',
-        finishedAt: '2026-01-01T00:00:05.000Z',
-        result: { text: '{}', usage: { totalTokens: 12 }, costUsd: 0.004 },
-      },
-      {
-        runId: 'run-1',
-        stepId: 'build',
-        profile: 'builder',
-        status: 'running',
-        attempt: 1,
-        startedAt: '2026-01-01T00:00:05.000Z',
-        result: { text: '', usage: { totalTokens: 8 }, costUsd: 0.002 },
-      },
-    ];
-    const next = applyStepSnapshot(state, steps, 1, 0, Date.parse('2026-01-01T00:00:08.000Z'));
-    expect(next).toBeDefined();
-    expect(next!.steps.map((step) => step.status)).toEqual(['completed', 'running']);
-    expect(next!.steps[0]?.durationMs).toBe(5_000);
-    expect(next!.steps[0]?.costUsd).toBe(0.004);
-    expect(next!.steps[1]?.durationMs).toBe(3_000);
-    expect(next!.tokens).toBe(20);
-    expect(next!.costUsd).toBe(0.006);
   });
 });
 

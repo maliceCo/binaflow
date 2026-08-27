@@ -14,15 +14,6 @@ export function moveSelection(
   return keepSelectionVisible({ offset: state.offset, selected }, itemCount, visibleRows);
 }
 
-export function pageSelection(
-  state: ViewportState,
-  direction: -1 | 1,
-  itemCount: number,
-  visibleRows: number,
-): ViewportState {
-  return moveSelection(state, direction * Math.max(1, visibleRows - 1), itemCount, visibleRows);
-}
-
 export function scrollText(
   offset: number,
   delta: number,

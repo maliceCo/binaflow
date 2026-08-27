@@ -7,7 +7,6 @@ import {
   replaceArtifacts,
   StepExecutionFailure,
   retryableWorkflowStepIds,
-  type WorkflowRuntime,
   validateWorkflowInput,
   workflowStepsCompleted,
 } from '../core/workflow-runtime.js';
@@ -16,17 +15,17 @@ import {
   validateResearchWorkflowDefinition,
   type ResearchWorkflowDefinition,
 } from '../workflows/research-plan-build.js';
-import type { ResearchPersistence } from './ports.js';
+import type { ResearchPersistence, ResearchWorkflowRuntime } from './ports.js';
 import {
   parseResearchReview,
+  MAX_RESEARCH_ITERATIONS,
+  RESEARCH_ITERATION_INPUT,
   researchPlanBuildWorkflow,
 } from '../workflows/research-plan-build.js';
 
-const MAX_RESEARCH_ITERATIONS = 3;
-
 export class ResearchPlanBuildCoordinator {
   constructor(
-    private readonly runtime: WorkflowRuntime,
+    private readonly runtime: ResearchWorkflowRuntime,
     private readonly persistence: ResearchPersistence,
     private readonly artifactsStore: WorkflowArtifactStore,
   ) {}
@@ -40,7 +39,13 @@ export class ResearchPlanBuildCoordinator {
       throw new Error(`Research coordinator cannot execute workflow ${workflow.id}`);
     }
 
-    const initialInput = await this.runtime.resolveInput(request);
+    const initialInput =
+      request.resume && request.runId
+        ? await this.loadPersistedInput(request.runId, workflow)
+        : {
+            ...(await this.runtime.resolveInput(request)),
+            [RESEARCH_ITERATION_INPUT]: 0,
+          };
     validateWorkflowInput(workflow, initialInput);
     if (request.resume && request.runId) {
       const existing = await this.persistence.getRun(request.runId);
@@ -75,11 +80,15 @@ export class ResearchPlanBuildCoordinator {
       (await this.persistence.getStepRuns(run.id)).map((step) => [step.stepId, step]),
     );
     let artifacts = await this.persistence.getArtifacts(run.id);
-    let input = {
+    let input: Record<string, unknown> = {
       ...initialInput,
       researchFeedback:
         typeof initialInput.researchFeedback === 'string' ? initialInput.researchFeedback : '',
     };
+    let researchIteration = initialInput[RESEARCH_ITERATION_INPUT];
+    if (typeof researchIteration !== 'number') {
+      throw new Error('Research iteration was not initialized');
+    }
     const researchStep = workflow.steps.find((step) => step.id === 'research');
     const reviewStep = workflow.steps.find((step) => step.id === 'research-review');
     const planStep = workflow.steps.find((step) => step.id === 'plan');
@@ -146,7 +155,7 @@ export class ResearchPlanBuildCoordinator {
         );
 
         if (researchReview.decision === 'needs_more_research') {
-          if (research.attempt >= MAX_RESEARCH_ITERATIONS) {
+          if (researchIteration >= MAX_RESEARCH_ITERATIONS - 1) {
             await this.runtime.emitStatus(
               run.id,
               reviewStep.id,
@@ -157,7 +166,9 @@ export class ResearchPlanBuildCoordinator {
           input = {
             ...input,
             researchFeedback: researchReview.nextResearchQuestions.join('\n'),
+            [RESEARCH_ITERATION_INPUT]: researchIteration + 1,
           };
+          researchIteration += 1;
           const inputArtifact = await writeResearchInputArtifact(
             run.id,
             input,
@@ -173,6 +184,7 @@ export class ResearchPlanBuildCoordinator {
             resetReview,
             approval,
           );
+          await this.removeSupersededInput(artifacts, inputArtifact, run.id);
           artifacts = replaceArtifacts(artifacts, [inputArtifact]);
           stepRuns.set(researchStep.id, resetResearch);
           stepRuns.set(reviewStep.id, resetReview);
@@ -192,7 +204,7 @@ export class ResearchPlanBuildCoordinator {
         }
 
         if (approval.approval?.decision === 'rejected') {
-          if (research.attempt >= MAX_RESEARCH_ITERATIONS) {
+          if (researchIteration >= MAX_RESEARCH_ITERATIONS - 1) {
             await this.runtime.emitStatus(
               run.id,
               workflow.approval.id,
@@ -204,7 +216,9 @@ export class ResearchPlanBuildCoordinator {
             ...input,
             researchFeedback:
               approval.approval.feedback ?? 'The user requested another research iteration.',
+            [RESEARCH_ITERATION_INPUT]: researchIteration + 1,
           };
+          researchIteration += 1;
           const inputArtifact = await writeResearchInputArtifact(
             run.id,
             input,
@@ -227,6 +241,7 @@ export class ResearchPlanBuildCoordinator {
             resetReview,
             resetApproval,
           );
+          await this.removeSupersededInput(artifacts, inputArtifact, run.id);
           artifacts = replaceArtifacts(artifacts, [inputArtifact]);
           approval = resetApproval;
           stepRuns.set(researchStep.id, resetResearch);
@@ -311,8 +326,7 @@ export class ResearchPlanBuildCoordinator {
       }
       return this.runtime.saveRunStatus(run, 'completed');
     } catch (error) {
-      if (!(error instanceof StepExecutionFailure))
-        return this.runtime.saveRunStatus(run, 'failed');
+      if (!(error instanceof StepExecutionFailure)) throw error;
       for (const step of workflow.steps) {
         const existing = stepRuns.get(step.id);
         if (
@@ -332,6 +346,56 @@ export class ResearchPlanBuildCoordinator {
       );
     }
   }
+
+  private async loadPersistedInput(
+    runId: string,
+    workflow: ResearchWorkflowDefinition,
+  ): Promise<Record<string, unknown>> {
+    const inputArtifact = (await this.persistence.getArtifacts(runId)).find(
+      (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+    );
+    if (!inputArtifact) throw new Error('Missing persisted run input artifact');
+    let value: unknown;
+    try {
+      value = JSON.parse(await this.artifactsStore.read(inputArtifact));
+    } catch (error) {
+      throw new Error(
+        `Persisted run input is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!isRecord(value)) throw new Error('Persisted run input must be a JSON object');
+    validateWorkflowInput(workflow, value);
+    const iteration = value[RESEARCH_ITERATION_INPUT];
+    if (
+      typeof iteration !== 'number' ||
+      !Number.isInteger(iteration) ||
+      iteration < 0 ||
+      iteration >= MAX_RESEARCH_ITERATIONS
+    ) {
+      throw new Error('Persisted research iteration is invalid');
+    }
+    return value;
+  }
+
+  private async removeSupersededInput(
+    artifacts: import('../core/run.js').ArtifactReference[],
+    replacement: import('../core/run.js').ArtifactReference,
+    runId: string,
+  ): Promise<void> {
+    const previous = findArtifact(artifacts, replacement.stepId, replacement.name);
+    if (!previous || previous.id === replacement.id) return;
+    try {
+      await this.artifactsStore.remove(previous);
+    } catch (error) {
+      await this.runtime
+        .emitStatus(
+          runId,
+          'run',
+          `Artifact cleanup failed for ${previous.name}: ${error instanceof Error ? error.message : String(error)}`,
+        )
+        .catch(() => undefined);
+    }
+  }
 }
 
 function resetLoopStep(step: StepRun): StepRun {
@@ -342,6 +406,10 @@ function resetLoopStep(step: StepRun): StepRun {
     status: 'pending',
     attempt: step.attempt + 1,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function writeResearchInputArtifact(

@@ -300,6 +300,61 @@ describe('local persistence', () => {
     store.close();
   });
 
+  it('rejects execution writes from a foreign store owner', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-foreign-owner-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'run.db');
+    const owner = new SqliteRunStore(databasePath);
+    const foreign = new SqliteRunStore(databasePath);
+    const run: WorkflowRun = {
+      id: 'foreign-owner-run',
+      workflowId: 'research-plan-build',
+      workflowVersion: 1,
+      objective: 'Reject stale writes',
+      status: 'pending',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await owner.createRun(run);
+    await owner.saveRun({ ...run, status: 'running' }, 'pending');
+    const pending: StepRun = {
+      runId: run.id,
+      stepId: 'research',
+      profile: 'researcher',
+      status: 'pending',
+      attempt: 1,
+    };
+    await owner.saveStepRun(pending);
+
+    await expect(foreign.saveStepRun({ ...pending, status: 'running' })).rejects.toMatchObject({
+      code: 'RUN_EXECUTION_OWNED',
+    });
+    await expect(
+      foreign.completeStep({ ...pending, status: 'completed' }, []),
+    ).rejects.toMatchObject({ code: 'RUN_EXECUTION_OWNED' });
+    await expect(
+      foreign.checkpointResearchIteration(
+        {
+          id: 'new-input',
+          runId: run.id,
+          stepId: 'run',
+          name: 'input',
+          kind: 'json',
+          path: '/tmp/new-input.json',
+          mediaType: 'application/json',
+          sizeBytes: 2,
+        },
+        pending,
+        { ...pending, stepId: 'research-review' },
+      ),
+    ).rejects.toMatchObject({ code: 'RUN_EXECUTION_OWNED' });
+
+    expect(await owner.getStepRuns(run.id)).toEqual([pending]);
+    expect(await owner.getArtifacts(run.id)).toEqual([]);
+    foreign.close();
+    owner.close();
+  });
+
   it('claims an approval and its pending decision in one transaction', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-approval-claim-'));
     temporaryDirectories.push(directory);
@@ -318,10 +373,6 @@ describe('local persistence', () => {
       { ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' },
       'pending',
     );
-    await store.saveRun(
-      { ...run, status: 'waiting', updatedAt: '2026-01-01T00:00:02.000Z' },
-      'running',
-    );
     const waitingStep: StepRun = {
       runId: run.id,
       stepId: 'research-approval',
@@ -331,6 +382,10 @@ describe('local persistence', () => {
     };
     await store.saveStepRun({ ...waitingStep, status: 'pending' });
     await store.saveStepRun(waitingStep);
+    await store.saveRun(
+      { ...run, status: 'waiting', updatedAt: '2026-01-01T00:00:02.000Z' },
+      'running',
+    );
 
     const decisions = await Promise.all([
       store.claimApproval(run.id, {
@@ -378,6 +433,10 @@ describe('local persistence', () => {
       'application/json',
     );
     await store.createRun(run, [oldInput]);
+    await store.saveRun(
+      { ...run, status: 'running', updatedAt: '2026-01-01T00:00:01.000Z' },
+      'pending',
+    );
     const research: StepRun = {
       runId: run.id,
       stepId: 'research',

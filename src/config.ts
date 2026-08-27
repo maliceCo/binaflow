@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { AgentProfile, WorkspaceMode } from './core/agent-profile.js';
+import { isReadOnlyPiTool } from './pi-tools.js';
 
 export type { AgentProfile, ProjectTrust, WorkspaceMode } from './core/agent-profile.js';
 export { resolveProfile } from './core/agent-profile.js';
@@ -103,17 +104,20 @@ export function validateAgentProfile(name: string, value: unknown): AgentProfile
   if (
     value.workspaceMode === 'read-only' &&
     Array.isArray(value.tools) &&
-    value.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')
+    value.tools.some((tool) => !isReadOnlyPiTool(tool))
   ) {
-    errors.push('read-only profiles cannot enable write, edit, or bash tools');
+    if (value.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')) {
+      errors.push('read-only profiles cannot enable write, edit, or bash tools');
+    } else {
+      errors.push('read-only profiles may only enable ls, find, or read tools');
+    }
   }
   if (
     name === 'planner' &&
     (value.workspaceMode !== 'read-only' ||
-      (Array.isArray(value.tools) &&
-        value.tools.some((tool) => ['write', 'edit', 'bash'].includes(tool))))
+      (Array.isArray(value.tools) && value.tools.some((tool) => !isReadOnlyPiTool(tool))))
   ) {
-    errors.push('planner profiles must be read-only and cannot enable write, edit, or bash tools');
+    errors.push('planner profiles must be read-only and may only enable ls, find, or read tools');
   }
   if (!isPositiveInteger(value.timeoutMs)) errors.push('timeoutMs must be a positive integer');
   if (!isNonNegativeInteger(value.retryLimit)) {

@@ -43,6 +43,7 @@ export function registerArtifactCommands(cli: Command): void {
     .action(
       async (runId: string, artifactKey: string, options: { raw?: boolean }, command: Command) => {
         const { openStorageContext, printMachineResult, rootOptions } = await import('./common.js');
+        const { sanitizeTerminalText } = await import('../../presentation/text.js');
         const root = rootOptions(command);
         const mode = machineMode(root);
         rejectUnsupportedJsonl(mode, 'artifact');
@@ -70,7 +71,7 @@ export function registerArtifactCommands(cli: Command): void {
           console.log(
             `  id=${artifact.id}  size=${artifact.sizeBytes} bytes  path=${artifact.path}`,
           );
-          console.log(content);
+          console.log(sanitizeTerminalText(content));
         } finally {
           context.close();
         }

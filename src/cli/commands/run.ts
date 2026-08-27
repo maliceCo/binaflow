@@ -2,14 +2,7 @@ import type { Command } from 'commander';
 import type { WorkflowRun } from '../../core/run.js';
 import { discoverWorkflows } from '../../application/operations.js';
 import { readJsonInput as readJsonInputFile } from '../../application/config-operations.js';
-import {
-  cliUsageError,
-  exitCodeFor,
-  machineMode,
-  runStartedRecord,
-  writeJsonl,
-  writeJsonlFailure,
-} from '../protocol.js';
+import { cliUsageError, machineMode, runStartedRecord, writeJsonl } from '../protocol.js';
 
 interface RunOptions {
   objective?: string;
@@ -44,60 +37,54 @@ export function registerRunCommand(cli: Command): void {
         : requireRunInputs(workflowId, options.objective ?? inputObjective, input);
       const { randomUUID } = await import('node:crypto');
       const {
-        installSignalHandlers,
-        openContext,
         printRunSummary,
         printMachineRunResult,
         printHumanProgress,
         rootOptions,
+        runAttachedCli,
       } = await import('./common.js');
       const optionsAtRoot = rootOptions(command);
       const mode = machineMode(optionsAtRoot);
-      const context = await openContext(optionsAtRoot);
       const runId = randomUUID();
-      const controller = new AbortController();
-      const signalHandlers = installSignalHandlers(controller, runId);
-      let started = false;
-      try {
+      await runAttachedCli(optionsAtRoot, runId, 'run', async (context, lifecycle) => {
         const run = await context.application.runWorkflow({
           workflowId: inputs.workflowId,
           objective: inputs.objective,
           input: inputs.input,
           runId,
-          signal: controller.signal,
+          signal: lifecycle.signal,
           onRunStarted: (startedRun: WorkflowRun) => {
-            started = true;
+            lifecycle.markStarted();
             if (mode === 'jsonl') {
-              writeJsonl(runStartedRecord('run', startedRun.id, startedRun.workflowId));
+              lifecycle.streamFailure.write(() =>
+                writeJsonl(runStartedRecord('run', startedRun.id, startedRun.workflowId)),
+              );
             } else if (!mode) {
-              printHumanProgress(`Started run ${startedRun.id}  workflow=${startedRun.workflowId}`);
+              lifecycle.streamFailure.write(() =>
+                printHumanProgress(
+                  `Started run ${startedRun.id}  workflow=${startedRun.workflowId}`,
+                ),
+              );
             }
           },
         });
+        if (lifecycle.streamFailure.failed) {
+          process.exitCode = 1;
+          return;
+        }
         if (mode) {
-          await printMachineRunResult('run', run, context, mode);
+          await printMachineRunResult('run', run, context, mode, lifecycle.streamFailure.write);
         } else {
           const inspection = await context.application.inspectRun(run.id, {
             includeStepResults: true,
           });
           const view = await context.application.getRunView(run.id);
-          printRunSummary(view, inspection.steps);
+          lifecycle.streamFailure.write(() => printRunSummary(view, inspection.steps));
         }
         if (run.status === 'failed' || run.status === 'cancelled') {
           process.exitCode = run.status === 'cancelled' ? 130 : 1;
         }
-      } catch (error) {
-        if (mode === 'jsonl' && started) {
-          writeJsonlFailure('run', runId, error);
-          process.exitCode = exitCodeFor(error);
-          return;
-        }
-        throw error;
-      } finally {
-        signalHandlers.remove();
-        context.close();
-        signalHandlers.completeCleanup();
-      }
+      });
     });
 }
 

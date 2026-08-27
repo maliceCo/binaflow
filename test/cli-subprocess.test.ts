@@ -195,7 +195,8 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     const run = {
       ...completedRun(),
       workflowId: researchPlanBuildWorkflow.id,
-      status: 'waiting' as const,
+      workflowVersion: researchPlanBuildWorkflow.version,
+      status: 'pending' as const,
     };
     const approval: StepRun = {
       runId: run.id,
@@ -206,7 +207,10 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     };
     try {
       await store.createRun(run);
+      await store.saveRun({ ...run, status: 'running' }, 'pending');
+      await store.saveStepRun({ ...approval, status: 'pending' });
       await store.saveStepRun(approval);
+      await store.saveRun({ ...run, status: 'waiting' }, 'running');
     } finally {
       store.close();
     }

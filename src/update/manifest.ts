@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readlink, readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { lstat, readdir, readlink } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 export interface BundleManifest {
@@ -75,6 +76,6 @@ async function hashDirectory(
     }
     if (!entry.isFile()) throw new Error(`Unsupported bundle entry: ${name}`);
     hash.update(`file:${name}:${info.size}\0`);
-    hash.update(await readFile(path));
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
   }
 }

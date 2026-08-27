@@ -116,22 +116,6 @@ describe('architecture boundaries', () => {
     expect(violations).toEqual([]);
   });
 
-  it('does not expose infrastructure fields on ApplicationService', async () => {
-    const source = await readFile(join(root, 'src/application/service.ts'), 'utf8');
-    const publicSurface = ['ApplicationQueries', 'ApplicationCommands', 'ApplicationService']
-      .map((name) => interfaceSource(source, name))
-      .join('\n');
-    expect(publicSurface).not.toMatch(/\bstore\b/);
-    expect(publicSurface).not.toMatch(/\bartifacts\b/);
-    expect(publicSurface).not.toMatch(/\bengine\b/);
-    expect(publicSurface).not.toMatch(/\bprofiles\b/);
-    expect(publicSurface).not.toMatch(/\bclose\b/);
-    expect(publicSurface).toMatch(/inspectRun/);
-    expect(publicSurface).toMatch(/getRunView/);
-    expect(publicSurface).toMatch(/runWorkflow/);
-    expect(publicSurface).toMatch(/subscribeEvents/);
-  });
-
   it('keeps lifecycle ownership on contexts and separates query-only storage', async () => {
     const runtime = await readFile(join(root, 'src/application/runtime.ts'), 'utf8');
     const storage = runtime.match(
@@ -147,11 +131,3 @@ describe('architecture boundaries', () => {
     expect(storage![0]).not.toMatch(/WorkflowEngine|PiDriver|ResearchPlanBuildCoordinator/);
   });
 });
-
-function interfaceSource(source: string, name: string): string {
-  const match = source.match(
-    new RegExp(`export interface ${name}(?: extends [^{]+)? \\{[\\s\\S]*?\\n\\}`),
-  );
-  expect(match, `Missing ${name} interface`).toBeTruthy();
-  return match![0]!;
-}

@@ -5,6 +5,7 @@ import type {
   GeneratedConfiguration,
 } from '../application/config-operations.js';
 import type { WorkflowContract } from '../application/operations.js';
+import { isReadOnlyPiTool } from '../pi-tools.js';
 
 export const SETUP_FIELDS = [
   { key: 'plannerProvider', title: 'Planner provider' },
@@ -154,8 +155,7 @@ export function sameProfileReview(
 
 export function isWriteCapable(profile: AgentProfile): boolean {
   return (
-    profile.workspaceMode === 'read-write' ||
-    profile.tools.some((tool) => tool === 'write' || tool === 'edit' || tool === 'bash')
+    profile.workspaceMode === 'read-write' || profile.tools.some((tool) => !isReadOnlyPiTool(tool))
   );
 }
 
