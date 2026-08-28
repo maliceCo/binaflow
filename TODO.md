@@ -149,7 +149,7 @@
   - **Verificacion:** `pnpm test -- test/interactive-review-contracts.test.ts test/config-operations.test.ts`.
   - **Commit Msg:** `feat: define interactive review workflow contract`
 
-- [ ] **Tarea 4.2: Migrar hilos, mensajes y decisiones recuperables**
+- [x] **Tarea 4.2: Migrar hilos, mensajes y decisiones recuperables**
   - **Archivos:** crear `src/storage/migrations/007-interactive-review.ts`; modificar `src/storage/migrations/index.ts`, `src/storage/run-store.ts`, `src/storage/sqlite-run-store.ts`, `src/application/ports.ts`; crear `test/interactive-review-persistence.test.ts`; ampliar `test/migrations.test.ts`.
   - **Descripcion:** Agregar `review_threads`, `review_messages` y `review_decisions`. Un hilo se identifica por run, fase, target y revision de artefacto. Persistir mensajes visibles, rol, secuencia, estado de generacion, perfil snapshot y referencias a contenido grande. Guardar la pregunta antes de invocar al explicador; guardar cada decision en la misma transaccion que actualiza su estado de revision. Permitir recuperar mensajes `pending`, `failed` o `interrupted` sin perder la pregunta.
   - **Evitar:** Guardar razonamiento privado del modelo, borradores no enviados, transcript completo de agents automaticos o decisiones inferidas desde texto libre.

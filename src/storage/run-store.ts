@@ -1,4 +1,11 @@
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
+import type {
+  ReviewDecision,
+  ReviewMessage,
+  ReviewPhase,
+  ReviewThread,
+  ReviewThreadState,
+} from '../core/interactive-review.js';
 import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { ExecutionClaim } from '../core/ports.js';
@@ -31,6 +38,16 @@ export interface RunEventPageQuery {
 export interface RunEventPage {
   events: PersistedRunEvent[];
   nextCursor?: number;
+}
+
+export interface ReviewStore {
+  createReviewThread(thread: ReviewThread): Promise<void>;
+  getReviewThread(threadId: string): Promise<ReviewThread | undefined>;
+  listReviewThreads(runId: string, phase?: ReviewPhase): Promise<ReviewThread[]>;
+  saveReviewMessage(message: ReviewMessage): Promise<void>;
+  getReviewMessages(threadId: string): Promise<ReviewMessage[]>;
+  saveReviewDecision(decision: ReviewDecision, nextState: ReviewThreadState): Promise<void>;
+  getReviewDecisions(threadId: string): Promise<ReviewDecision[]>;
 }
 
 export interface QaHistoryStore {

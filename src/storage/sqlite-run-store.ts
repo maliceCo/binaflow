@@ -3,6 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
+import type {
+  ReviewDecision,
+  ReviewMessage,
+  ReviewPhase,
+  ReviewTargetKind,
+  ReviewThread,
+  ReviewThreadState,
+} from '../core/interactive-review.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
@@ -506,6 +514,99 @@ export class SqliteRunStore implements RunStore {
     transaction();
   }
 
+  async createReviewThread(thread: ReviewThread): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT INTO review_threads
+          (id, run_id, phase, target_kind, target_id, artifact_revision, state, revision, created_at, updated_at)
+         VALUES (@id, @runId, @phase, @targetKind, @targetId, @artifactRevision, @state, @revision, @createdAt, @updatedAt)`,
+      )
+      .run(toReviewThreadParams(thread));
+  }
+
+  async getReviewThread(threadId: string): Promise<ReviewThread | undefined> {
+    const row = this.database.prepare('SELECT * FROM review_threads WHERE id = ?').get(threadId) as
+      ReviewThreadRow | undefined;
+    return row ? fromReviewThreadRow(row) : undefined;
+  }
+
+  async listReviewThreads(runId: string, phase?: ReviewPhase): Promise<ReviewThread[]> {
+    const rows = (
+      phase === undefined
+        ? this.database
+            .prepare('SELECT * FROM review_threads WHERE run_id = ? ORDER BY updated_at, id')
+            .all(runId)
+        : this.database
+            .prepare(
+              'SELECT * FROM review_threads WHERE run_id = ? AND phase = ? ORDER BY updated_at, id',
+            )
+            .all(runId, phase)
+    ) as ReviewThreadRow[];
+    return rows.map(fromReviewThreadRow);
+  }
+
+  async saveReviewMessage(message: ReviewMessage): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT INTO review_messages
+          (id, thread_id, sequence, role, content, content_artifact_id, generation_status, profile_json, created_at, updated_at)
+         VALUES (@id, @threadId, @sequence, @role, @content, @contentArtifactId, @generationStatus, @profileJson, @createdAt, @updatedAt)
+         ON CONFLICT (id) DO UPDATE SET
+           content = excluded.content,
+           content_artifact_id = excluded.content_artifact_id,
+           generation_status = excluded.generation_status,
+           profile_json = excluded.profile_json,
+           updated_at = excluded.updated_at`,
+      )
+      .run(toReviewMessageParams(message));
+  }
+
+  async getReviewMessages(threadId: string): Promise<ReviewMessage[]> {
+    const rows = this.database
+      .prepare('SELECT * FROM review_messages WHERE thread_id = ? ORDER BY sequence')
+      .all(threadId) as ReviewMessageRow[];
+    return rows.map(fromReviewMessageRow);
+  }
+
+  async saveReviewDecision(decision: ReviewDecision, nextState: ReviewThreadState): Promise<void> {
+    if (nextState === 'waiting') throw new Error('A decision must advance review state');
+    const transaction = this.database.transaction(() => {
+      const result = this.database
+        .prepare(
+          `UPDATE review_threads
+           SET state = ?, revision = revision + 1, updated_at = ?
+           WHERE id = ? AND revision = ?`,
+        )
+        .run(nextState, decision.createdAt, decision.threadId, decision.revision);
+      if (result.changes !== 1) {
+        throw new Error(`Review thread ${decision.threadId} changed before the decision was saved`);
+      }
+      this.database
+        .prepare(
+          `INSERT INTO review_decisions
+            (thread_id, target_kind, target_id, decision, revision, details, created_at)
+           VALUES (@threadId, @targetKind, @targetId, @decision, @revision, @details, @createdAt)`,
+        )
+        .run({
+          threadId: decision.threadId,
+          targetKind: decision.target.kind,
+          targetId: decision.target.id,
+          decision: decision.decision,
+          revision: decision.revision + 1,
+          details: decision.details ?? null,
+          createdAt: decision.createdAt,
+        });
+    });
+    transaction();
+  }
+
+  async getReviewDecisions(threadId: string): Promise<ReviewDecision[]> {
+    const rows = this.database
+      .prepare('SELECT * FROM review_decisions WHERE thread_id = ? ORDER BY id')
+      .all(threadId) as ReviewDecisionRow[];
+    return rows.map(fromReviewDecisionRow);
+  }
+
   async saveEvent(event: NormalizedEvent): Promise<void> {
     await this.saveEvents([event]);
   }
@@ -799,6 +900,43 @@ interface ArtifactRow {
   size_bytes: number;
 }
 
+interface ReviewThreadRow {
+  id: string;
+  run_id: string;
+  phase: ReviewPhase;
+  target_kind: ReviewTargetKind;
+  target_id: string;
+  artifact_revision: number;
+  state: ReviewThreadState;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ReviewMessageRow {
+  id: string;
+  thread_id: string;
+  sequence: number;
+  role: ReviewMessage['role'];
+  content: string | null;
+  content_artifact_id: string | null;
+  generation_status: ReviewMessage['generationStatus'];
+  profile_json: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ReviewDecisionRow {
+  id: number;
+  thread_id: string;
+  target_kind: ReviewTargetKind;
+  target_id: string;
+  decision: ReviewDecision['decision'];
+  revision: number;
+  details: string | null;
+  created_at: string;
+}
+
 interface QaDefectRow {
   id: string;
   fingerprint: string;
@@ -925,6 +1063,80 @@ function toArtifactParams(artifact: ArtifactReference): Record<string, unknown> 
     path: artifact.path,
     mediaType: artifact.mediaType,
     sizeBytes: artifact.sizeBytes,
+  };
+}
+
+function toReviewThreadParams(thread: ReviewThread): Record<string, unknown> {
+  return {
+    id: thread.id,
+    runId: thread.runId,
+    phase: thread.phase,
+    targetKind: thread.target.kind,
+    targetId: thread.target.id,
+    artifactRevision: thread.artifactRevision,
+    state: thread.state,
+    revision: thread.revision,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+  };
+}
+
+function fromReviewThreadRow(row: ReviewThreadRow): ReviewThread {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    phase: row.phase,
+    target: { kind: row.target_kind, id: row.target_id },
+    artifactRevision: row.artifact_revision,
+    state: row.state,
+    revision: row.revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toReviewMessageParams(message: ReviewMessage): Record<string, unknown> {
+  return {
+    id: message.id,
+    threadId: message.threadId,
+    sequence: message.sequence,
+    role: message.role,
+    content: message.content ?? null,
+    contentArtifactId: message.contentArtifactId ?? null,
+    generationStatus: message.generationStatus,
+    profileJson: message.profileSnapshot ? JSON.stringify(message.profileSnapshot) : null,
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+  };
+}
+
+function fromReviewMessageRow(row: ReviewMessageRow): ReviewMessage {
+  const profileSnapshot = row.profile_json
+    ? (JSON.parse(row.profile_json) as ReviewMessage['profileSnapshot'])
+    : undefined;
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    sequence: row.sequence,
+    role: row.role,
+    ...(row.content !== null ? { content: row.content } : {}),
+    ...(row.content_artifact_id ? { contentArtifactId: row.content_artifact_id } : {}),
+    generationStatus: row.generation_status,
+    ...(profileSnapshot ? { profileSnapshot } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function fromReviewDecisionRow(row: ReviewDecisionRow): ReviewDecision {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    target: { kind: row.target_kind, id: row.target_id },
+    decision: row.decision,
+    revision: row.revision,
+    ...(row.details !== null ? { details: row.details } : {}),
+    createdAt: row.created_at,
   };
 }
 

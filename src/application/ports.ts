@@ -1,4 +1,11 @@
 import type { NormalizedEvent } from '../core/events.js';
+import type {
+  ReviewDecision,
+  ReviewMessage,
+  ReviewPhase,
+  ReviewThread,
+  ReviewThreadState,
+} from '../core/interactive-review.js';
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
@@ -66,6 +73,16 @@ export interface ApplicationQaHistoryStore {
   reindexQaSearch(): Promise<void>;
   archiveQaDefects(before?: string): Promise<number>;
   purgeQaHistory(): Promise<void>;
+}
+
+export interface ApplicationReviewStore {
+  createReviewThread(thread: ReviewThread): Promise<void>;
+  getReviewThread(threadId: string): Promise<ReviewThread | undefined>;
+  listReviewThreads(runId: string, phase?: ReviewPhase): Promise<ReviewThread[]>;
+  saveReviewMessage(message: ReviewMessage): Promise<void>;
+  getReviewMessages(threadId: string): Promise<ReviewMessage[]>;
+  saveReviewDecision(decision: ReviewDecision, nextState: ReviewThreadState): Promise<void>;
+  getReviewDecisions(threadId: string): Promise<ReviewDecision[]>;
 }
 
 export interface ApplicationRunStore {
