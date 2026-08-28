@@ -6,11 +6,13 @@ Binaflow is a local workflow orchestrator for coding agents. It runs a
 structured workflow, persists runs in SQLite, stores artifacts on disk, and
 uses Pi as the first agent driver.
 
-The preview includes three sequential workflows:
+The preview includes four sequential workflows:
 
 - `plan-build`: create a validated implementation plan, then build it.
 - `plan-build-qa`: scope, plan, build, and run bounded read-only QA, with the
   builder correcting only critical or high findings.
+- `plan-build-qa-interactive`: pause at scope, changes, and QA checkpoints for
+  explicit human review.
 - `research-plan-build`: experimental research, review, approval, plan, then
   build.
 
@@ -43,8 +45,9 @@ the storage, artifact, engine, and driver lifecycles behind that service boundar
 The CLI and attached TUI are presentation adapters over the same application
 operations. They share persisted state and commands but provide different user
 experiences: the CLI provides stable human and versioned machine protocols,
-while the TUI provides attached navigation and live interaction. Neither adapter
-reads SQLite, artifact files, or Pi directly.
+while the TUI provides attached navigation, live interaction, QA history, and
+interactive review screens. Neither adapter reads SQLite, artifact files, or Pi
+directly.
 
 Attached live activity is a bounded display buffer for the current execution.
 Durable normalized events remain in SQLite and are retrieved through the paged
@@ -255,6 +258,7 @@ Supported output modes are intentionally narrow:
 | -------------------------------------------------------------- | ---- | ----- | ------------------- |
 | `workflows`, `runs`, `show`, `artifacts`, `artifact`, `doctor` | Yes  | No    | -                   |
 | `run`, `resume`, `approve`, `reject`                           | Yes  | Yes   | `run --interactive` |
+| `bugs`, `bug`, `review`                                        | Yes  | No    | -                   |
 | `tui`, `init`                                                  | No   | No    | Interactive only    |
 
 JSONL is an execution stream, not a general listing format. Its stdout
@@ -300,7 +304,7 @@ references and `artifact` to retrieve one exact artifact. `artifact --raw`
 writes only its content and cannot be combined with `--json` or `--jsonl`.
 
 The CLI exit codes are: `0` for a successful command (including a run waiting
-for approval), `1` for execution or operational failure, `2` for invalid
+for review or approval), `1` for execution or operational failure, `2` for invalid
 invocation or input, and `130` for graceful cancellation. `--json` and
 `--jsonl` are mutually exclusive. A persisted run can only be resumed with
 the same workflow revision; increment the workflow's `version` when changing
@@ -369,6 +373,52 @@ steps and their persisted artifacts are reused. Cancelled and completed runs
 cannot be resumed, waiting runs use the research-specific approval actions,
 and workflow-version mismatches block recovery. Planner clarification starts a
 new run with a revised objective rather than changing the existing run.
+
+## Interactive Review Workflow
+
+`plan-build-qa-interactive` pauses before plan/build, before QA, and before QA
+corrections or finalization. Messages, navigation, and explanations never
+advance a checkpoint; only an explicit decision or finalization does. Scope,
+task, change, and QA finding IDs remain stable. The TUI opens these checkpoints
+from run detail and stays usable over an 80-column SSH terminal.
+
+```bash
+binaflow run plan-build-qa-interactive --objective "Add input validation"
+binaflow review <run-id>
+binaflow review message <run-id> --thread <thread-id> --message "Explain this task"
+binaflow review explain <run-id> --thread <thread-id> --target-kind task --target-id task-1 --evidence "src/api.ts"
+binaflow review decide <run-id> --thread <thread-id> --target-kind scope --target-id scope --decision approve
+binaflow review finalize <run-id> --thread <thread-id> --target-kind finding --target-id finding-1
+```
+
+A disputed finding remains open until adjudicated as `withdrawn`, `confirmed`,
+`reclassified`, or `needs-human-decision` with issue, scope, clarification, and
+evidence. Repeating an adjudication requires additional evidence. Review
+messages and explainer results are persisted for recovery; closing a TUI screen
+does not finalize a review.
+
+## QA History
+
+Set `qaHistory.enabled` to `true` to record local QA findings. History is scoped
+to the configured workspace `dataDir` and never mixes databases. Defects retain
+stable identity, occurrences, lifecycle events, report references, metrics, and
+minimal resolution. FTS5 matches are candidates only; they do not prove a
+duplicate or regression.
+
+```bash
+binaflow bugs
+binaflow bugs --search "validation input"
+binaflow bugs --stats
+binaflow bug <defect-id>
+binaflow bugs reindex
+binaflow bugs archive --before 2026-01-01T00:00:00.000Z
+binaflow bugs purge --yes
+```
+
+`purge` removes QA history only, never runs or run artifacts. Human mode asks for
+confirmation; JSON mode requires `--yes`. `archive` preserves defect identity,
+metrics, and resolution. Disabling history preserves run reports but performs
+no history writes or queries. Back up `runs.db` together with `artifacts`.
 
 ## Research Workflow (Experimental)
 

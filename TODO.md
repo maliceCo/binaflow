@@ -186,7 +186,7 @@
 
 ### Fase 5: Documentacion, regresion y cierre
 
-- [ ] **Tarea 5.1: Documentar workflows, datos persistidos y recuperacion**
+- [x] **Tarea 5.1: Documentar workflows, datos persistidos y recuperacion**
   - **Archivos:** modificar `README.md`, `WISHLIST.md`; crear o modificar solo documentacion de usuario necesaria bajo `docs/` si ya existe el directorio.
   - **Descripcion:** Documentar los tres workflows, perfiles, skills, politica de QA, configuracion `qaHistory.enabled`, artefactos, comandos CLI, TUI SSH, recuperacion y backup conjunto de `runs.db` y `artifacts`. Actualizar `WISHLIST.md` para retirar unicamente los items promovidos de workflow QA, historial local y revision TUI/CLI; conservar web, daemon y demas ideas fuera de alcance.
   - **Evitar:** Prometer soporte web, persistencia remota, eliminacion automatica o que FTS5 identifica bugs de forma infalible.

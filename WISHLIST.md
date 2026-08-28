@@ -4,6 +4,9 @@ This document records future directions only. None of these items are in the
 active product scope. Promote an item into active work only after an explicit
 product and architecture decision.
 
+The local QA history and workflow-specific interactive review described in the
+README are active product scope; this list retains only future directions.
+
 ## Agent Harnesses
 
 - Add OpenCode through an `AgentDriver`, initially using its non-interactive JSON output or server API.
