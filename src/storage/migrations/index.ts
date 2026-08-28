@@ -6,8 +6,9 @@ import { profileSnapshotMigration } from './003-profile-snapshot.js';
 import { runHistoryMigration } from './004-run-history.js';
 import { executionOwnershipMigration } from './005-execution-ownership.js';
 import { qaHistoryMigration } from './006-qa-history.js';
+import { qaSearchMigration } from './007-qa-search.js';
 
-const currentSchemaVersion = 6;
+const currentSchemaVersion = 7;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -73,6 +74,11 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     if (version < 6) {
       database.exec(qaHistoryMigration);
       recordMigration(database, 6);
+    }
+
+    if (version < 7) {
+      database.exec(qaSearchMigration);
+      recordMigration(database, 7);
     }
 
     const finalVersion = database

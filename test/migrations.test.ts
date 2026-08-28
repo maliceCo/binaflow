@@ -88,8 +88,15 @@ describe('SQLite migrations', () => {
     const columns = verification.prepare('PRAGMA table_info(step_runs)').all() as Array<{
       name: string;
     }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(columns.map((column) => column.name)).toContain('profile_json');
+    expect(
+      verification
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'qa_search'")
+        .get(),
+    ).toEqual({
+      name: 'qa_search',
+    });
     expect(
       verification
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'qa_%'")

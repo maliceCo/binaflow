@@ -35,4 +35,5 @@ CREATE TABLE IF NOT EXISTS qa_defect_events (
 );
 
 CREATE INDEX IF NOT EXISTS qa_defect_events_by_defect ON qa_defect_events(defect_id, id);
+
 `;

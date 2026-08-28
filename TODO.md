@@ -119,7 +119,7 @@
   - **Verificacion:** `pnpm test -- test/migrations.test.ts test/qa-history.test.ts test/persistence.test.ts`.
   - **Commit Msg:** `feat: persist workspace qa defect history`
 
-- [ ] **Tarea 3.3: Indexar y buscar candidatos con FTS5**
+- [x] **Tarea 3.3: Indexar y buscar candidatos con FTS5**
   - **Archivos:** modificar `src/storage/migrations/006-qa-history.ts`, `src/storage/run-store.ts`, `src/storage/sqlite-run-store.ts`; ampliar `test/qa-history.test.ts`.
   - **Descripcion:** Crear la tabla virtual FTS5 `qa_search` como indice reconstruible de titulo, explicacion, regla/categoria, ubicaciones normalizadas, simbolos y resoluciones. Al registrar un finding, primero resolver coincidencias exactas por fingerprint; despues devolver candidatos FTS5 ordenados por BM25. Una coincidencia FTS5 es solo `candidate`, nunca una identidad o regresion confirmada.
   - **Evitar:** Embeddings, RAG, busqueda entre bases de datos, usar el ranking como probabilidad, o poner FTS5 como fuente de verdad.

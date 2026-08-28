@@ -3,7 +3,7 @@ import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
-import type { QaDefect, QaDefectEvent, QaOccurrence } from '../core/qa-history.js';
+import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
 import type { WorkflowRuntime } from '../core/workflow-runtime.js';
 
 export interface ApplicationArtifactStore {
@@ -59,6 +59,11 @@ export interface ApplicationQaHistoryStore {
   saveQaDefect(defect: QaDefect): Promise<void>;
   saveQaOccurrence(occurrence: QaOccurrence): Promise<void>;
   saveQaDefectEvent(event: QaDefectEvent): Promise<void>;
+  getQaDefects(): Promise<QaDefect[]>;
+  getQaOccurrences(defectId?: string): Promise<QaOccurrence[]>;
+  getQaDefectEvents(defectId: string): Promise<QaDefectEvent[]>;
+  searchQaDefects(fingerprint: string, query: string): Promise<QaSearchResult[]>;
+  reindexQaSearch(): Promise<void>;
 }
 
 export interface ApplicationRunStore {

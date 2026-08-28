@@ -49,6 +49,9 @@ describe('QA history persistence', () => {
       status: 'detected',
       createdAt: '2026-01-01T00:00:01.000Z',
       updatedAt: '2026-01-01T00:00:01.000Z',
+      locations: ['src/example.ts'],
+      symbols: ['validateInput'],
+      resolution: 'Add a validation guard',
     };
     const occurrence: QaOccurrence = {
       id: 'occurrence-1',
@@ -82,6 +85,36 @@ describe('QA history persistence', () => {
     await store.saveQaDefectEvent(fixed);
 
     expect(await store.getQaDefects()).toEqual([defect]);
+    expect(await store.searchQaDefects('fingerprint-1', 'unrelated')).toEqual([
+      { defect, exact: true },
+    ]);
+    expect(await store.searchQaDefects('other-fingerprint', 'invalid input')).toEqual([
+      { defect, exact: false },
+    ]);
+    await store.saveQaDefect({
+      ...defect,
+      id: 'defect-2',
+      fingerprint: 'fingerprint-2',
+      title: 'Invalid input is accepted',
+    });
+    const candidates = await store.searchQaDefects('other-fingerprint', 'invalid input');
+    expect(candidates).toHaveLength(2);
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        {
+          defect: {
+            ...defect,
+            id: 'defect-2',
+            fingerprint: 'fingerprint-2',
+            title: 'Invalid input is accepted',
+          },
+          exact: false,
+        },
+        { defect, exact: false },
+      ]),
+    );
+    await store.reindexQaSearch();
+    expect(await store.searchQaDefects('other-fingerprint', 'validateInput')).toHaveLength(2);
     expect(await store.getQaOccurrences(defect.id)).toEqual([occurrence]);
     expect(await store.getQaDefectEvents(defect.id)).toEqual([
       { ...detected, id: 1 },

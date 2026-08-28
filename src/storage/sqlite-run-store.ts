@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
-import type { QaDefect, QaDefectEvent, QaOccurrence } from '../core/qa-history.js';
+import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
@@ -368,21 +368,29 @@ export class SqliteRunStore implements RunStore {
   }
 
   async saveQaDefect(defect: QaDefect): Promise<void> {
-    this.database
-      .prepare(
-        `INSERT INTO qa_defects
-          (id, fingerprint, title, summary, category, severity, status, created_at, updated_at)
-         VALUES (@id, @fingerprint, @title, @summary, @category, @severity, @status, @createdAt, @updatedAt)
-         ON CONFLICT (id) DO UPDATE SET
-           fingerprint = excluded.fingerprint,
-           title = excluded.title,
-           summary = excluded.summary,
-           category = excluded.category,
-           severity = excluded.severity,
-           status = excluded.status,
-           updated_at = excluded.updated_at`,
-      )
-      .run(toQaDefectParams(defect));
+    const transaction = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT INTO qa_defects
+            (id, fingerprint, title, summary, category, severity, locations_json, symbols_json, resolution, status, created_at, updated_at)
+           VALUES (@id, @fingerprint, @title, @summary, @category, @severity, @locationsJson, @symbolsJson, @resolution, @status, @createdAt, @updatedAt)
+           ON CONFLICT (id) DO UPDATE SET
+             fingerprint = excluded.fingerprint,
+             title = excluded.title,
+             summary = excluded.summary,
+             category = excluded.category,
+             severity = excluded.severity,
+             locations_json = excluded.locations_json,
+             symbols_json = excluded.symbols_json,
+             resolution = excluded.resolution,
+             status = excluded.status,
+             updated_at = excluded.updated_at`,
+        )
+        .run(toQaDefectParams(defect));
+      this.database.prepare('DELETE FROM qa_search WHERE defect_id = ?').run(defect.id);
+      this.insertQaSearch(defect);
+    });
+    transaction();
   }
 
   async saveQaOccurrence(occurrence: QaOccurrence): Promise<void> {
@@ -434,6 +442,47 @@ export class SqliteRunStore implements RunStore {
       .prepare('SELECT * FROM qa_defect_events WHERE defect_id = ? ORDER BY id')
       .all(defectId) as QaDefectEventRow[];
     return rows.map(fromQaDefectEventRow);
+  }
+
+  async searchQaDefects(fingerprint: string, query: string): Promise<QaSearchResult[]> {
+    const exactRow = this.database
+      .prepare('SELECT * FROM qa_defects WHERE fingerprint = ?')
+      .get(fingerprint) as QaDefectRow | undefined;
+    const results: QaSearchResult[] = exactRow
+      ? [{ defect: fromQaDefectRow(exactRow), exact: true }]
+      : [];
+    const normalized = query.trim();
+    if (!normalized) return results;
+    const ftsQuery = normalized
+      .split(/\\s+/)
+      .map((term) => `"${term.replaceAll('"', '""')}"*`)
+      .join(' AND ');
+    const rows = this.database
+      .prepare('SELECT defect_id FROM qa_search WHERE qa_search MATCH ? ORDER BY bm25(qa_search)')
+      .all(ftsQuery) as Array<{ defect_id: string }>;
+    const exactId = exactRow?.id;
+    for (const row of rows) {
+      if (
+        row.defect_id === exactId ||
+        results.some((result) => result.defect.id === row.defect_id)
+      ) {
+        continue;
+      }
+      const defect = this.database
+        .prepare('SELECT * FROM qa_defects WHERE id = ?')
+        .get(row.defect_id) as QaDefectRow | undefined;
+      if (defect) results.push({ defect: fromQaDefectRow(defect), exact: false });
+    }
+    return results;
+  }
+
+  async reindexQaSearch(): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare('DELETE FROM qa_search').run();
+      const rows = this.database.prepare('SELECT * FROM qa_defects').all() as QaDefectRow[];
+      for (const row of rows) this.insertQaSearch(fromQaDefectRow(row));
+    });
+    transaction();
   }
 
   async saveEvent(event: NormalizedEvent): Promise<void> {
@@ -528,6 +577,23 @@ export class SqliteRunStore implements RunStore {
       }
     });
     transaction();
+  }
+
+  private insertQaSearch(defect: QaDefect): void {
+    this.database
+      .prepare(
+        `INSERT INTO qa_search (defect_id, title, summary, category, locations, symbols, resolution)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        defect.id,
+        defect.title,
+        defect.summary,
+        defect.category,
+        (defect.locations ?? []).join(' '),
+        (defect.symbols ?? []).join(' '),
+        defect.resolution ?? '',
+      );
   }
 
   private insertArtifact(artifact: ArtifactReference): void {
@@ -719,6 +785,9 @@ interface QaDefectRow {
   summary: string;
   category: string;
   severity: QaDefect['severity'];
+  locations_json: string | null;
+  symbols_json: string | null;
+  resolution: string | null;
   status: QaDefect['status'];
   created_at: string;
   updated_at: string;
@@ -846,6 +915,9 @@ function toQaDefectParams(defect: QaDefect): Record<string, unknown> {
     summary: defect.summary,
     category: defect.category,
     severity: defect.severity,
+    locationsJson: defect.locations ? JSON.stringify(defect.locations) : null,
+    symbolsJson: defect.symbols ? JSON.stringify(defect.symbols) : null,
+    resolution: defect.resolution ?? null,
     status: defect.status,
     createdAt: defect.createdAt,
     updatedAt: defect.updatedAt,
@@ -872,6 +944,9 @@ function fromQaDefectRow(row: QaDefectRow): QaDefect {
     summary: row.summary,
     category: row.category,
     severity: row.severity,
+    ...(row.locations_json ? { locations: JSON.parse(row.locations_json) as string[] } : {}),
+    ...(row.symbols_json ? { symbols: JSON.parse(row.symbols_json) as string[] } : {}),
+    ...(row.resolution ? { resolution: row.resolution } : {}),
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

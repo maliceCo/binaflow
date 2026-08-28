@@ -18,6 +18,14 @@ export interface QaDefect {
   status: QaDefectStatus;
   createdAt: string;
   updatedAt: string;
+  locations?: string[];
+  symbols?: string[];
+  resolution?: string;
+}
+
+export interface QaSearchResult {
+  defect: QaDefect;
+  exact: boolean;
 }
 
 export interface QaOccurrence {
