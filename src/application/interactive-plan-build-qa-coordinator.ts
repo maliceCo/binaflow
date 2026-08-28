@@ -179,69 +179,74 @@ export class InteractivePlanBuildQaCoordinator {
       return runtime.saveRunStatus(run, status);
     };
 
-    const scopeThread = await this.thread(run.id, 'scope', { kind: 'scope', id: 'scope' });
-    if (!completed(steps.get(scopeStep.id))) {
-      const result = await executeStep(scopeStep);
-      const artifact = requiredArtifact(artifacts, scopeStep.id, 'scope');
-      scopeValue = parseInteractiveScope(JSON.parse(await this.artifactsStore.read(artifact)));
-      if (result.status !== 'completed') return failRun(result);
-      await this.wait(run, scopeThread);
-      return { ...run, status: 'waiting' };
-    }
-    if (scopeThread.state === 'waiting') return ensureWaiting(run);
-    if (!findArtifact(artifacts, 'coordinator', 'TODO.md')) {
-      artifacts = await persistCoordinatorArtifact(
-        run.id,
-        'TODO.md',
-        renderInteractiveTodo(scopeValue ?? (await readScope(scopeStep))),
-        artifacts,
-        this.artifactsStore,
-        this.persistence,
+    try {
+      const scopeThread = await this.thread(run.id, 'scope', { kind: 'scope', id: 'scope' });
+      if (!completed(steps.get(scopeStep.id))) {
+        const result = await executeStep(scopeStep);
+        const artifact = requiredArtifact(artifacts, scopeStep.id, 'scope');
+        scopeValue = parseInteractiveScope(JSON.parse(await this.artifactsStore.read(artifact)));
+        if (result.status !== 'completed') return failRun(result);
+        await this.wait(run, scopeThread);
+        return { ...run, status: 'waiting' };
+      }
+      if (scopeThread.state === 'waiting') return ensureWaiting(run);
+      if (!findArtifact(artifacts, 'coordinator', 'TODO.md')) {
+        artifacts = await persistCoordinatorArtifact(
+          run.id,
+          'TODO.md',
+          renderInteractiveTodo(scopeValue ?? (await readScope(scopeStep))),
+          artifacts,
+          this.artifactsStore,
+          this.persistence,
+        );
+      }
+
+      if (!completed(steps.get(planStep.id))) await executeStep(planStep);
+      const planArtifact = findArtifact(artifacts, planStep.id, 'plan');
+      if (planArtifact)
+        planValue = parsePlanBuildQaPlan(JSON.parse(await this.artifactsStore.read(planArtifact)));
+      if (!completed(steps.get(buildStep.id))) await executeStep(buildStep);
+
+      const changesThread = await this.thread(run.id, 'changes', {
+        kind: 'change',
+        id: 'changes',
+      });
+      if (changesThread.state === 'waiting') {
+        await this.wait(run, changesThread);
+        return ensureWaiting(run);
+      }
+
+      if (!completed(steps.get(qaStep.id))) await executeStep(qaStep);
+      const qaArtifact = requiredArtifact(artifacts, qaStep.id, 'report');
+      const qaReport = parsePlanBuildQaQaReport(
+        JSON.parse(await this.artifactsStore.read(qaArtifact)),
       );
-    }
+      const findingIds = qaReport.findings.map((finding) => finding.id);
+      qaReports = [{ iteration: 1, report: qaReport }];
+      await recordInteractiveQaHistory(run.id, 1, qaReport, qaArtifact, this.qaHistory);
+      const qaThreads =
+        findingIds.length > 0
+          ? await Promise.all(
+              findingIds.map((id) => this.thread(run.id, 'qa', { kind: 'finding', id })),
+            )
+          : [await this.thread(run.id, 'qa', { kind: 'finding', id: 'qa' })];
+      const waitingThread = qaThreads.find((thread) => thread.state === 'waiting');
+      if (waitingThread) {
+        await this.wait(run, waitingThread);
+        return ensureWaiting(run);
+      }
 
-    if (!completed(steps.get(planStep.id))) await executeStep(planStep);
-    const planArtifact = findArtifact(artifacts, planStep.id, 'plan');
-    if (planArtifact)
-      planValue = parsePlanBuildQaPlan(JSON.parse(await this.artifactsStore.read(planArtifact)));
-    if (!completed(steps.get(buildStep.id))) await executeStep(buildStep);
-
-    const changesThread = await this.thread(run.id, 'changes', {
-      kind: 'change',
-      id: 'changes',
-    });
-    if (changesThread.state === 'waiting') {
-      await this.wait(run, changesThread);
-      return ensureWaiting(run);
+      const decisions = await Promise.all(
+        qaThreads.map((thread) => this.persistence.getReviewDecisions(thread.id)),
+      );
+      if (decisions.some((items) => items.some((decision) => decision.decision === 'correct'))) {
+        if (!completed(steps.get(fixStep.id))) await executeStep(fixStep);
+      }
+      return finish('completed');
+    } catch (error) {
+      if (!(error instanceof StepExecutionFailure)) throw error;
+      return finish(error.stepRun.status === 'cancelled' ? 'cancelled' : 'failed');
     }
-
-    if (!completed(steps.get(qaStep.id))) await executeStep(qaStep);
-    const qaArtifact = requiredArtifact(artifacts, qaStep.id, 'report');
-    const qaReport = parsePlanBuildQaQaReport(
-      JSON.parse(await this.artifactsStore.read(qaArtifact)),
-    );
-    const findingIds = qaReport.findings.map((finding) => finding.id);
-    qaReports = [{ iteration: 1, report: qaReport }];
-    await recordInteractiveQaHistory(run.id, 1, qaReport, qaArtifact, this.qaHistory);
-    const qaThreads =
-      findingIds.length > 0
-        ? await Promise.all(
-            findingIds.map((id) => this.thread(run.id, 'qa', { kind: 'finding', id })),
-          )
-        : [await this.thread(run.id, 'qa', { kind: 'finding', id: 'qa' })];
-    const waitingThread = qaThreads.find((thread) => thread.state === 'waiting');
-    if (waitingThread) {
-      await this.wait(run, waitingThread);
-      return ensureWaiting(run);
-    }
-
-    const decisions = await Promise.all(
-      qaThreads.map((thread) => this.persistence.getReviewDecisions(thread.id)),
-    );
-    if (decisions.some((items) => items.some((decision) => decision.decision === 'correct'))) {
-      if (!completed(steps.get(fixStep.id))) await executeStep(fixStep);
-    }
-    return finish('completed');
 
     async function executeStep(step: AgentStep): Promise<StepRun> {
       const existing = steps.get(step.id);

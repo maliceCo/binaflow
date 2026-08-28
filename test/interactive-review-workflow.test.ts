@@ -82,6 +82,33 @@ describe('interactive plan-build-qa workflow', () => {
     store.close();
   });
 
+  it('persists an agent failure as failed instead of interrupted', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-interactive-failure-'));
+    directories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
+    const runtime = createWorkflowRuntime(store, artifacts, new FailingInteractiveDriver());
+    const coordinator = new InteractivePlanBuildQaCoordinator(runtime, store, artifacts);
+    const profiles = Object.fromEntries(
+      ['analyst', 'planner', 'builder', 'qa'].map((name) => [name, profile(name)]),
+    );
+
+    const run = await coordinator.execute(planBuildQaInteractiveWorkflow, {
+      objective: 'Fail during review workflow',
+      input: { objective: 'Fail during review workflow' },
+      profiles,
+    });
+
+    expect(run.status).toBe('failed');
+    expect((await store.getRun(run.id))?.status).toBe('failed');
+    expect(
+      (await store.getArtifacts(run.id)).some(
+        (artifact) => artifact.stepId === 'coordinator' && artifact.name === 'FINAL-REPORT.md',
+      ),
+    ).toBe(true);
+    store.close();
+  });
+
   it('pauses at scope, changes, and QA checkpoints and resumes only after decisions', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-interactive-workflow-'));
     directories.push(directory);
@@ -164,6 +191,12 @@ describe('interactive plan-build-qa workflow', () => {
     store.close();
   });
 });
+
+class FailingInteractiveDriver implements AgentDriver {
+  async execute(): Promise<never> {
+    throw new Error('agent failed');
+  }
+}
 
 class InteractiveDriver implements AgentDriver {
   readonly steps: string[] = [];

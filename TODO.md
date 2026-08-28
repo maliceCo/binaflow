@@ -37,7 +37,7 @@
   - **Verificacion / TDD:** Ejecutar `pnpm vitest run test/cli-review.test.ts test/cli-subprocess.test.ts test/tui-ink-shell.test.ts test/tui-lifecycle.test.ts`.
   - **Commit Msg:** `fix: incluir explicaciones en el ciclo de vida adjunto`
 
-- [ ] **Tarea 2.3: Persistir fallo de agente interactivo como fallo recuperable del run**
+- [x] **Tarea 2.3: Persistir fallo de agente interactivo como fallo recuperable del run**
   - **Archivo:** `src/application/interactive-plan-build-qa-coordinator.ts`, `test/interactive-review-workflow.test.ts`
   - **Descripcion:** Capturar `StepExecutionFailure` en el limite del coordinador interactivo, finalizar el run como `failed` o `cancelled` segun el estado del paso, y producir el informe final cuando corresponda. Reservar `interrupted` para fallos de infraestructura, cierre abrupto o perdida de propiedad de ejecucion.
   - **Evitar:** No transformar errores de almacenamiento, artefactos corruptos ni conflictos de propiedad en fallos normales del agente; esos deben seguir recorriendo la recuperacion de infraestructura existente.
