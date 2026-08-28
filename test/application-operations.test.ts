@@ -26,6 +26,9 @@ describe('application operations', () => {
     expect(diagnosis.workflows.find((workflow) => workflow.id === 'plan-build')).toMatchObject({
       missingProfiles: ['builder'],
     });
+    expect(diagnosis.workflows.find((workflow) => workflow.id === 'plan-build-qa')).toMatchObject({
+      missingProfiles: ['analyst', 'builder', 'qa'],
+    });
     expect(
       diagnosis.workflows.find((workflow) => workflow.id === 'research-plan-build'),
     ).toMatchObject({

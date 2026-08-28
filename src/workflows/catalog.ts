@@ -1,5 +1,6 @@
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { planBuildWorkflow } from './plan-build.js';
+import { planBuildQaWorkflow } from './plan-build-qa.js';
 import {
   researchPlanBuildWorkflow,
   type ResearchWorkflowDefinition,
@@ -22,6 +23,10 @@ const registrations: readonly WorkflowRegistration[] = [
   {
     definition: planBuildWorkflow,
     description: 'Plan the work, then implement the validated plan',
+  },
+  {
+    definition: planBuildQaWorkflow,
+    description: 'Scope, plan, build, and review the work with bounded QA',
   },
   {
     definition: researchPlanBuildWorkflow,

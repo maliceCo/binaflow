@@ -54,6 +54,11 @@ describe('configuration operations', () => {
       missingProfiles: ['planner', 'builder'],
       available: false,
     });
+    expect(diagnosis.workflows.find((workflow) => workflow.id === 'plan-build-qa')).toMatchObject({
+      requiredProfiles: ['analyst', 'planner', 'builder', 'qa'],
+      missingProfiles: ['analyst', 'planner', 'builder', 'qa'],
+      available: false,
+    });
     expect(diagnosis.dataDirPath).toBe(join(directory, '.binaflow', 'data'));
     expect(diagnosis.ready).toBe(false);
     await expect(access(join(directory, '.binaflow', 'data'))).rejects.toMatchObject({
@@ -75,7 +80,7 @@ describe('configuration operations', () => {
     await expect(access(join(directory, 'data'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('marks stable plan-build ready while diagnosing experimental research as unavailable', async () => {
+  it('marks stable workflows ready while diagnosing experimental research as unavailable', async () => {
     const directory = await temporaryDirectory('binaflow-doctor-ready-');
     const configPath = join(directory, '.binaflow', 'config.json');
     await mkdir(join(directory, '.binaflow'));
@@ -91,7 +96,7 @@ describe('configuration operations', () => {
       configPath,
       JSON.stringify({
         piCommand: process.execPath,
-        profiles: { planner: profile, builder: profile },
+        profiles: { analyst: profile, planner: profile, builder: profile, qa: profile },
       }),
     );
 

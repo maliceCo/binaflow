@@ -45,7 +45,7 @@
   - **Verificacion:** `pnpm test -- test/plan-build-qa-contracts.test.ts`.
   - **Commit Msg:** `feat: define structured plan build qa contracts`
 
-- [ ] **Tarea 1.2: Registrar el workflow y diagnosticar sus perfiles requeridos**
+- [x] **Tarea 1.2: Registrar el workflow y diagnosticar sus perfiles requeridos**
   - **Archivos:** modificar `src/workflows/catalog.ts`, `src/application/workflow-operations.ts`, `src/application/config-operations.ts`; crear o ampliar `test/config-operations.test.ts`.
   - **Descripcion:** Registrar `plan-build-qa` con las fases agent `scope`, `plan`, `build`, `qa` y `fix`, usando los perfiles `analyst`, `planner`, `builder` y `qa`. Publicar el contrato y los perfiles requeridos en `workflows`, `doctor` y la TUI existente. Mantener `plan-build` y `research-plan-build` sin cambios de contrato.
   - **Evitar:** Codificar proveedor, modelo o herramientas en la definicion de workflow; convertir `research-plan-build` en una base generica para este workflow.

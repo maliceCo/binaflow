@@ -46,7 +46,7 @@ describe('CLI protocol', () => {
       type: 'result',
       command: 'workflows',
     });
-    expect(result.data.workflows).toHaveLength(2);
+    expect(result.data.workflows).toHaveLength(3);
     expect(result.data.workflows[0]).toHaveProperty('input');
     expect(result.data.workflows[0]?.requiredProfiles.length).toBeGreaterThan(0);
   });
@@ -54,7 +54,22 @@ describe('CLI protocol', () => {
   it('describes the same workflow contracts used by execution', () => {
     const contracts = listWorkflowContracts();
 
-    expect(contracts.map((workflow) => workflow.id)).toEqual(['plan-build', 'research-plan-build']);
+    expect(contracts.map((workflow) => workflow.id)).toEqual([
+      'plan-build',
+      'plan-build-qa',
+      'research-plan-build',
+    ]);
+    expect(contracts.find((workflow) => workflow.id === 'plan-build-qa')).toMatchObject({
+      version: 1,
+      requiredProfiles: ['analyst', 'planner', 'builder', 'qa'],
+      steps: [
+        { id: 'scope', profile: 'analyst' },
+        { id: 'plan', profile: 'planner' },
+        { id: 'build', profile: 'builder' },
+        { id: 'qa', profile: 'qa' },
+        { id: 'fix', profile: 'builder' },
+      ],
+    });
     expect(contracts.find((workflow) => workflow.id === 'research-plan-build')?.experimental).toBe(
       true,
     );
