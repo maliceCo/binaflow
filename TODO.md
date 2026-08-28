@@ -76,7 +76,7 @@
 
 ### Fase 4: Verificacion final
 
-- [ ] **Tarea 4.1: Ejecutar regresion completa y comprobar limites de cambio**
+- [x] **Tarea 4.1: Ejecutar regresion completa y comprobar limites de cambio**
   - **Archivo:** Solo archivos tocados por las tareas anteriores; no modificar `.agents/skills/`.
   - **Descripcion:** Ejecutar todas las comprobaciones del proyecto. Documentar separadamente que el unico fallo de formato conocido pertenece a los cuatro skills preexistentes, si sigue presente. Confirmar que no se modificaron artefactos de build ni archivos ajenos.
   - **Evitar:** No ejecutar `format --write`, no construir ni probar el bundle Linux y no limpiar la modificacion preexistente de `.agents/skills/todo-agent-skill/SKILL.md`.
