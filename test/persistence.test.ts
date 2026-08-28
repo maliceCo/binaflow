@@ -110,6 +110,66 @@ describe('local persistence', () => {
     reopenedStore.close();
   });
 
+  it('persists coordinator artifacts atomically without replacing prior iterations', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-coordinator-artifacts-'));
+    temporaryDirectories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifactStore = new FileArtifactStore(join(directory, 'artifacts'));
+    const run: WorkflowRun = {
+      id: 'coordinator-artifacts',
+      workflowId: 'plan-build-qa',
+      workflowVersion: 1,
+      objective: 'Persist QA reports',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await store.createRun(run);
+    const firstReport = await artifactStore.write(
+      run.id,
+      'qa',
+      'qa-report-1',
+      'json',
+      '{"iteration":1}',
+      'application/json',
+    );
+    const secondReport = await artifactStore.write(
+      run.id,
+      'qa',
+      'qa-report-2',
+      'json',
+      '{"iteration":2}',
+      'application/json',
+    );
+    await store.saveCoordinatorArtifacts(run.id, [firstReport, secondReport]);
+
+    const replacement = await artifactStore.write(
+      run.id,
+      'qa',
+      'qa-report-1',
+      'json',
+      '{"iteration":1,"repaired":true}',
+      'application/json',
+    );
+    const thirdReport = await artifactStore.write(
+      run.id,
+      'qa',
+      'qa-report-3',
+      'json',
+      '{"iteration":3}',
+      'application/json',
+    );
+    await store.saveCoordinatorArtifacts(run.id, [replacement, thirdReport]);
+
+    expect(await store.getArtifacts(run.id)).toEqual([replacement, secondReport, thirdReport]);
+    expect(await store.getStepRuns(run.id)).toEqual([]);
+
+    const invalid = { ...thirdReport, id: 'invalid', kind: 'invalid' as 'json' };
+    await expect(store.saveCoordinatorArtifacts(run.id, [replacement, invalid])).rejects.toThrow();
+    expect(await store.getArtifacts(run.id)).toEqual([replacement, secondReport, thirdReport]);
+    store.close();
+  });
+
   it('rolls back step completion when an artifact reference cannot be inserted', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-complete-step-'));
     temporaryDirectories.push(directory);

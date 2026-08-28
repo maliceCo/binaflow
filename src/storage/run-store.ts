@@ -61,6 +61,7 @@ export interface RunStore {
   saveStepRun(stepRun: StepRun): Promise<void>;
   getStepRuns(runId: string, options?: StepRunQueryOptions): Promise<StepRun[]>;
   getArtifacts(runId: string): Promise<ArtifactReference[]>;
+  saveCoordinatorArtifacts(runId: string, artifacts: ArtifactReference[]): Promise<void>;
   completeStep(stepRun: StepRun, artifacts: ArtifactReference[]): Promise<void>;
   saveEvent(event: NormalizedEvent): Promise<void>;
   saveEvents(events: NormalizedEvent[]): Promise<void>;

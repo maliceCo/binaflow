@@ -68,7 +68,7 @@
 
 ### Fase 2: Workflow automatico y recuperacion (feature)
 
-- [ ] **Tarea 2.1: Persistir artefactos de coordinadores de forma transaccional**
+- [x] **Tarea 2.1: Persistir artefactos de coordinadores de forma transaccional**
   - **Archivos:** modificar `src/application/ports.ts`, `src/storage/run-store.ts`, `src/storage/sqlite-run-store.ts`, `src/application/runtime.ts`; ampliar `test/persistence.test.ts` y `test/application-infrastructure.test.ts`.
   - **Descripcion:** Agregar al puerto de persistencia una operacion estrecha para registrar referencias de artefactos producidos por un coordinador, sin una ejecucion de agente ficticia. La operacion debe insertar o reemplazar las referencias dentro de una transaccion SQLite y conservar artefactos de iteraciones anteriores bajo nombres distintos. Los archivos se escriben atómicamente antes de registrar su referencia; referencias no registradas tras un fallo son artefactos huerfanos recuperables, nunca resultados completados.
   - **Evitar:** Agregar un paso `report` falso al workflow generico, sobrescribir `qa-report-1`, o cerrar SQLite mientras una escritura de artefactos esta activa.

@@ -317,6 +317,25 @@ export class SqliteRunStore implements RunStore {
     return rows.map(fromArtifactRow);
   }
 
+  async saveCoordinatorArtifacts(runId: string, artifacts: ArtifactReference[]): Promise<void> {
+    if (artifacts.some((artifact) => artifact.runId !== runId)) {
+      throw new Error('Coordinator artifact references must belong to the same run');
+    }
+    const keys = artifacts.map((artifact) => `${artifact.stepId}\u0000${artifact.name}`);
+    if (new Set(keys).size !== keys.length) {
+      throw new Error('Coordinator artifact references must have unique names per phase');
+    }
+    const transaction = this.database.transaction(() => {
+      const run = this.database.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
+        { status: RunStatus } | undefined;
+      if (!run) throw new Error(`Cannot save coordinator artifacts for unknown run: ${runId}`);
+      if (run.status !== 'running') throw new RunExecutionOwnedError(runId);
+      this.assertCurrentExecutionOwner(runId);
+      for (const artifact of artifacts) this.upsertArtifactInTransaction(artifact);
+    });
+    transaction();
+  }
+
   async checkpointResearchIteration(
     inputArtifact: ArtifactReference,
     researchStep: StepRun,
@@ -455,6 +474,21 @@ export class SqliteRunStore implements RunStore {
       .prepare('DELETE FROM artifacts WHERE run_id = ? AND step_id = ? AND name = ?')
       .run(artifact.runId, artifact.stepId, artifact.name);
     this.insertArtifact(artifact);
+  }
+
+  private upsertArtifactInTransaction(artifact: ArtifactReference): void {
+    this.database
+      .prepare(
+        `INSERT INTO artifacts (id, run_id, step_id, name, kind, path, media_type, size_bytes)
+         VALUES (@id, @runId, @stepId, @name, @kind, @path, @mediaType, @sizeBytes)
+         ON CONFLICT (run_id, step_id, name) DO UPDATE SET
+           id = excluded.id,
+           kind = excluded.kind,
+           path = excluded.path,
+           media_type = excluded.media_type,
+           size_bytes = excluded.size_bytes`,
+      )
+      .run(toArtifactParams(artifact));
   }
 
   private writeStepRun(stepRun: StepRun, allowResearchReset = false): void {
