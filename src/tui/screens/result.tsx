@@ -56,6 +56,12 @@ export function ResultScreen({
         <SafeText>Duration: {duration === undefined ? '-' : formatDurationMs(duration)}</SafeText>
         <SafeText>Usage: {tokens === undefined ? '-' : `${tokens} tokens`}</SafeText>
         <SafeText>Cost: {cost === undefined ? '-' : `$${cost.toFixed(4)}`}</SafeText>
+        {view.qa ? (
+          <SafeText>
+            QA: iteration {view.qa.iteration}/{view.qa.limit} blocking findings=
+            {view.qa.blockingFindings} action={view.qa.recoveryAction}
+          </SafeText>
+        ) : null}
       </PaneSection>
       <PaneSection title="Checklist" colors={colors}>
         {view.phases.map((phase) => (

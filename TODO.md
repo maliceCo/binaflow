@@ -96,7 +96,7 @@
   - **Verificacion:** `pnpm test -- test/plan-build-qa-workflow.test.ts test/application-operations.test.ts test/application-run-view.test.ts test/application-claims.test.ts`.
   - **Commit Msg:** `feat: recover bounded qa workflow safely`
 
-- [ ] **Tarea 2.5: Exponer el workflow automatico por CLI y TUI existentes**
+- [x] **Tarea 2.5: Exponer el workflow automatico por CLI y TUI existentes**
   - **Archivos:** modificar `src/cli/commands/run.ts`, `src/cli/commands/show.ts`, `src/cli/protocol.ts`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/screens/live.tsx`, `src/tui/screens/result.tsx`, `src/tui/screens/detail.tsx`; ampliar `test/cli-protocol.test.ts`, `test/cli-output.test.ts`, `test/tui-reduce.test.ts` y `test/tui-ink-shell.test.ts`.
   - **Descripcion:** Mostrar `plan-build-qa` en lanzamiento, progreso y resultado. En CLI JSON/JSONL preservar envelopes protocol-v1, orden de stream, separacion stdout/stderr y codigos de salida. En TUI mostrar fase, iteracion QA y estado sin requerir interaccion humana. Permitir abrir los artefactos renderizados usando las pantallas y comandos actuales.
   - **Evitar:** Crear una TUI paralela, cambiar el protocolo existente, interpretar texto libre como decision, o introducir una interfaz web.

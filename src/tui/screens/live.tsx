@@ -96,6 +96,12 @@ export function LiveScreen({
           Usage: {tokens === undefined ? '-' : `${tokens} tokens`} Cost:{' '}
           {cost === undefined ? '-' : `$${cost.toFixed(4)}`}
         </SafeText>
+        {live.view?.qa ? (
+          <SafeText>
+            QA: iteration {live.view.qa.iteration}/{live.view.qa.limit} blocking findings=
+            {live.view.qa.blockingFindings} action={live.view.qa.recoveryAction}
+          </SafeText>
+        ) : null}
       </PaneSection>
       <PaneSection title="Checklist" colors={colors}>
         {(phases ?? live.steps).map((step) => (

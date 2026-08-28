@@ -108,6 +108,9 @@ export function DetailScreen({
         <SafeText>{`Created: ${formatTimestamp(view.createdAt)}`}</SafeText>
         <SafeText>{`Events: ${view.eventCount} persisted events`}</SafeText>
         <SafeText>{`Available actions: ${view.availableActions.length}`}</SafeText>
+        {view.qa ? (
+          <SafeText>{`QA: iteration ${view.qa.iteration}/${view.qa.limit}  blocking findings=${view.qa.blockingFindings}  action=${view.qa.recoveryAction}`}</SafeText>
+        ) : null}
         {clarifications.length > 0 ? (
           <SafeText>{`Clarification: ${clarifications.join(' | ')}`}</SafeText>
         ) : null}

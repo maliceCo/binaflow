@@ -77,6 +77,14 @@ describe('CLI event presentation', () => {
         stepId: 'research-approval',
         message: 'Review the research artifact before planning and execution.',
       },
+      qa: {
+        phaseId: 'qa-2',
+        iteration: 2,
+        limit: 3,
+        blockingFindings: 1,
+        findings: [{ id: 'finding-1', severity: 'high', title: 'Broken behavior' }],
+        recoveryAction: 'resume',
+      },
     };
 
     try {
@@ -86,6 +94,7 @@ describe('CLI event presentation', () => {
       expect(text).toContain('duration=2s');
       expect(text).toContain('cost=$0.5000');
       expect(text).toContain('next=binaflow approve run-1');
+      expect(text).toContain('qa=iteration 2/3  blocking-findings=1  recovery=resume');
 
       const executionMetadata: StepRun = {
         runId: 'run-1',

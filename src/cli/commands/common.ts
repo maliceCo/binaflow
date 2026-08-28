@@ -155,6 +155,11 @@ export function printRunSummary(view: RunView, stepResults: StepRun[] = []): voi
   );
   console.log(`  objective=${singleLine(view.objective, 240)}`);
   console.log(`  state=${humanRunStatus(view.status)}`);
+  if (view.qa) {
+    console.log(
+      `  qa=iteration ${view.qa.iteration}/${view.qa.limit}  blocking-findings=${view.qa.blockingFindings}  recovery=${view.qa.recoveryAction}`,
+    );
+  }
   console.log(
     `  created=${formatTimestamp(view.createdAt)}  updated=${formatTimestamp(view.updatedAt)}`,
   );
