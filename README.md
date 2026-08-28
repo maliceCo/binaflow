@@ -379,14 +379,14 @@ new run with a revised objective rather than changing the existing run.
 `plan-build-qa-interactive` pauses before plan/build, before QA, and before QA
 corrections or finalization. Messages, navigation, and explanations never
 advance a checkpoint; only an explicit decision or finalization does. Scope,
-task, change, and QA finding IDs remain stable. The TUI opens these checkpoints
+change, and QA finding IDs remain stable. The TUI opens these checkpoints
 from run detail and stays usable over an 80-column SSH terminal.
 
 ```bash
 binaflow run plan-build-qa-interactive --objective "Add input validation"
 binaflow review <run-id>
 binaflow review message <run-id> --thread <thread-id> --message "Explain this task"
-binaflow review explain <run-id> --thread <thread-id> --target-kind task --target-id task-1 --evidence "src/api.ts"
+binaflow review explain <run-id> --thread <thread-id> --target-kind change --target-id changes --evidence "src/api.ts"
 binaflow review decide <run-id> --thread <thread-id> --target-kind scope --target-id scope --decision approve
 binaflow review finalize <run-id> --thread <thread-id> --target-kind finding --target-id finding-1
 ```

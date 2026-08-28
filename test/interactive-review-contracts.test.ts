@@ -39,7 +39,7 @@ describe('interactive review contracts', () => {
       interactiveReview: {
         phases: ['scope', 'changes', 'qa'],
         operations: ['message', 'decide', 'finalize'],
-        targetKinds: ['scope', 'task', 'change', 'finding'],
+        targetKinds: ['scope', 'change', 'finding'],
         todoArtifact: 'TODO.md',
       },
     });

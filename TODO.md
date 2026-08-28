@@ -53,7 +53,7 @@
 
 ### Fase 3: Alinear contrato, persistencia y presentacion
 
-- [ ] **Tarea 3.1: Resolver la promesa de targets task y change**
+- [x] **Tarea 3.1: Resolver la promesa de targets task y change**
   - **Archivo:** `src/workflows/plan-build-qa-interactive.ts`, `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/review-operations.ts`, `README.md`, `test/interactive-review-workflow.test.ts`, `test/interactive-review-contracts.test.ts`
   - **Descripcion:** Hacer coincidir el contrato con los hilos realmente persistidos. Crear hilos con IDs estables para cada `task` declarado en scope y para cada cambio si el contrato de build aporta cambios estables; o, si el producto no revisara esos elementos individualmente, eliminar esos target kinds y el ejemplo CLI imposible de la documentacion. La opcion elegida debe garantizar que un target anunciado siempre corresponde a un hilo consultable y explicable.
   - **Evitar:** No inventar cambios a partir de texto libre ni introducir una segunda fuente de verdad para IDs. No dejar el comando documentado para un target que el coordinador nunca crea.

@@ -173,7 +173,7 @@ const validateChange = ajv.compile<InteractiveChange>(interactiveChangeSchema);
 
 export const interactiveReviewContract: InteractiveReviewContract = {
   phases: [...INTERACTIVE_REVIEW_PHASES],
-  targetKinds: ['scope', 'task', 'change', 'finding'],
+  targetKinds: ['scope', 'change', 'finding'],
   operations: [...INTERACTIVE_REVIEW_OPERATIONS],
   todoArtifact: 'TODO.md',
 };
@@ -317,7 +317,7 @@ export function validateInteractiveWorkflowDefinition(
   if (!sameStringArray(contract.operations, INTERACTIVE_REVIEW_OPERATIONS)) {
     throw new Error('Invalid interactive review operations');
   }
-  if (!sameStringArray(contract.targetKinds, ['scope', 'task', 'change', 'finding'])) {
+  if (!sameStringArray(contract.targetKinds, ['scope', 'change', 'finding'])) {
     throw new Error('Invalid interactive review target kinds');
   }
   if (contract.todoArtifact !== 'TODO.md') {
