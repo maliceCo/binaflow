@@ -27,6 +27,7 @@ const KEYMAP = [
   'n  start a new run',
   'w  choose a different folder (when idle)',
   'd / r  refresh the configuration diagnosis',
+  'b  show QA history',
   '?  show this help',
   'Tab / h / l  switch the focused pane',
   'j / k / arrows  move the selection or scroll',
@@ -164,6 +165,12 @@ function footerHints(state: TuiState): Array<[string, string]> {
       ['Enter', 'preview'],
       ['q', 'back'],
     ];
+  if (state.detail === 'bugs')
+    return [
+      ['j/k', 'move'],
+      ['Enter', 'details'],
+      ['q', 'back'],
+    ];
   if (state.detail === 'diagnosis')
     return [
       ['j/k', 'scroll'],
@@ -181,6 +188,7 @@ function footerHints(state: TuiState): Array<[string, string]> {
     ['n', 'new run'],
     ['w', 'folder'],
     ['d', 'status'],
+    ['b', 'QA history'],
     ['?', 'help'],
     ['Tab', 'switch'],
     ['q', 'quit'],

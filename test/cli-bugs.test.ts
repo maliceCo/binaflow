@@ -56,12 +56,88 @@ describe('QA history CLI', () => {
       '--cwd',
       directory,
       '--json',
+      'bugs',
+      '--fingerprint',
+      'fingerprint-1',
+    ]);
+    expect(JSON.parse(output.pop()!)).toMatchObject({
+      command: 'bugs',
+      data: { bugs: [{ id: 'defect-1' }] },
+    });
+
+    await createCli().parseAsync([
+      'node',
+      'binaflow',
+      '--cwd',
+      directory,
+      '--json',
       'bug',
       'defect-1',
     ]);
     expect(JSON.parse(output.pop()!)).toMatchObject({
       command: 'bug',
       data: { defect: { id: 'defect-1' }, occurrences: [], events: [] },
+    });
+  });
+
+  it('reports metrics and requires explicit machine-readable purge confirmation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-cli-bugs-maintenance-'));
+    directories.push(directory);
+    await mkdir(join(directory, '.binaflow'));
+    await mkdir(join(directory, '.binaflow', 'data'));
+    await writeFile(
+      join(directory, '.binaflow', 'config.json'),
+      JSON.stringify({ qaHistory: { enabled: true }, profiles: {} }),
+    );
+    const store = new SqliteRunStore(join(directory, '.binaflow', 'data', 'runs.db'));
+    await store.saveQaDefect({
+      id: 'defect-1',
+      fingerprint: 'fingerprint-1',
+      title: 'Broken behavior',
+      summary: 'The behavior is incorrect',
+      category: 'correctness',
+      severity: 'high',
+      status: 'reopened',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    store.close();
+    const output: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+
+    await createCli().parseAsync([
+      'node',
+      'binaflow',
+      '--cwd',
+      directory,
+      '--json',
+      'bugs',
+      '--stats',
+    ]);
+    expect(JSON.parse(output.pop()!)).toMatchObject({
+      command: 'bugs',
+      data: { stats: { total: 1, regressions: 1, recurring: 0 } },
+    });
+
+    await expect(
+      createCli().parseAsync(['node', 'binaflow', '--cwd', directory, '--json', 'bugs', 'purge']),
+    ).rejects.toThrow('Use --yes to confirm purge');
+    await createCli().parseAsync([
+      'node',
+      'binaflow',
+      '--cwd',
+      directory,
+      '--json',
+      'bugs',
+      'purge',
+      '--yes',
+    ]);
+    expect(JSON.parse(output.pop()!)).toMatchObject({
+      command: 'bugs purge',
+      data: { purged: true },
     });
   });
 

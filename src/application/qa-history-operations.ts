@@ -8,8 +8,20 @@ export interface QaDefectDetails {
   events: QaDefectEvent[];
 }
 
+export interface QaHistoryMetric {
+  id: string;
+  title: string;
+  occurrences: number;
+}
+
 export interface QaHistoryStats {
   total: number;
+  totalOccurrences: number;
+  recurring: number;
+  regressions: number;
+  frequent: QaHistoryMetric[];
+  recurrences: QaHistoryMetric[];
+  regressionDefects: QaHistoryMetric[];
   bySeverity: Record<string, number>;
   byStatus: Record<string, number>;
 }
@@ -38,14 +50,48 @@ export function searchQaHistory(
 }
 
 export async function qaHistoryStats(context: QaHistoryContext): Promise<QaHistoryStats> {
-  const defects = await listQaDefects(context);
+  const history = assertEnabled(context);
+  const [defects, occurrences] = await Promise.all([
+    history.getQaDefects(),
+    history.getQaOccurrences(),
+  ]);
+  const occurrencesByDefect = new Map<string, number>();
+  for (const occurrence of occurrences) {
+    occurrencesByDefect.set(
+      occurrence.defectId,
+      (occurrencesByDefect.get(occurrence.defectId) ?? 0) + 1,
+    );
+  }
   const bySeverity: Record<string, number> = {};
   const byStatus: Record<string, number> = {};
   for (const defect of defects) {
     bySeverity[defect.severity] = (bySeverity[defect.severity] ?? 0) + 1;
     byStatus[defect.status] = (byStatus[defect.status] ?? 0) + 1;
   }
-  return { total: defects.length, bySeverity, byStatus };
+  const metrics = defects.map((defect) => ({
+    id: defect.id,
+    title: defect.title,
+    occurrences: occurrencesByDefect.get(defect.id) ?? 0,
+  }));
+  const byFrequency = [...metrics].sort(
+    (left, right) => right.occurrences - left.occurrences || left.id.localeCompare(right.id),
+  );
+  const frequent = byFrequency.filter((metric) => metric.occurrences > 0).slice(0, 5);
+  const recurrences = metrics.filter((metric) => metric.occurrences > 1);
+  const regressionDefects = defects
+    .filter((defect) => defect.status === 'reopened')
+    .map((defect) => metrics.find((metric) => metric.id === defect.id)!);
+  return {
+    total: defects.length,
+    totalOccurrences: occurrences.length,
+    recurring: recurrences.length,
+    regressions: regressionDefects.length,
+    frequent,
+    recurrences,
+    regressionDefects,
+    bySeverity,
+    byStatus,
+  };
 }
 
 export async function reindexQaHistory(context: QaHistoryContext): Promise<void> {

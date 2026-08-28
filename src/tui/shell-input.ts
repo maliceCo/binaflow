@@ -281,9 +281,21 @@ export function handleShellInput({
     return;
   }
 
+  if (current.detail === 'bugs') {
+    if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+    else if (direction !== 0) {
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+    } else if (input === '\r' || key.return) {
+      const defect = current.qaDefects?.[current.qaDefectSelected];
+      if (defect) dispatch({ type: 'open-qa-defect', id: defect.id });
+    }
+    return;
+  }
+
   if (input === 'n') dispatch({ type: 'new-run' });
   else if (input === 'w') dispatch({ type: 'open-folder-picker' });
   else if (input === 'd' || input === 'r') dispatch({ type: 'refresh-diagnosis' });
+  else if (input === 'b') dispatch({ type: 'open-bugs' });
   else if (input === '?') dispatch({ type: 'open-help' });
   else if (key.tab) {
     dispatch({

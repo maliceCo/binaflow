@@ -1,9 +1,15 @@
 import type { Command } from 'commander';
-import { machineMode, rejectUnsupportedJsonl, writeJsonResult } from '../protocol.js';
+import {
+  cliUsageError,
+  machineMode,
+  rejectUnsupportedJsonl,
+  writeJsonResult,
+} from '../protocol.js';
 import {
   openApplicationStorage,
   type ApplicationStorageContext,
 } from '../../application/runtime.js';
+import type { QaHistoryStats } from '../../application/qa-history-operations.js';
 import { rootOptions } from './common.js';
 
 export function registerBugCommands(cli: Command): void {
@@ -11,31 +17,44 @@ export function registerBugCommands(cli: Command): void {
     .command('bugs')
     .description('Inspect and maintain local QA history')
     .option('--search <text>', 'search QA history candidates')
+    .option('--fingerprint <fingerprint>', 'match an exact finding fingerprint')
     .option('--stats', 'show QA history statistics')
-    .action(async (options: { search?: string; stats?: boolean }, command: Command) => {
-      const mode = machineMode(rootOptions(command));
-      rejectUnsupportedJsonl(mode, 'bugs');
-      const context = await openStorage(command);
-      try {
-        if (options.stats) {
-          const stats = await context.application.qaHistoryStats!();
-          if (mode) writeJsonResult('bugs', { stats });
-          else printStats(stats);
-          return;
+    .action(
+      async (
+        options: { search?: string; fingerprint?: string; stats?: boolean },
+        command: Command,
+      ) => {
+        const mode = machineMode(rootOptions(command));
+        rejectUnsupportedJsonl(mode, 'bugs');
+        const context = await openStorage(command);
+        try {
+          if (options.stats) {
+            const stats = await context.application.qaHistoryStats!();
+            if (mode) writeJsonResult('bugs', { stats });
+            else printStats(stats);
+            return;
+          }
+          const defects = options.search
+            ? (
+                await context.application.searchQaHistory!(
+                  options.fingerprint ?? '',
+                  options.search,
+                )
+              ).map((result) => result.defect)
+            : options.fingerprint
+              ? (await context.application.searchQaHistory!(options.fingerprint, '')).map(
+                  (result) => result.defect,
+                )
+              : await context.application.listQaDefects!();
+          if (mode) writeJsonResult('bugs', { bugs: defects });
+          else
+            for (const defect of defects)
+              console.log(`${defect.id}  [${defect.severity}] ${defect.status}  ${defect.title}`);
+        } finally {
+          context.close();
         }
-        const defects = options.search
-          ? (await context.application.searchQaHistory!('', options.search)).map(
-              (result) => result.defect,
-            )
-          : await context.application.listQaDefects!();
-        if (mode) writeJsonResult('bugs', { bugs: defects });
-        else
-          for (const defect of defects)
-            console.log(`${defect.id}  [${defect.severity}] ${defect.status}  ${defect.title}`);
-      } finally {
-        context.close();
-      }
-    });
+      },
+    );
 
   bugs
     .command('reindex')
@@ -75,14 +94,22 @@ export function registerBugCommands(cli: Command): void {
     .action(async (options: { yes?: boolean }, command: Command) => {
       const mode = machineMode(rootOptions(command));
       rejectUnsupportedJsonl(mode, 'bugs purge');
+      if (!options.yes && mode) {
+        throw cliUsageError(
+          'CONFIRMATION_REQUIRED',
+          'Use --yes to confirm purge when --json is enabled',
+        );
+      }
       if (!options.yes && !(await confirmPurge())) {
-        console.log('QA history purge cancelled.');
+        if (mode) writeJsonResult('bugs purge', { purged: false });
+        else console.log('QA history purge cancelled.');
         return;
       }
       const context = await openStorage(command);
       try {
         await context.application.purgeQaHistory!();
-        console.log('QA history purged. Runs and run artifacts were not deleted.');
+        if (mode) writeJsonResult('bugs purge', { purged: true });
+        else console.log('QA history purged. Runs and run artifacts were not deleted.');
       } finally {
         context.close();
       }
@@ -133,12 +160,11 @@ async function confirmPurge(): Promise<boolean> {
   }
 }
 
-function printStats(stats: {
-  total: number;
-  bySeverity: Record<string, number>;
-  byStatus: Record<string, number>;
-}): void {
+function printStats(stats: QaHistoryStats): void {
   console.log(`QA defects: ${stats.total}`);
+  console.log(`Occurrences: ${stats.totalOccurrences}`);
+  console.log(`Recurring: ${stats.recurring}`);
+  console.log(`Regressions: ${stats.regressions}`);
   console.log(`Severity: ${formatCounts(stats.bySeverity)}`);
   console.log(`Status: ${formatCounts(stats.byStatus)}`);
 }

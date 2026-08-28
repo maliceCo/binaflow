@@ -133,7 +133,7 @@
   - **Verificacion:** `pnpm test -- test/plan-build-qa-workflow.test.ts test/qa-history.test.ts`.
   - **Commit Msg:** `feat: track automatic qa findings by workspace`
 
-- [ ] **Tarea 3.5: Exponer historial, metricas y mantenimiento en CLI/TUI**
+- [x] **Tarea 3.5: Exponer historial, metricas y mantenimiento en CLI/TUI**
   - **Archivos:** crear `src/application/qa-history-operations.ts`, `src/cli/commands/bugs.ts`, `src/tui/screens/bugs.tsx`; modificar `src/application/service.ts`, `src/cli/index.ts`, `src/cli/protocol.ts`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/screens.ts`, `src/tui/shell-controller.tsx`; crear `test/cli-bugs.test.ts` y ampliar `test/tui-ink-shell.test.ts`.
   - **Descripcion:** Agregar consultas de bugs, detalle, ocurrencias, estadisticas y busqueda. Agregar comandos versionados `binaflow bugs`, `binaflow bug <id>`, `binaflow bugs reindex`, `binaflow bugs archive` y `binaflow bugs purge`; `purge` requiere confirmacion humana y no elimina runs ni artefactos de run. En TUI, presentar listas legibles por SSH de bugs frecuentes, recurrencias, regresiones y candidatos. Reindexar solo reconstruye FTS5; archive conserva identidad, metricas y resolucion minima.
   - **Evitar:** Eliminar historial automaticamente, permitir `purge` en JSON/JSONL sin una confirmacion no ambigua, o acceder a SQLite desde CLI/TUI.

@@ -186,6 +186,33 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...state, focus: event.pane };
     case 'move':
       return move(state, event.direction, event.visibleRows);
+    case 'open-bugs':
+      if (state.detail === 'live' || state.overlay !== 'none') return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'qaDefectDetails'),
+        detail: 'bugs',
+        focus: 'detail',
+        qaDefectSelected: 0,
+        qaDefectOffset: 0,
+        status: 'Loading QA history...',
+      };
+    case 'open-qa-defect':
+      if (state.detail !== 'bugs') return state;
+      return {
+        ...clearField(state, 'qaDefectDetails'),
+        status: `Loading QA defect ${state.qaDefects?.find((defect) => defect.id === event.id)?.id ?? event.id}...`,
+      };
+    case 'qa-history-loaded':
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        detail: 'bugs',
+        qaDefects: event.defects,
+        qaHistoryStats: event.stats,
+        qaDefectSelected: Math.min(state.qaDefectSelected, Math.max(0, event.defects.length - 1)),
+        qaDefectOffset: 0,
+      };
+    case 'qa-defect-details-set':
+      return { ...clearField(state, 'error'), status: undefined, qaDefectDetails: event.details };
     case 'new-run': {
       const diagnosis = state.diagnosis;
       if (!diagnosis) {
@@ -424,7 +451,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         inputValue: '',
       };
     case 'inspect-back': {
-      if (state.detail !== 'inspect' && state.detail !== 'result' && state.detail !== 'artifacts')
+      if (
+        state.detail !== 'inspect' &&
+        state.detail !== 'result' &&
+        state.detail !== 'artifacts' &&
+        state.detail !== 'bugs'
+      )
         return state;
       return {
         ...clearField(clearField(state, 'artifactContent'), 'error'),
@@ -588,6 +620,25 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       const count = state.runView?.artifacts.length ?? 0;
       if (count === 0) return state;
       return moveList(state, count, direction, visibleRows);
+    }
+    case 'bugs': {
+      const count = state.qaDefects?.length ?? 0;
+      if (count === 0) return state;
+      const moved = moveSelection(
+        { offset: state.qaDefectOffset, selected: state.qaDefectSelected },
+        direction,
+        count,
+        visibleRows,
+      );
+      const next = {
+        ...state,
+        qaDefectSelected: moved.selected,
+        qaDefectOffset: moved.offset,
+      };
+      return state.qaDefectDetails &&
+        state.qaDefects?.[moved.selected]?.id !== state.qaDefectDetails.defect.id
+        ? clearField(next, 'qaDefectDetails')
+        : next;
     }
     case 'artifacts': {
       if (state.artifactContent) {

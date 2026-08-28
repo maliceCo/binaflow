@@ -53,6 +53,61 @@ describe('Ink shell', () => {
     expect(terminal.output.text()).toContain('\u001b[?1049l');
   });
 
+  it('opens QA history and loads a selected defect through application queries', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const context = createApplicationService(
+      async () => createRun('completed'),
+      () => undefined,
+    );
+    const defect = {
+      id: 'defect-1',
+      fingerprint: 'fingerprint-1',
+      title: 'Broken behavior',
+      summary: 'The behavior is incorrect',
+      category: 'correctness',
+      severity: 'high' as const,
+      status: 'reopened' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    context.listQaDefects = async () => [defect];
+    context.qaHistoryStats = async () => ({
+      total: 1,
+      totalOccurrences: 2,
+      recurring: 1,
+      regressions: 1,
+      frequent: [{ id: defect.id, title: defect.title, occurrences: 2 }],
+      recurrences: [{ id: defect.id, title: defect.title, occurrences: 2 }],
+      regressionDefects: [{ id: defect.id, title: defect.title, occurrences: 2 }],
+      bySeverity: { high: 1 },
+      byStatus: { reopened: 1 },
+    });
+    context.getQaDefect = async () => ({ defect, occurrences: [], events: [] });
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+
+    await waitForHomeReady(terminal);
+    terminal.input.push('b');
+    await terminal.output.waitFor('QA history');
+    await terminal.output.waitFor('defect-1');
+    expect(stripAnsi(terminal.output.text())).toContain('Regressions: 1');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Selected bug');
+    expect(stripAnsi(terminal.output.text())).toContain('Broken behavior');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Workspace status');
+    terminal.input.push('q');
+    await running;
+  }, 15_000);
+
   it('ignores an in-flight diagnosis result after unmount', async () => {
     const directory = await temporaryDirectory();
     const terminal = createTerminal();

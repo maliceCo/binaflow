@@ -4,7 +4,9 @@ import type {
 } from '../application/config-operations.js';
 import type { ArtifactContentView } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
+import type { QaDefectDetails, QaHistoryStats } from '../application/qa-history-operations.js';
 import type { AgentModel } from '../core/agent.js';
+import type { QaDefect } from '../core/qa-history.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import type { WorkflowContract } from '../application/operations.js';
 import type { LaunchInputState, SetupStep, SetupValues } from './launch.js';
@@ -37,7 +39,15 @@ export type Overlay =
   | 'rejection-feedback';
 
 export type DetailMode =
-  'empty' | 'diagnosis' | 'launch' | 'live' | 'approval' | 'result' | 'inspect' | 'artifacts';
+  | 'empty'
+  | 'diagnosis'
+  | 'launch'
+  | 'live'
+  | 'approval'
+  | 'result'
+  | 'inspect'
+  | 'artifacts'
+  | 'bugs';
 
 /** Tags the controller must honor after `reduce` returns. The reducer cannot do I/O. */
 export type TuiEffect = 'discover-setup-models' | 'diagnose-cwd';
@@ -85,6 +95,11 @@ export interface TuiState {
   generated?: GeneratedConfiguration;
   showFullConfig: boolean;
   setupPreviewOffset: number;
+  qaDefectSelected: number;
+  qaDefectOffset: number;
+  qaDefects?: QaDefect[];
+  qaHistoryStats?: QaHistoryStats;
+  qaDefectDetails?: QaDefectDetails;
 }
 
 export interface TuiModelOptions {
@@ -124,6 +139,8 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     artifactContentOffset: 0,
     showFullConfig: false,
     setupPreviewOffset: 0,
+    qaDefectSelected: 0,
+    qaDefectOffset: 0,
   };
 }
 
@@ -152,6 +169,10 @@ export type TuiEvent =
   | { type: 'focus-pane'; pane: FocusPane }
   | { type: 'move'; direction: -1 | 1; visibleRows: number }
   | { type: 'new-run' }
+  | { type: 'open-bugs' }
+  | { type: 'open-qa-defect'; id: string }
+  | { type: 'qa-history-loaded'; defects: QaDefect[]; stats: QaHistoryStats }
+  | { type: 'qa-defect-details-set'; details: QaDefectDetails }
   | { type: 'launch-cancel' }
   | { type: 'launch-set'; input: LaunchInputState }
   | { type: 'launch-input'; value: string }

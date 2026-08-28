@@ -4,6 +4,7 @@ import type { LiveState } from './execution.js';
 import { workflowInputFields } from './launch.js';
 import { IdleDetail, StudioLayout } from './layout.js';
 import { ArtifactsScreen } from './screens/artifacts.js';
+import { BugsScreen } from './screens/bugs.js';
 import { ApprovalScreen } from './screens/approval.js';
 import { DetailScreen } from './screens/detail.js';
 import { DiagnosisScreen } from './screens/diagnosis.js';
@@ -95,6 +96,20 @@ export function renderShellDetail({
           visibleRows={Math.max(1, size.rows - 13)}
         />
       ) : null;
+      break;
+    case 'bugs':
+      right = (
+        <BugsScreen
+          colors={colors}
+          defects={state.qaDefects ?? []}
+          {...(state.qaHistoryStats ? { stats: state.qaHistoryStats } : {})}
+          {...(state.qaDefectDetails ? { details: state.qaDefectDetails } : {})}
+          selected={state.qaDefectSelected}
+          offset={state.qaDefectOffset}
+          visibleRows={Math.max(1, size.rows - 10)}
+          {...(state.error ? { error: state.error } : {})}
+        />
+      );
       break;
     case 'approval':
       right = state.runView ? (

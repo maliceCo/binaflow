@@ -88,6 +88,8 @@ export function InkShellController({
   const folderRequest = useRef(0);
   const inspectionRequest = useRef(0);
   const artifactRequest = useRef(0);
+  const qaHistoryRequest = useRef(0);
+  const qaDefectRequest = useRef(0);
   const activeRunId = useRef<string | undefined>(undefined);
   const liveRef = useRef<LiveState | undefined>(undefined);
   const activityBufferRef = useRef<LiveActivityBuffer | undefined>(undefined);
@@ -260,6 +262,49 @@ export function InkShellController({
           stateRef.current.cwd === requestCwd
         )
           dispatch({ type: 'runs-loaded', runs: [] });
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
+  const loadQaHistory = async (): Promise<void> => {
+    const requestId = ++qaHistoryRequest.current;
+    const request = (async () => {
+      const application = await ensureContext();
+      if (!application.listQaDefects || !application.qaHistoryStats) {
+        throw new Error('QA history is unavailable for this workspace.');
+      }
+      const [defects, stats] = await Promise.all([
+        application.listQaDefects(),
+        application.qaHistoryStats(),
+      ]);
+      if (
+        active.current &&
+        requestId === qaHistoryRequest.current &&
+        stateRef.current.detail === 'bugs'
+      ) {
+        dispatch({ type: 'qa-history-loaded', defects, stats });
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
+  const loadQaDefectDetails = async (id: string): Promise<void> => {
+    const requestId = ++qaDefectRequest.current;
+    const request = (async () => {
+      const application = await ensureContext();
+      if (!application.getQaDefect)
+        throw new Error('QA history is unavailable for this workspace.');
+      const details = await application.getQaDefect(id);
+      if (
+        active.current &&
+        requestId === qaDefectRequest.current &&
+        stateRef.current.detail === 'bugs' &&
+        stateRef.current.qaDefects?.[stateRef.current.qaDefectSelected]?.id === id
+      ) {
+        dispatch({ type: 'qa-defect-details-set', details });
       }
     })();
     lifecycle.trackRequest(request);
@@ -685,6 +730,12 @@ export function InkShellController({
           break;
         case 'new-run':
           if (next.detail === 'launch') await prepareLaunch(next);
+          break;
+        case 'open-bugs':
+          if (next.detail === 'bugs') await loadQaHistory();
+          break;
+        case 'open-qa-defect':
+          if (next.detail === 'bugs') await loadQaDefectDetails(event.id);
           break;
         case 'launch-confirm':
           startLaunch();
