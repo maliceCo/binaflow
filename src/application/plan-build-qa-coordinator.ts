@@ -6,16 +6,28 @@ import type { AgentStep, WorkflowDefinition } from '../core/workflow.js';
 import type { WorkflowRuntime } from '../core/workflow-runtime.js';
 import type { ApplicationRunStore } from './ports.js';
 import {
+  renderFinalReport,
+  renderQaFixes,
+  renderScope,
+  renderTodo,
+  type FinalReportBuild,
+  type FinalReportQa,
+} from '../workflows/plan-build-qa-render.js';
+import {
   findArtifact,
   replaceArtifacts,
   StepExecutionFailure,
   validateWorkflowInput,
 } from '../core/workflow-runtime.js';
 import {
+  parsePlanBuildQaBuildResult,
   parsePlanBuildQaQaReport,
+  parsePlanBuildQaPlan,
   parsePlanBuildQaScope,
   validatePlanBuildQaWorkflowDefinition,
+  type PlanBuildQaPlan,
   type PlanBuildQaReport,
+  type PlanBuildQaScope,
 } from '../workflows/plan-build-qa.js';
 
 export const MAX_QA_ITERATIONS = 3;
@@ -86,12 +98,50 @@ export class PlanBuildQaCoordinator {
     const qaStep = requiredStep(workflow, 'qa');
     const fixStep = requiredStep(workflow, 'fix');
     const runtime = this.runtime;
+    let scopeValue: PlanBuildQaScope | undefined;
+    let planValue: PlanBuildQaPlan | undefined;
+    const builds: FinalReportBuild[] = await loadBuildResults(artifacts, this.artifactsStore);
+    const qaReports: FinalReportQa[] = await loadQaReports(artifacts, this.artifactsStore);
+    const finish = async (status: 'completed' | 'failed' | 'cancelled'): Promise<WorkflowRun> => {
+      try {
+        artifacts = await persistCoordinatorArtifact(
+          run.id,
+          'FINAL-REPORT.md',
+          renderFinalReport({
+            objective: run.objective,
+            ...(scopeValue ? { scope: scopeValue } : {}),
+            ...(planValue ? { plan: planValue } : {}),
+            builds,
+            qaReports,
+            status,
+          }),
+          artifacts,
+          this.artifactsStore,
+          this.persistence,
+        );
+      } catch (error) {
+        await runtime
+          .emitStatus(
+            run.id,
+            'coordinator',
+            `Final report persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
+          .catch(() => undefined);
+      }
+      return runtime.saveRunStatus(run, status);
+    };
 
     try {
       const scope = await runStep(scopeStep);
       const scopeArtifact = requiredArtifact(artifacts, scopeStep.id, 'scope');
-      const scopeValue = parsePlanBuildQaScope(
-        JSON.parse(await this.artifactsStore.read(scopeArtifact)),
+      scopeValue = parsePlanBuildQaScope(JSON.parse(await this.artifactsStore.read(scopeArtifact)));
+      artifacts = await persistCoordinatorArtifact(
+        run.id,
+        'SCOPE.md',
+        renderScope(scopeValue),
+        artifacts,
+        this.artifactsStore,
+        this.persistence,
       );
       if (scope.disposition?.kind === 'stop' || scopeValue.decision === 'needs_clarification') {
         for (const step of [planStep, buildStep, qaStep, fixStep]) {
@@ -101,28 +151,53 @@ export class PlanBuildQaCoordinator {
           });
           stepRuns.set(step.id, skipped);
         }
-        return this.runtime.saveRunStatus(run, 'completed');
+        return finish('completed');
       }
 
       await runStep(planStep);
+      const planArtifact = requiredArtifact(artifacts, planStep.id, 'plan');
+      planValue = parsePlanBuildQaPlan(JSON.parse(await this.artifactsStore.read(planArtifact)));
+      artifacts = await persistCoordinatorArtifact(
+        run.id,
+        'TODO.md',
+        renderTodo(planValue),
+        artifacts,
+        this.artifactsStore,
+        this.persistence,
+      );
       await runStep(buildStep);
+      await recordBuildResult(
+        builds,
+        buildStep.id,
+        requiredArtifact(artifacts, buildStep.id, 'result'),
+        this.artifactsStore,
+      );
 
       while (true) {
-        if (request.signal?.aborted) return this.runtime.saveRunStatus(run, 'cancelled');
+        if (request.signal?.aborted) return finish('cancelled');
         const currentQaStep = iteration === 0 ? qaStep : phaseStep(qaStep, iteration);
         await runStep(currentQaStep);
         const qaArtifact = requiredArtifact(artifacts, currentQaStep.id, 'report');
         const report = parsePlanBuildQaQaReport(
           JSON.parse(await this.artifactsStore.read(qaArtifact)),
         );
-        if (!isBlockingReport(report)) return this.runtime.saveRunStatus(run, 'completed');
+        recordQaReport(qaReports, iteration + 1, report);
+        if (!isBlockingReport(report)) return finish('completed');
+        artifacts = await persistCoordinatorArtifact(
+          run.id,
+          `QA-FIXES-${iteration + 1}.md`,
+          renderQaFixes(iteration + 1, report),
+          artifacts,
+          this.artifactsStore,
+          this.persistence,
+        );
         if (iteration >= MAX_QA_ITERATIONS - 1) {
           await this.runtime.emitStatus(
             run.id,
             currentQaStep.id,
             `QA stopped after ${MAX_QA_ITERATIONS} iterations`,
           );
-          return this.runtime.saveRunStatus(run, 'failed');
+          return finish('failed');
         }
 
         const currentFixStep = phaseStep(fixStep, iteration);
@@ -135,7 +210,13 @@ export class PlanBuildQaCoordinator {
               : reference,
           ),
         });
-        if (fix.status !== 'completed') return this.runtime.saveRunStatus(run, 'failed');
+        if (fix.status !== 'completed') return finish('failed');
+        await recordBuildResult(
+          builds,
+          currentFixStep.id,
+          requiredArtifact(artifacts, currentFixStep.id, 'result'),
+          this.artifactsStore,
+        );
 
         iteration += 1;
         const nextInput = { ...input, [QA_ITERATION_INPUT]: iteration };
@@ -147,10 +228,7 @@ export class PlanBuildQaCoordinator {
           JSON.stringify(nextInput),
           'application/json',
         );
-        await this.persistence.saveCoordinatorArtifacts(
-          run.id,
-          inputArtifact ? [inputArtifact] : [],
-        );
+        await this.persistence.saveCoordinatorArtifacts(run.id, [inputArtifact]);
         const previousInput = findArtifact(artifacts, 'run', 'input');
         artifacts = replaceArtifacts(artifacts, [inputArtifact]);
         if (previousInput && previousInput.id !== inputArtifact.id) {
@@ -169,10 +247,7 @@ export class PlanBuildQaCoordinator {
           message: `Dependency ${failedStep.stepId} failed`,
         });
       }
-      return this.runtime.saveRunStatus(
-        run,
-        failedStep.status === 'cancelled' ? 'cancelled' : 'failed',
-      );
+      return finish(failedStep.status === 'cancelled' ? 'cancelled' : 'failed');
     }
     async function runStep(step: AgentStep): Promise<StepRun> {
       const existing = stepRuns.get(step.id);
@@ -236,4 +311,97 @@ function isBlockingReport(report: PlanBuildQaReport): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function persistCoordinatorArtifact(
+  runId: string,
+  name: string,
+  content: string,
+  artifacts: ArtifactReference[],
+  artifactStore: WorkflowArtifactStore,
+  persistence: PlanBuildQaPersistence,
+): Promise<ArtifactReference[]> {
+  const artifact = await artifactStore.write(
+    runId,
+    'coordinator',
+    name,
+    'text',
+    content,
+    'text/markdown',
+  );
+  await persistence.saveCoordinatorArtifacts(runId, [artifact]);
+  const previous = findArtifact(artifacts, 'coordinator', name);
+  if (previous && previous.id !== artifact.id)
+    await artifactStore.remove(previous).catch(() => undefined);
+  return replaceArtifacts(artifacts, [artifact]);
+}
+
+async function loadBuildResults(
+  artifacts: ArtifactReference[],
+  artifactStore: WorkflowArtifactStore,
+): Promise<FinalReportBuild[]> {
+  const buildArtifacts = artifacts.filter(
+    (artifact) =>
+      artifact.name === 'result' &&
+      (artifact.stepId === 'build' || /^fix-\\d+$/.test(artifact.stepId)),
+  );
+  const results: FinalReportBuild[] = [];
+  for (const artifact of buildArtifacts) {
+    try {
+      results.push({
+        phase: artifact.stepId,
+        result: parsePlanBuildQaBuildResult(JSON.parse(await artifactStore.read(artifact))),
+      });
+    } catch {
+      // A failed or interrupted step may have no valid structured result.
+    }
+  }
+  return results;
+}
+
+async function loadQaReports(
+  artifacts: ArtifactReference[],
+  artifactStore: WorkflowArtifactStore,
+): Promise<FinalReportQa[]> {
+  const reportArtifacts = artifacts.filter(
+    (artifact) =>
+      artifact.name === 'report' && (artifact.stepId === 'qa' || /^qa-\\d+$/.test(artifact.stepId)),
+  );
+  const reports: FinalReportQa[] = [];
+  for (const artifact of reportArtifacts) {
+    try {
+      reports.push({
+        iteration: artifact.stepId === 'qa' ? 1 : Number(artifact.stepId.slice(3)),
+        report: parsePlanBuildQaQaReport(JSON.parse(await artifactStore.read(artifact))),
+      });
+    } catch {
+      // A failed or interrupted step may have no valid structured report.
+    }
+  }
+  return reports.sort((left, right) => left.iteration - right.iteration);
+}
+
+async function recordBuildResult(
+  builds: FinalReportBuild[],
+  phase: string,
+  artifact: ArtifactReference,
+  artifactStore: WorkflowArtifactStore,
+): Promise<void> {
+  if (builds.some((build) => build.phase === phase)) return;
+  try {
+    builds.push({
+      phase,
+      result: parsePlanBuildQaBuildResult(JSON.parse(await artifactStore.read(artifact))),
+    });
+  } catch {
+    // The final report still records the phase when no valid result exists elsewhere.
+  }
+}
+
+function recordQaReport(
+  reports: FinalReportQa[],
+  iteration: number,
+  report: PlanBuildQaReport,
+): void {
+  if (!reports.some((entry) => entry.iteration === iteration)) reports.push({ iteration, report });
 }

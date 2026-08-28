@@ -42,7 +42,7 @@ function profile(model: string, workspaceMode: AgentProfile['workspaceMode']): A
 class FakeDriver implements AgentDriver {
   readonly calls: AgentRequest[] = [];
 
-  constructor(private readonly responses: AgentStepResult[]) {}
+  constructor(private readonly responses: Array<AgentStepResult | Error>) {}
 
   async execute(
     request: AgentRequest,
@@ -54,6 +54,7 @@ class FakeDriver implements AgentDriver {
     this.calls.push(request);
     const response = this.responses.shift();
     if (!response) throw new Error(`No fake response for ${request.stepId}`);
+    if (response instanceof Error) throw response;
     return response;
   }
 }
@@ -175,6 +176,42 @@ describe('plan-build-qa workflow', () => {
       objective: 'Improve the workflow',
       qaIteration: 1,
     });
+    const coordinatorArtifacts = await store.getArtifacts(run.id);
+    expect(
+      coordinatorArtifacts
+        .filter((artifact) => artifact.stepId === 'coordinator')
+        .map((artifact) => artifact.name),
+    ).toEqual(['SCOPE.md', 'TODO.md', 'QA-FIXES-1.md', 'FINAL-REPORT.md']);
+    const finalReport = coordinatorArtifacts.find(
+      (artifact) => artifact.stepId === 'coordinator' && artifact.name === 'FINAL-REPORT.md',
+    );
+    expect(await artifacts.read(finalReport!)).toContain('finding-1');
+    store.close();
+  });
+
+  it('always persists a final report when an agent phase fails', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-plan-build-qa-failure-'));
+    directories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
+    const driver = new FakeDriver([new Error('scope failed')]);
+    const runtime = createWorkflowRuntime(store, artifacts, driver, undefined, {
+      interpretDisposition: interpretWorkflowDisposition,
+    });
+    const coordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
+
+    const run = await coordinator.execute(planBuildQaWorkflow, {
+      runId: 'qa-failure-run',
+      objective: 'Report the failure',
+      profiles,
+    });
+
+    expect(run.status).toBe('failed');
+    const finalReport = (await store.getArtifacts(run.id)).find(
+      (artifact) => artifact.stepId === 'coordinator' && artifact.name === 'FINAL-REPORT.md',
+    );
+    expect(finalReport).toBeDefined();
+    expect(await artifacts.read(finalReport!)).toContain('Scope was not completed.');
     store.close();
   });
 });

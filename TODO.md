@@ -82,7 +82,7 @@
   - **Verificacion:** `pnpm test -- test/plan-build-qa-workflow.test.ts test/application-claims.test.ts`.
   - **Commit Msg:** `feat: add bounded plan build qa coordinator`
 
-- [ ] **Tarea 2.3: Renderizar artefactos humanos y el informe final determinista**
+- [x] **Tarea 2.3: Renderizar artefactos humanos y el informe final determinista**
   - **Archivos:** crear `src/workflows/plan-build-qa-render.ts`; modificar `src/application/plan-build-qa-coordinator.ts`; ampliar `test/plan-build-qa-workflow.test.ts`.
   - **Descripcion:** Renderizar desde los JSON validados `SCOPE.md`, `TODO.md`, `QA-FIXES-N.md` y `FINAL-REPORT.md` como artefactos del run. El informe siempre debe generarse, incluso si el limite QA se agota o un paso falla, e incluir objetivo, alcance, tareas, verificaciones declaradas por builder, findings por iteracion, resueltos, pendientes, riesgos, estado final y commits declarados por builder cuando existan. Usar los IDs originales en todas las representaciones.
   - **Evitar:** Pedir a otro agente que invente el informe, escribir `TODO.md` en la raiz del workspace, ocultar findings no bloqueantes o eliminar informes de iteraciones anteriores.
