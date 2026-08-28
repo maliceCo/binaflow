@@ -393,7 +393,10 @@ binaflow review finalize <run-id> --thread <thread-id> --target-kind finding --t
 
 A disputed finding remains open until adjudicated as `withdrawn`, `confirmed`,
 `reclassified`, or `needs-human-decision` with issue, scope, clarification, and
-evidence. Repeating an adjudication requires additional evidence. Review
+evidence. Repeating an adjudication requires additional evidence. For review
+checkpoints, `approve` advances scope and changes; QA `approve`, `withdraw`, and
+`accept-risk` finalize without a fix, while QA `correct` runs the fix phase.
+`reject` and `postpone` record the decision but keep the checkpoint open. Review
 messages and explainer results are persisted for recovery; closing a TUI screen
 does not finalize a review.
 

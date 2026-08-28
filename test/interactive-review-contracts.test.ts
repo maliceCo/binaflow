@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { listWorkflowContracts } from '../src/workflows/catalog.js';
+import { interactiveDecisionEffect } from '../src/core/interactive-review.js';
 import {
   interactiveTargetKey,
   parseInteractiveScope,
@@ -54,6 +55,20 @@ describe('interactive review contracts', () => {
     expect(() =>
       validateInteractiveTarget({ kind: 'task', id: 'task-2' }, { taskIds: ['task-1'] }),
     ).toThrow('Unknown task target');
+  });
+
+  it('maps decisions to explicit checkpoint effects', () => {
+    expect(interactiveDecisionEffect('scope', 'approve')).toBe('advance');
+    expect(interactiveDecisionEffect('scope', 'reject')).toBe('stay');
+    expect(interactiveDecisionEffect('scope', 'postpone')).toBe('stay');
+    expect(interactiveDecisionEffect('scope', 'correct')).toBe('stay');
+    expect(interactiveDecisionEffect('changes', 'withdraw')).toBe('stay');
+    expect(interactiveDecisionEffect('qa', 'approve')).toBe('advance');
+    expect(interactiveDecisionEffect('qa', 'withdraw')).toBe('advance');
+    expect(interactiveDecisionEffect('qa', 'accept-risk')).toBe('advance');
+    expect(interactiveDecisionEffect('qa', 'correct')).toBe('correct');
+    expect(interactiveDecisionEffect('qa', 'reject')).toBe('stay');
+    expect(interactiveDecisionEffect('qa', 'postpone')).toBe('stay');
   });
 
   it('keeps navigation, explanation, and messages non-transitional', () => {

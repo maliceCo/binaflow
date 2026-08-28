@@ -16,6 +16,28 @@ export type ReviewDecisionKind =
   | 'reclassified'
   | 'needs-human-decision';
 
+export type InteractiveDecision = Extract<
+  ReviewDecisionKind,
+  'approve' | 'reject' | 'correct' | 'withdraw' | 'accept-risk' | 'postpone'
+>;
+
+export type InteractiveDecisionEffect = 'advance' | 'correct' | 'stay';
+
+export function interactiveDecisionEffect(
+  phase: ReviewPhase,
+  decision: InteractiveDecision,
+): InteractiveDecisionEffect {
+  if (decision === 'reject' || decision === 'postpone') return 'stay';
+  if (phase === 'qa' && decision === 'correct') return 'correct';
+  if (
+    phase === 'qa' &&
+    (decision === 'approve' || decision === 'withdraw' || decision === 'accept-risk')
+  ) {
+    return 'advance';
+  }
+  return decision === 'approve' ? 'advance' : 'stay';
+}
+
 export type ReviewTargetKind = 'scope' | 'task' | 'change' | 'finding';
 
 export interface ReviewTarget {
