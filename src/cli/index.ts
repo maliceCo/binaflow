@@ -12,6 +12,7 @@ import { registerUpdateCommand } from './commands/update.js';
 import { registerArtifactCommands } from './commands/artifact.js';
 import { registerConfigurationCommands } from './commands/configuration.js';
 import { registerBugCommands } from './commands/bugs.js';
+import { registerReviewCommands } from './commands/review.js';
 import { VERSION } from '../version.js';
 import {
   exitCodeFor,
@@ -70,6 +71,7 @@ export function createCli(): Command {
   registerArtifactCommands(cli);
   registerConfigurationCommands(cli);
   registerBugCommands(cli);
+  registerReviewCommands(cli);
   registerTuiCommand(cli);
   registerWorkflowCommand(cli);
 

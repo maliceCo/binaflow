@@ -18,6 +18,7 @@ import {
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
+import { planBuildQaInteractiveWorkflow } from '../workflows/plan-build-qa-interactive.js';
 import type { ApplicationInternals } from './context.js';
 import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
 import { validateWorkflowProfiles } from './workflow-operations.js';
@@ -290,6 +291,12 @@ async function executeWorkflow(
       throw new Error('Plan-build-qa coordinator is not configured');
     }
     return context.planBuildQaCoordinator.execute(workflow, request);
+  }
+  if (workflow.id === planBuildQaInteractiveWorkflow.id) {
+    if (!context.interactivePlanBuildQaCoordinator) {
+      throw new Error('Interactive review coordinator is not configured');
+    }
+    return context.interactivePlanBuildQaCoordinator.execute(workflow, request);
   }
   return context.engine.execute(workflow, request);
 }

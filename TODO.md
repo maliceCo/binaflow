@@ -156,7 +156,7 @@
   - **Verificacion:** `pnpm test -- test/migrations.test.ts test/interactive-review-persistence.test.ts test/persistence.test.ts`.
   - **Commit Msg:** `feat: persist interactive review threads`
 
-- [ ] **Tarea 4.3: Implementar coordinador y comandos de revision interactiva**
+- [x] **Tarea 4.3: Implementar coordinador y comandos de revision interactiva**
   - **Archivos:** crear `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/review-operations.ts`, `src/cli/commands/review.ts`; modificar `src/application/service.ts`, `src/application/runtime.ts`, `src/application/execution-operations.ts`, `src/cli/index.ts`, `src/cli/protocol.ts`; crear `test/interactive-review-workflow.test.ts` y `test/cli-review.test.ts`.
   - **Descripcion:** Implementar checkpoints `waiting` propios del workflow: revision de alcance antes de plan/build, revision de cambios antes de QA y revision QA antes de correccion/informe. Un agente explicador read-only nuevo solo recibe target, evidencia, alcance y resumen relevante del hilo; no puede editar. Las decisiones explicitas incluyen corregir, retirar tras adjudicacion, aceptar riesgo, posponer y finalizar revision. Validar revision vigente, target existente, ownership del run y transicion CAS. Exponer operaciones CLI JSON versionadas para obtener revision, publicar mensaje, solicitar explicacion, decidir y finalizar.
   - **Evitar:** Reutilizar comandos `approve`/`reject` de research, mantener procesos de agente vivos mientras el usuario piensa, hacer que un mensaje inicie build/fix, o introducir un chat generico.

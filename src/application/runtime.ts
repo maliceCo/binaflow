@@ -12,6 +12,7 @@ import type { ApplicationRunStore } from './ports.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
+import { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
 import {
   createApplicationService,
   createApplicationQueries,
@@ -74,6 +75,11 @@ export async function openApplicationContext(
     artifacts,
     config.qaHistory.enabled ? store : undefined,
   );
+  const interactivePlanBuildQaCoordinator = new InteractivePlanBuildQaCoordinator(
+    runtime,
+    store,
+    artifacts,
+  );
   const application = createApplicationService({
     config,
     store,
@@ -81,6 +87,8 @@ export async function openApplicationContext(
     engine,
     researchCoordinator,
     planBuildQaCoordinator,
+    interactivePlanBuildQaCoordinator,
+    reviewStore: store,
     ...(config.qaHistory.enabled ? { qaHistory: store } : {}),
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
@@ -108,6 +116,7 @@ export async function openApplicationStorage(
     store,
     artifacts,
     ...(qaHistory.enabled ? { qaHistory: store } : {}),
+    reviewStore: store,
     modelDiscovery: { discoverModels: async () => [] },
   });
   return { application: queries, close: () => store.close() };

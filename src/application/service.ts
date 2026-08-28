@@ -43,6 +43,19 @@ import {
 import { discoverAgentModels } from './config-operations.js';
 import { getRunView, type RunView } from './run-view.js';
 import {
+  decideReview,
+  explainReview,
+  finalizeReview,
+  getReview,
+  postReviewMessage,
+  type ReviewDecisionRequest,
+  type ReviewExplanation,
+  type ReviewExplanationRequest,
+  type ReviewFinalizeRequest,
+  type ReviewMessageRequest,
+  type ReviewView,
+} from './review-operations.js';
+import {
   archiveQaHistory,
   getQaDefect,
   listQaDefects,
@@ -80,6 +93,8 @@ export interface ApplicationQueries {
   reindexQaHistory?: () => Promise<void>;
   archiveQaHistory?: (before?: string) => Promise<number>;
   purgeQaHistory?: () => Promise<void>;
+  getReview?: (runId: string) => Promise<ReviewView>;
+  explainReview?: (request: ReviewExplanationRequest) => Promise<ReviewExplanation>;
 }
 
 export interface ApplicationCommands {
@@ -87,6 +102,9 @@ export interface ApplicationCommands {
   resumeWorkflow(request: ResumeWorkflowRequest): Promise<ResumeWorkflowResult>;
   decideApproval(request: ApprovalDecisionRequest): Promise<WorkflowRun>;
   markRunInterrupted(runId: string): Promise<WorkflowRun>;
+  postReviewMessage?: (request: ReviewMessageRequest) => Promise<ReviewView>;
+  decideReview?: (request: ReviewDecisionRequest) => Promise<WorkflowRun>;
+  finalizeReview?: (request: ReviewFinalizeRequest) => Promise<WorkflowRun>;
 }
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
@@ -100,6 +118,8 @@ export interface CreateApplicationServiceOptions {
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
   planBuildQaCoordinator?: PlanBuildQaCoordinator;
+  interactivePlanBuildQaCoordinator?: import('./interactive-plan-build-qa-coordinator.js').InteractivePlanBuildQaCoordinator;
+  reviewStore?: import('./ports.js').ApplicationReviewStore;
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
@@ -110,6 +130,7 @@ export interface CreateApplicationQueriesOptions {
   store: RunStore;
   artifacts: ArtifactStore;
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
+  reviewStore?: import('./ports.js').ApplicationReviewStore;
   modelDiscovery: AgentModelDiscovery;
 }
 
@@ -121,7 +142,11 @@ export function createApplicationQueries(
     store: options.store,
     artifacts: options.artifacts,
     ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
-  } satisfies Pick<ApplicationInternals, 'config' | 'store' | 'artifacts' | 'qaHistory'>;
+    ...(options.reviewStore ? { reviewStore: options.reviewStore } : {}),
+  } satisfies Pick<
+    ApplicationInternals,
+    'config' | 'store' | 'artifacts' | 'qaHistory' | 'reviewStore'
+  >;
 
   return {
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
@@ -143,6 +168,8 @@ export function createApplicationQueries(
     reindexQaHistory: () => reindexQaHistory(context),
     archiveQaHistory: (before) => archiveQaHistory(context, before),
     purgeQaHistory: () => purgeQaHistory(context),
+    getReview: (runId) => getReview(context, runId),
+    explainReview: (request) => explainReview(context, request),
   };
 }
 
@@ -158,6 +185,10 @@ export function createApplicationService(
     ...(options.planBuildQaCoordinator
       ? { planBuildQaCoordinator: options.planBuildQaCoordinator }
       : {}),
+    ...(options.interactivePlanBuildQaCoordinator
+      ? { interactivePlanBuildQaCoordinator: options.interactivePlanBuildQaCoordinator }
+      : {}),
+    ...(options.reviewStore ? { reviewStore: options.reviewStore } : {}),
     ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
   };
 
@@ -171,5 +202,8 @@ export function createApplicationService(
     reindexQaHistory: () => reindexQaHistory(internals),
     archiveQaHistory: (before) => archiveQaHistory(internals, before),
     purgeQaHistory: () => purgeQaHistory(internals),
+    postReviewMessage: (request) => postReviewMessage(internals, request),
+    decideReview: (request) => decideReview(internals, request),
+    finalizeReview: (request) => finalizeReview(internals, request),
   };
 }
