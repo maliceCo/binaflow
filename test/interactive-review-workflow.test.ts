@@ -8,7 +8,12 @@ import { createWorkflowRuntime } from '../src/core/engine.js';
 import type { AgentProfile } from '../src/core/agent-profile.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import { InteractivePlanBuildQaCoordinator } from '../src/application/interactive-plan-build-qa-coordinator.js';
-import { adjudicateReview, decideReview, getReview } from '../src/application/review-operations.js';
+import {
+  adjudicateReview,
+  decideReview,
+  explainReview,
+  getReview,
+} from '../src/application/review-operations.js';
 import type { ApplicationInternals } from '../src/application/context.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import { planBuildQaInteractiveWorkflow } from '../src/workflows/plan-build-qa-interactive.js';
@@ -106,6 +111,17 @@ describe('interactive plan-build-qa workflow', () => {
       { kind: 'scope', id: 'scope' },
     ]);
 
+    const explanationRequest = {
+      runId: first.id,
+      threadId: scopeReview.threads[0]!.thread.id,
+      target: { kind: 'scope' as const, id: 'scope' },
+      evidence: 'The scope artifact supports this decision.',
+    };
+    await explainReview(context, explanationRequest);
+    await explainReview(context, explanationRequest);
+    expect((await getReview(context, first.id)).threads[0]!.messages).toHaveLength(4);
+    expect((await store.getRun(first.id))?.status).toBe('waiting');
+
     const afterScope = await decideReview(context, {
       runId: first.id,
       threadId: scopeReview.threads[0]!.thread.id,
@@ -113,7 +129,12 @@ describe('interactive plan-build-qa workflow', () => {
       decision: 'approve',
     });
     expect(afterScope.status).toBe('waiting');
-    expect(driver.steps).toEqual(['scope', 'plan', 'build']);
+    expect(driver.steps).toHaveLength(5);
+    expect(driver.steps[0]).toBe('scope');
+    expect(driver.steps.slice(1, 3).every((step) => step.startsWith('review-explainer-'))).toBe(
+      true,
+    );
+    expect(driver.steps.slice(-2)).toEqual(['plan', 'build']);
 
     const afterChangesReview = await getReview(context, first.id);
     const changes = afterChangesReview.threads.find((entry) => entry.thread.phase === 'changes')!;
@@ -124,7 +145,7 @@ describe('interactive plan-build-qa workflow', () => {
       decision: 'approve',
     });
     expect(afterChanges.status).toBe('waiting');
-    expect(driver.steps).toEqual(['scope', 'plan', 'build', 'qa']);
+    expect(driver.steps.slice(-1)).toEqual(['qa']);
 
     const beforeQa = await getReview(context, first.id);
     const qa = beforeQa.threads.find((entry) => entry.thread.phase === 'qa')!;

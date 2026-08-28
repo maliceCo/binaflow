@@ -14,7 +14,7 @@
   - **Verificacion / TDD:** Agregar casos RED que cubran cada decision admitida y ejecutar `pnpm vitest run test/interactive-review-workflow.test.ts`.
   - **Commit Msg:** `fix: definir transiciones de decisiones interactivas`
 
-- [ ] **Tarea 1.2: Cubrir explicaciones repetidas y su cancelacion adjunta**
+- [x] **Tarea 1.2: Cubrir explicaciones repetidas y su cancelacion adjunta**
   - **Archivo:** `test/interactive-review-workflow.test.ts`, `test/cli-review.test.ts`, `test/tui-ink-shell.test.ts`
   - **Descripcion:** Agregar pruebas de comportamiento para solicitar dos explicaciones consecutivas del mismo hilo y comprobar que ambas quedan persistidas, el run vuelve a `waiting` y no se marca `interrupted`. Agregar una prueba de CLI y otra de TUI que demuestren que una explicacion en curso recibe la misma cancelacion ordenada que una ejecucion adjunta y que el contexto no se cierra antes de terminar la operacion.
   - **Evitar:** No probar funciones privadas, IDs aleatorios concretos ni detalles de `better-sqlite3`; usar el servicio publico, SQLite real y un driver controlado.

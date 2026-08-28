@@ -66,6 +66,25 @@ describe('attached TUI lifecycle', () => {
     expect(events).toEqual(['request settled', 'closed']);
   });
 
+  it('aborts an attached operation before force cancellation', async () => {
+    const lifecycle = createAttachedExecutionLifecycle<{ close(): void }>(undefined);
+    await lifecycle.openContext(async () => ({ close: () => undefined }));
+    const controller = lifecycle.beginOperation();
+    let releaseOperation!: () => void;
+    const operation = new Promise<void>((resolve) => {
+      controller.signal.addEventListener('abort', () => resolve(), { once: true });
+      releaseOperation = resolve;
+    });
+    lifecycle.trackOperation(operation);
+
+    expect(lifecycle.requestCancellation('SIGINT')).toBe('graceful');
+    expect(controller.signal.aborted).toBe(true);
+    expect(lifecycle.requestCancellation('SIGINT')).toBe('forced');
+
+    releaseOperation();
+    await lifecycle.shutdown();
+  });
+
   it('rejects new operations synchronously once shutdown starts', async () => {
     const lifecycle = createAttachedExecutionLifecycle<{ close(): void }>(undefined);
     await lifecycle.openContext(async () => ({ close: () => undefined }));
