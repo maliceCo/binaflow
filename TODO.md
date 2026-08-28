@@ -89,7 +89,7 @@
   - **Verificacion:** `pnpm test -- test/plan-build-qa-workflow.test.ts`.
   - **Commit Msg:** `feat: render qa workflow reports`
 
-- [ ] **Tarea 2.4: Definir estados terminales y recuperacion del QA automatico**
+- [x] **Tarea 2.4: Definir estados terminales y recuperacion del QA automatico**
   - **Archivos:** modificar `src/application/plan-build-qa-coordinator.ts`, `src/application/run-operations.ts`, `src/application/execution-operations.ts`, `src/application/run-view.ts`; ampliar `test/plan-build-qa-workflow.test.ts`, `test/application-operations.test.ts` y `test/application-run-view.test.ts`.
   - **Descripcion:** Hacer que `pass` complete el run, que una aclaracion de alcance termine sin modificar workspace, y que findings bloqueantes tras la tercera QA produzcan `failed` con informe final. Exponer en la vista del run la fase actual, numero de QA, limite, findings bloqueantes y accion de recuperacion valida. Validar que resume sea no mutante ante entradas o estados invalidos y que conserve el ownership exclusivo del run.
   - **Evitar:** Usar `waiting` en el workflow automatico, marcar como completado un run con bloqueos, o reutilizar la semantica de approval de research.

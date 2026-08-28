@@ -16,6 +16,7 @@ import {
   type WorkflowApprovalDefinition,
 } from '../workflows/research-plan-build.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
+import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
 import type { ApplicationInternals } from './context.js';
 import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
@@ -244,6 +245,17 @@ async function preflightPersistedInput(
       iteration >= MAX_RESEARCH_ITERATIONS
     ) {
       throw new Error('Persisted research iteration is invalid');
+    }
+  }
+  if (workflow.id === planBuildQaWorkflow.id) {
+    const iteration = input[QA_ITERATION_INPUT];
+    if (
+      typeof iteration !== 'number' ||
+      !Number.isInteger(iteration) ||
+      iteration < 0 ||
+      iteration >= MAX_QA_ITERATIONS
+    ) {
+      throw new Error('Persisted QA iteration is invalid');
     }
   }
 }

@@ -12,9 +12,12 @@ import type {
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { resolveWorkflow } from '../workflows/catalog.js';
 import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
+import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
+import { parsePlanBuildQaQaReport } from '../workflows/plan-build-qa.js';
 import {
   buildRunRecoveryExplanation,
   findWaitingApprovalStep,
+  planBuildQaRecoveryState,
   researchRecoveryState,
   type ApplicationInternals,
 } from './operations.js';
@@ -34,6 +37,16 @@ export interface RunView {
   availableActions: RunAction[];
   pendingAction?: PendingRunAction;
   followUp?: RunFollowUp;
+  qa?: RunQaView;
+}
+
+export interface RunQaView {
+  phaseId: string;
+  iteration: number;
+  limit: number;
+  blockingFindings: number;
+  findings: Array<{ id: string; severity: string; title: string }>;
+  recoveryAction: 'fix' | 'resume' | 'none';
 }
 
 export interface RunWorkflowView {
@@ -125,13 +138,19 @@ export async function getRunView(
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
   const recoveryBase = buildRunRecoveryExplanation(run, steps, installedWorkflow);
-  const recoveryState = await researchRecoveryState(context, run, artifacts);
+  const recoveryState =
+    run.workflowId === 'plan-build-qa'
+      ? await planBuildQaRecoveryState(context, run, artifacts)
+      : await researchRecoveryState(context, run, artifacts);
   const recovery =
     recoveryState === 'exhausted'
       ? {
           ...recoveryBase,
           eligible: false,
-          reason: 'The research iteration limit has been reached; this run is terminal.',
+          reason:
+            run.workflowId === 'plan-build-qa'
+              ? 'The QA iteration limit has been reached; this run is terminal.'
+              : 'The research iteration limit has been reached; this run is terminal.',
           actions: [],
         }
       : recoveryState === 'invalid'
@@ -139,7 +158,9 @@ export async function getRunView(
             ...recoveryBase,
             eligible: false,
             reason:
-              'The persisted research input is missing or invalid; this run cannot be resumed.',
+              run.workflowId === 'plan-build-qa'
+                ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
+                : 'The persisted research input is missing or invalid; this run cannot be resumed.',
             actions: [],
           }
         : recoveryBase;
@@ -151,11 +172,12 @@ export async function getRunView(
   );
   const pendingAction = compatible ? buildPendingAction(run, installedWorkflow, steps) : undefined;
   const followUp = clarificationFollowUp(run.status, phases);
+  const qa = await buildQaView(context, run, artifacts);
   const availableActions = [
     ...mapRecoveryActions(recovery.actions ?? []),
     ...(pendingAction && compatible ? approvalActions(pendingAction) : []),
   ];
-  const phaseId = currentPhaseId(run.status, phases);
+  const phaseId = currentPhaseId(run.status, phases, qa?.phaseId);
 
   return {
     id: run.id,
@@ -177,6 +199,7 @@ export async function getRunView(
     availableActions,
     ...(pendingAction ? { pendingAction } : {}),
     ...(followUp ? { followUp } : {}),
+    ...(qa ? { qa } : {}),
   };
 }
 
@@ -279,14 +302,96 @@ function clarificationFollowUp(
     : undefined;
 }
 
-function currentPhaseId(status: WorkflowRun['status'], phases: RunPhaseView[]): string | undefined {
+function currentPhaseId(
+  status: WorkflowRun['status'],
+  phases: RunPhaseView[],
+  qaPhaseId?: string,
+): string | undefined {
   if (status === 'completed' || status === 'cancelled') return undefined;
+  if (qaPhaseId && (status === 'failed' || status === 'interrupted')) return qaPhaseId;
   return (
     phases.find((phase) => phase.status === 'running')?.id ??
     phases.find((phase) => phase.status === 'waiting')?.id ??
     phases.find((phase) => phase.status === 'failed' || phase.status === 'interrupted')?.id ??
     phases.find((phase) => phase.status === 'pending')?.id
   );
+}
+
+async function buildQaView(
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
+  run: WorkflowRun,
+  artifacts: ArtifactReference[],
+): Promise<RunQaView | undefined> {
+  if (run.workflowId !== 'plan-build-qa' || !context.artifacts) return undefined;
+  const inputArtifact = findArtifactByName(artifacts, 'run', 'input');
+  if (!inputArtifact) return undefined;
+  let iteration = 0;
+  try {
+    const input = JSON.parse(await context.artifacts.read(inputArtifact)) as Record<
+      string,
+      unknown
+    >;
+    if (typeof input[QA_ITERATION_INPUT] === 'number') iteration = input[QA_ITERATION_INPUT];
+  } catch {
+    return undefined;
+  }
+  const reports = artifacts
+    .filter(
+      (artifact) =>
+        artifact.name === 'report' &&
+        (artifact.stepId === 'qa' || /^qa-\d+$/.test(artifact.stepId)),
+    )
+    .sort((left, right) => qaIteration(left.stepId) - qaIteration(right.stepId));
+  const latest = reports[reports.length - 1];
+  if (!latest)
+    return {
+      phaseId: 'qa',
+      iteration,
+      limit: MAX_QA_ITERATIONS,
+      blockingFindings: 0,
+      findings: [],
+      recoveryAction: 'none',
+    };
+  let report;
+  try {
+    report = parsePlanBuildQaQaReport(JSON.parse(await context.artifacts.read(latest)));
+  } catch {
+    return undefined;
+  }
+  const blockingFindings = report.findings.filter(
+    (finding) => finding.severity === 'critical' || finding.severity === 'high',
+  );
+  return {
+    phaseId: latest.stepId,
+    iteration: qaIteration(latest.stepId),
+    limit: MAX_QA_ITERATIONS,
+    blockingFindings: blockingFindings.length,
+    findings: report.findings.map((finding) => ({
+      id: finding.id,
+      severity: finding.severity,
+      title: finding.title,
+    })),
+    recoveryAction:
+      run.status === 'failed' || run.status === 'interrupted'
+        ? blockingFindings.length > 0
+          ? 'resume'
+          : 'none'
+        : run.status === 'running' && blockingFindings.length > 0
+          ? 'fix'
+          : 'none',
+  };
+}
+
+function findArtifactByName(
+  artifacts: ArtifactReference[],
+  stepId: string,
+  name: string,
+): ArtifactReference | undefined {
+  return artifacts.find((artifact) => artifact.stepId === stepId && artifact.name === name);
+}
+
+function qaIteration(stepId: string): number {
+  return stepId === 'qa' ? 1 : Number(stepId.slice(3));
 }
 
 function toArtifactView(artifact: ArtifactReference): RunArtifactView {

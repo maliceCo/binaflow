@@ -150,6 +150,72 @@ describe('application run view', () => {
     expect(view.followUp).toEqual({ kind: 'clarification' });
   });
 
+  it('projects QA iteration, blocking findings, and a valid recovery action', async () => {
+    const run = workflowRun({ workflowId: 'plan-build-qa', status: 'failed' });
+    const input: ArtifactReference = {
+      id: 'input',
+      runId: run.id,
+      stepId: 'run',
+      name: 'input',
+      kind: 'json',
+      path: 'C:/private/input.json',
+      mediaType: 'application/json',
+      sizeBytes: 1,
+    };
+    const report: ArtifactReference = {
+      id: 'report',
+      runId: run.id,
+      stepId: 'qa-2',
+      name: 'report',
+      kind: 'json',
+      path: 'C:/private/report.json',
+      mediaType: 'application/json',
+      sizeBytes: 1,
+    };
+    const view = await getRunView(
+      {
+        store: store(run, [], [input, report]) as RunStore,
+        artifacts: {
+          read: async (artifact) =>
+            artifact.name === 'input'
+              ? JSON.stringify({ objective: run.objective, qaIteration: 1 })
+              : JSON.stringify({
+                  decision: 'block',
+                  summary: 'A blocker remains',
+                  findings: [
+                    {
+                      id: 'finding-1',
+                      severity: 'high',
+                      category: 'correctness',
+                      title: 'Broken behavior',
+                      explanation: 'The behavior is incorrect.',
+                      impact: 'The objective is not met.',
+                      evidence: ['src/example.ts'],
+                      suggestedCorrection: 'Fix the behavior.',
+                      verifications: ['Run tests'],
+                    },
+                  ],
+                }),
+          readBounded: async () => ({ content: '', truncated: false }),
+        } as ApplicationArtifactStore,
+      },
+      run.id,
+    );
+
+    expect(view.currentPhaseId).toBe('qa-2');
+    expect(view.qa).toEqual({
+      phaseId: 'qa-2',
+      iteration: 2,
+      limit: 3,
+      blockingFindings: 1,
+      findings: [{ id: 'finding-1', severity: 'high', title: 'Broken behavior' }],
+      recoveryAction: 'resume',
+    });
+    expect(view.availableActions).toEqual([
+      { kind: 'resume', label: 'Resume retryable work', requiresConfirmation: false },
+    ]);
+  });
+
   it('calculates elapsed duration for an active phase at view time', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:05.000Z'));

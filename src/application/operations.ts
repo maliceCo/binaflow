@@ -21,6 +21,7 @@ export {
   findWaitingApprovalStep,
   inspectRun,
   isResearchIterationExhausted,
+  planBuildQaRecoveryState,
   researchRecoveryState,
   listRunEvents,
   listRuns,

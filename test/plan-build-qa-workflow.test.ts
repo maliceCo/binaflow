@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink } from '../src/core/events.js';
-import type { AgentStepResult } from '../src/core/run.js';
+import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
 import type { AgentProfile } from '../src/config.js';
 import { createWorkflowRuntime } from '../src/core/engine.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
@@ -186,6 +186,45 @@ describe('plan-build-qa workflow', () => {
       (artifact) => artifact.stepId === 'coordinator' && artifact.name === 'FINAL-REPORT.md',
     );
     expect(await artifacts.read(finalReport!)).toContain('finding-1');
+    store.close();
+  });
+
+  it('rejects an invalid persisted QA iteration without claiming the run', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-plan-build-qa-invalid-'));
+    directories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
+    const run: WorkflowRun = {
+      id: 'qa-invalid-run',
+      workflowId: 'plan-build-qa',
+      workflowVersion: 1,
+      objective: 'Reject invalid recovery input',
+      status: 'failed',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const input = await artifacts.write(
+      run.id,
+      'run',
+      'input',
+      'json',
+      JSON.stringify({ objective: run.objective, qaIteration: 99 }),
+      'application/json',
+    );
+    await store.createRun(run, [input]);
+    const runtime = createWorkflowRuntime(store, artifacts, new FakeDriver([]), undefined, {
+      interpretDisposition: interpretWorkflowDisposition,
+    });
+    const coordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
+
+    await expect(
+      coordinator.execute(planBuildQaWorkflow, {
+        runId: run.id,
+        profiles,
+        resume: true,
+      }),
+    ).rejects.toThrow('Persisted QA iteration is invalid');
+    expect((await store.getRun(run.id))?.status).toBe('failed');
     store.close();
   });
 

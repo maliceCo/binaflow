@@ -21,6 +21,7 @@ import type {
   ApplicationRunStore,
 } from './ports.js';
 import type { ApplicationInternals } from './context.js';
+import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 
 const DEFAULT_RUN_EVENT_LIMIT = 50;
 const MAX_RUN_EVENT_LIMIT = 100;
@@ -60,12 +61,18 @@ export async function explainRunRecovery(
     steps,
     resolveRecoveryWorkflow(run.workflowId),
   );
-  const recoveryState = await researchRecoveryState(context, run);
+  const recoveryState =
+    run.workflowId === 'plan-build-qa'
+      ? await planBuildQaRecoveryState(context, run)
+      : await researchRecoveryState(context, run);
   if (recoveryState === 'exhausted') {
     return {
       ...explanation,
       eligible: false,
-      reason: 'The research iteration limit has been reached; this run is terminal.',
+      reason:
+        run.workflowId === 'plan-build-qa'
+          ? 'The QA iteration limit has been reached; this run is terminal.'
+          : 'The research iteration limit has been reached; this run is terminal.',
       actions: [],
     };
   }
@@ -73,7 +80,10 @@ export async function explainRunRecovery(
     return {
       ...explanation,
       eligible: false,
-      reason: 'The persisted research input is missing or invalid; this run cannot be resumed.',
+      reason:
+        run.workflowId === 'plan-build-qa'
+          ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
+          : 'The persisted research input is missing or invalid; this run cannot be resumed.',
       actions: [],
     };
   }
@@ -86,6 +96,37 @@ export async function isResearchIterationExhausted(
   artifacts?: ArtifactReference[],
 ): Promise<boolean> {
   return (await researchRecoveryState(context, run, artifacts)) === 'exhausted';
+}
+
+export async function planBuildQaRecoveryState(
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
+  run: WorkflowRun,
+  artifacts?: ArtifactReference[],
+): Promise<'exhausted' | 'invalid' | undefined> {
+  if (run.workflowId !== 'plan-build-qa' || !context.artifacts) return undefined;
+  const runArtifacts = artifacts ?? (await context.store.getArtifacts(run.id));
+  const inputArtifact = runArtifacts.find(
+    (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
+  );
+  if (!inputArtifact) return 'invalid';
+  try {
+    const input: unknown = JSON.parse(await context.artifacts.read(inputArtifact));
+    if (!isRecord(input)) return 'invalid';
+    const iteration = input[QA_ITERATION_INPUT];
+    if (
+      typeof iteration !== 'number' ||
+      !Number.isInteger(iteration) ||
+      iteration < 0 ||
+      iteration >= MAX_QA_ITERATIONS
+    ) {
+      return 'invalid';
+    }
+    return runArtifacts.some((artifact) => artifact.stepId === 'qa-3' && artifact.name === 'report')
+      ? 'exhausted'
+      : undefined;
+  } catch {
+    return 'invalid';
+  }
 }
 
 export async function researchRecoveryState(
