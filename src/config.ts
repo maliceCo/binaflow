@@ -64,6 +64,23 @@ export function parseConfigValue(parsed: unknown, absoluteConfigPath: string): B
   };
 }
 
+export async function loadQaHistory(
+  configPath: string,
+  cwd = process.cwd(),
+): Promise<QaHistoryConfig> {
+  const absoluteConfigPath = resolve(cwd, configPath);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(absoluteConfigPath, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Cannot read Binaflow config ${absoluteConfigPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!isRecord(parsed)) throw new Error('Binaflow config must be a JSON object');
+  return parseQaHistory(parsed.qaHistory);
+}
+
 export async function loadDataDir(configPath: string, cwd = process.cwd()): Promise<string> {
   const absoluteConfigPath = resolve(cwd, configPath);
   let parsed: unknown;

@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
-import { loadConfig, loadDataDir } from '../config.js';
+import { loadConfig, loadDataDir, loadQaHistory } from '../config.js';
 import { createWorkflowRuntime, WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
@@ -81,6 +81,7 @@ export async function openApplicationContext(
     engine,
     researchCoordinator,
     planBuildQaCoordinator,
+    ...(config.qaHistory.enabled ? { qaHistory: store } : {}),
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
       eventListeners.add(listener);
@@ -98,13 +99,15 @@ export async function openApplicationStorage(
   cwd = process.cwd(),
 ): Promise<ApplicationStorageContext> {
   const dataDir = await loadDataDir(configPath, cwd);
+  const qaHistory = await loadQaHistory(configPath, cwd);
   await mkdir(dataDir, { recursive: true });
   const store = new SqliteRunStore(`${dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
   const queries = createApplicationQueries({
-    config: { profiles: {} },
+    config: { profiles: {}, qaHistory },
     store,
     artifacts,
+    ...(qaHistory.enabled ? { qaHistory: store } : {}),
     modelDiscovery: { discoverModels: async () => [] },
   });
   return { application: queries, close: () => store.close() };

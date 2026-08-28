@@ -485,6 +485,27 @@ export class SqliteRunStore implements RunStore {
     transaction();
   }
 
+  async archiveQaDefects(before?: string): Promise<number> {
+    const cutoff = before ?? new Date().toISOString();
+    const result = this.database
+      .prepare(
+        `UPDATE qa_defects SET status = 'archived', updated_at = ?
+         WHERE created_at < ? AND status <> 'archived'`,
+      )
+      .run(new Date().toISOString(), cutoff);
+    return result.changes;
+  }
+
+  async purgeQaHistory(): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      this.database.prepare('DELETE FROM qa_defect_events').run();
+      this.database.prepare('DELETE FROM qa_occurrences').run();
+      this.database.prepare('DELETE FROM qa_defects').run();
+      this.database.prepare('DELETE FROM qa_search').run();
+    });
+    transaction();
+  }
+
   async saveEvent(event: NormalizedEvent): Promise<void> {
     await this.saveEvents([event]);
   }

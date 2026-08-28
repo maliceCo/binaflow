@@ -42,6 +42,17 @@ import {
 } from './operations.js';
 import { discoverAgentModels } from './config-operations.js';
 import { getRunView, type RunView } from './run-view.js';
+import {
+  archiveQaHistory,
+  getQaDefect,
+  listQaDefects,
+  purgeQaHistory,
+  qaHistoryStats,
+  reindexQaHistory,
+  searchQaHistory,
+  type QaDefectDetails,
+  type QaHistoryStats,
+} from './qa-history-operations.js';
 
 export interface ApplicationQueries {
   inspectRun(runId: string, options?: RunInspectionOptions): Promise<RunInspection>;
@@ -59,6 +70,16 @@ export interface ApplicationQueries {
   discoverWorkflows(): WorkflowContract[];
   discoverModels(): Promise<AgentModel[]>;
   diagnoseConfiguration(): ConfigurationDiagnosis;
+  listQaDefects?: () => Promise<import('../core/qa-history.js').QaDefect[]>;
+  getQaDefect?: (id: string) => Promise<QaDefectDetails>;
+  searchQaHistory?: (
+    fingerprint: string,
+    query: string,
+  ) => Promise<import('../core/qa-history.js').QaSearchResult[]>;
+  qaHistoryStats?: () => Promise<QaHistoryStats>;
+  reindexQaHistory?: () => Promise<void>;
+  archiveQaHistory?: (before?: string) => Promise<number>;
+  purgeQaHistory?: () => Promise<void>;
 }
 
 export interface ApplicationCommands {
@@ -73,20 +94,22 @@ export interface ApplicationService extends ApplicationQueries, ApplicationComma
 }
 
 export interface CreateApplicationServiceOptions {
-  config: Pick<BinaflowConfig, 'profiles'>;
+  config: Pick<BinaflowConfig, 'profiles'> & Partial<Pick<BinaflowConfig, 'qaHistory'>>;
   store: RunStore;
   artifacts: ArtifactStore;
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
   planBuildQaCoordinator?: PlanBuildQaCoordinator;
+  qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
 export interface CreateApplicationQueriesOptions {
-  config: Pick<BinaflowConfig, 'profiles'>;
+  config: Pick<BinaflowConfig, 'profiles'> & Partial<Pick<BinaflowConfig, 'qaHistory'>>;
   store: RunStore;
   artifacts: ArtifactStore;
+  qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   modelDiscovery: AgentModelDiscovery;
 }
 
@@ -97,7 +120,8 @@ export function createApplicationQueries(
     config: options.config,
     store: options.store,
     artifacts: options.artifacts,
-  } satisfies Pick<ApplicationInternals, 'config' | 'store' | 'artifacts'>;
+    ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
+  } satisfies Pick<ApplicationInternals, 'config' | 'store' | 'artifacts' | 'qaHistory'>;
 
   return {
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
@@ -112,6 +136,13 @@ export function createApplicationQueries(
     discoverWorkflows,
     discoverModels: () => discoverAgentModels(options.modelDiscovery),
     diagnoseConfiguration: () => diagnoseConfiguration(options.config),
+    listQaDefects: () => listQaDefects(context),
+    getQaDefect: (id) => getQaDefect(context, id),
+    searchQaHistory: (fingerprint, query) => searchQaHistory(context, fingerprint, query),
+    qaHistoryStats: () => qaHistoryStats(context),
+    reindexQaHistory: () => reindexQaHistory(context),
+    archiveQaHistory: (before) => archiveQaHistory(context, before),
+    purgeQaHistory: () => purgeQaHistory(context),
   };
 }
 
@@ -127,6 +158,7 @@ export function createApplicationService(
     ...(options.planBuildQaCoordinator
       ? { planBuildQaCoordinator: options.planBuildQaCoordinator }
       : {}),
+    ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
   };
 
   return {
@@ -136,5 +168,8 @@ export function createApplicationService(
     resumeWorkflow: (request) => resumeWorkflow(internals, request),
     decideApproval: (request) => decideApproval(internals, request),
     markRunInterrupted: (runId) => markRunInterrupted(internals, runId),
+    reindexQaHistory: () => reindexQaHistory(internals),
+    archiveQaHistory: (before) => archiveQaHistory(internals, before),
+    purgeQaHistory: () => purgeQaHistory(internals),
   };
 }

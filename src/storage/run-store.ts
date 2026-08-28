@@ -42,6 +42,8 @@ export interface QaHistoryStore {
   getQaDefectEvents(defectId: string): Promise<QaDefectEvent[]>;
   searchQaDefects(fingerprint: string, query: string): Promise<QaSearchResult[]>;
   reindexQaSearch(): Promise<void>;
+  archiveQaDefects(before?: string): Promise<number>;
+  purgeQaHistory(): Promise<void>;
 }
 
 export type StepResultInclude = boolean | 'usage';

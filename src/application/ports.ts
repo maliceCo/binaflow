@@ -64,6 +64,8 @@ export interface ApplicationQaHistoryStore {
   getQaDefectEvents(defectId: string): Promise<QaDefectEvent[]>;
   searchQaDefects(fingerprint: string, query: string): Promise<QaSearchResult[]>;
   reindexQaSearch(): Promise<void>;
+  archiveQaDefects(before?: string): Promise<number>;
+  purgeQaHistory(): Promise<void>;
 }
 
 export interface ApplicationRunStore {
