@@ -135,6 +135,9 @@ describe('interactive plan-build-qa workflow', () => {
       decision: 'approve',
     });
     expect(completed.status).toBe('completed');
+    expect(
+      (await store.getArtifacts(first.id)).map((artifact) => `${artifact.stepId}.${artifact.name}`),
+    ).toEqual(expect.arrayContaining(['coordinator.TODO.md', 'coordinator.FINAL-REPORT.md']));
     expect((await store.getRun(first.id))?.status).toBe('completed');
     expect((await getReview(context, first.id)).threads).toHaveLength(3);
     store.close();

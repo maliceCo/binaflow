@@ -1,3 +1,4 @@
+import type { InteractiveScope } from './plan-build-qa-interactive.js';
 import type {
   PlanBuildQaBuildResult,
   PlanBuildQaPlan,
@@ -13,6 +14,22 @@ export interface FinalReportBuild {
 export interface FinalReportQa {
   iteration: number;
   report: PlanBuildQaReport;
+}
+
+export interface InteractiveReviewReportEntry {
+  phase: string;
+  target: string;
+  state: string;
+  decisions: string[];
+}
+
+export interface InteractiveFinalReportInput {
+  objective: string;
+  scope?: InteractiveScope;
+  plan?: PlanBuildQaPlan;
+  qaReports: FinalReportQa[];
+  review: InteractiveReviewReportEntry[];
+  status: 'completed' | 'failed' | 'cancelled';
 }
 
 export interface FinalReportInput {
@@ -50,6 +67,33 @@ export function renderScope(scope: PlanBuildQaScope): string {
     ...bulletList(scope.questions),
     '',
   ].join('\n');
+}
+
+export function renderInteractiveTodo(scope: InteractiveScope): string {
+  return [
+    '# TODO',
+    '',
+    scope.strategy,
+    '',
+    ...scope.tasks.flatMap((task) => [
+      `## ${task.id}: ${task.title}`,
+      '',
+      task.description,
+      '',
+      `Files: ${task.files.length > 0 ? task.files.join(', ') : 'None declared.'}`,
+      '',
+      'Acceptance criteria:',
+      ...bulletList(task.acceptanceCriteria),
+      '',
+    ]),
+    '## Acceptance criteria',
+    ...bulletList(scope.acceptanceCriteria),
+    '',
+    '## Risks',
+    ...scope.risks.map((risk) => `- ${risk.description} Mitigation: ${risk.mitigation}`),
+    ...(scope.risks.length === 0 ? ['- None declared.'] : []),
+    '',
+  ].join('\\n');
 }
 
 export function renderTodo(plan: PlanBuildQaPlan): string {
@@ -110,6 +154,54 @@ export function renderQaFixes(iteration: number, report: PlanBuildQaReport): str
       ]),
     '',
   ].join('\n');
+}
+
+export function renderInteractiveFinalReport(input: InteractiveFinalReportInput): string {
+  return [
+    '# Final Report',
+    '',
+    `Status: ${input.status}`,
+    `Objective: ${input.objective}`,
+    '',
+    '## Scope',
+    input.scope?.strategy ?? 'Scope was not completed.',
+    '',
+    '## Tasks',
+    ...(input.scope
+      ? input.scope.tasks.map((task) => `- ${task.id}: ${task.title}`)
+      : ['Scope was not completed.']),
+    '',
+    '## QA findings by iteration',
+    ...input.qaReports.flatMap(({ iteration, report }) => [
+      `### Iteration ${iteration}: ${report.decision}`,
+      report.summary,
+      ...report.findings.map(
+        (finding) =>
+          `- ${finding.id} [${finding.severity}] ${finding.title}: ${finding.explanation}`,
+      ),
+      '',
+    ]),
+    ...(input.qaReports.length === 0 ? ['- QA was not completed.', ''] : []),
+    '## Review decisions',
+    ...input.review.map(
+      (entry) =>
+        `- ${entry.phase} ${entry.target} (${entry.state}): ${entry.decisions.join(', ') || 'none'}`,
+    ),
+    ...(input.review.length === 0 ? ['- None recorded.'] : []),
+    '',
+    '## Pending review items',
+    ...input.review
+      .filter((entry) => entry.state === 'waiting')
+      .map((entry) => `- ${entry.phase} ${entry.target}`),
+    ...(input.review.every((entry) => entry.state !== 'waiting') ? ['- None.'] : []),
+    '',
+    '## Risks',
+    ...(input.scope?.risks ?? []).map(
+      (risk) => `- ${risk.description} Mitigation: ${risk.mitigation}`,
+    ),
+    ...((input.scope?.risks.length ?? 0) === 0 ? ['- None declared.'] : []),
+    '',
+  ].join('\\n');
 }
 
 export function renderFinalReport(input: FinalReportInput): string {

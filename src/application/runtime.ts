@@ -79,6 +79,7 @@ export async function openApplicationContext(
     runtime,
     store,
     artifacts,
+    config.qaHistory.enabled ? store : undefined,
   );
   const application = createApplicationService({
     config,

@@ -177,7 +177,7 @@
   - **Verificacion:** `pnpm test -- test/tui-review.test.tsx test/tui-reduce.test.ts test/tui-ink-shell.test.ts test/tui-ink-viewport.test.ts`.
   - **Commit Msg:** `feat: add terminal interactive review screens`
 
-- [ ] **Tarea 4.6: Vincular revision interactiva con historial QA y reporte final**
+- [x] **Tarea 4.6: Vincular revision interactiva con historial QA y reporte final**
   - **Archivos:** modificar `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/qa-history-operations.ts`, `src/workflows/plan-build-qa-render.ts`, `src/tui/screens/qa-review.tsx`, `src/cli/commands/review.ts`; ampliar `test/interactive-review-workflow.test.ts`, `test/qa-history.test.ts` y `test/cli-review.test.ts`.
   - **Descripcion:** Mostrar candidatos historicos de FTS5 para cada finding y permitir vincular o rechazar la relacion de forma explicita. Registrar decisiones relevantes (`accepted-risk`, `withdrawn`, `reopened`, correccion verificada) como eventos del defect cuando `qaHistory.enabled` este activo. Incorporar decisiones, justificaciones, links de bugs y pendientes al informe final. Cuando el historial este desactivado, ocultar esas consultas sin afectar la revision del run.
   - **Evitar:** Confirmar una coincidencia FTS5 sin accion del usuario, indexar conversaciones completas como bugs, o impedir el workflow interactivo por historial desactivado.
