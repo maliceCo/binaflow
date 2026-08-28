@@ -1,6 +1,7 @@
 import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { RootOptions } from './commands/common.js';
+import type { SkillPolicy } from '../core/agent-profile.js';
 
 export const CLI_PROTOCOL = 'binaflow-cli';
 export const CLI_PROTOCOL_VERSION = 1;
@@ -48,6 +49,7 @@ export interface ProfileSnapshotDto {
   projectTrust?: 'never' | 'always';
   timeoutMs: number;
   retryLimit: number;
+  skills?: SkillPolicy;
 }
 
 export interface AgentStepResultDto {
@@ -412,6 +414,7 @@ function toProfileSnapshotDto(
     ...(snapshot.projectTrust ? { projectTrust: snapshot.projectTrust } : {}),
     timeoutMs: snapshot.timeoutMs,
     retryLimit: snapshot.retryLimit,
+    ...(snapshot.skills ? { skills: structuredClone(snapshot.skills) } : {}),
   };
 }
 

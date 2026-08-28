@@ -164,7 +164,7 @@ export async function diagnoseConfigurationFile(
     errors.push('Binaflow config requires a profiles object');
   } else {
     for (const [name, value] of Object.entries(profileRecord)) {
-      const validation = validateAgentProfile(name, value);
+      const validation = validateAgentProfile(name, value, absoluteConfigPath);
       profiles.push({
         name,
         valid: validation.errors.length === 0,

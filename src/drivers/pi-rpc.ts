@@ -84,6 +84,11 @@ export class PiDriver implements AgentDriver {
     let failure: unknown;
     try {
       // Profile timeout applies independently to each RPC or settling phase.
+      const commands = await process.request(
+        { type: 'get_commands' },
+        { timeoutMs: request.profile.timeoutMs, signal },
+      );
+      assertRequiredSkills(commands, request.profile.skills);
       await process.request(
         { type: 'prompt', message: request.prompt },
         { timeoutMs: request.profile.timeoutMs, signal },
@@ -172,8 +177,40 @@ function buildPiArgs(request: AgentRequest, sessionDir?: string): string[] {
   else args.push('--no-tools');
   if (request.profile.projectTrust === 'always') args.push('--approve');
   if (request.profile.projectTrust === 'never') args.push('--no-approve');
+  const skills = request.profile.skills ?? { mode: 'discover' as const };
+  if (skills.mode === 'none' || skills.mode === 'only') args.push('--no-skills');
+  if (skills.mode === 'only') {
+    for (const path of skills.paths) args.push('--skill', path);
+  }
   if (sessionDir) args.push('--session-dir', sessionDir);
   return args;
+}
+
+function assertRequiredSkills(
+  response: JsonObject,
+  policy: AgentRequest['profile']['skills'],
+): void {
+  const required = policy?.mode === 'only' ? (policy.required ?? []) : [];
+  if (required.length === 0) return;
+
+  const data = asRecord(response.data);
+  const commands = data?.commands ?? response.commands;
+  const names = new Set(
+    Array.isArray(commands)
+      ? commands.flatMap((command) => {
+          if (typeof command === 'string') return [command];
+          const record = asRecord(command);
+          return record && typeof record.name === 'string' ? [record.name] : [];
+        })
+      : [],
+  );
+  const missing = required.filter((name) => !names.has(name));
+  if (missing.length > 0) {
+    throw new AgentDriverError(
+      `Required Pi skill(s) are unavailable: ${missing.join(', ')}`,
+      'PI_MISSING_SKILL',
+    );
+  }
 }
 
 function validateProfile(request: AgentRequest): void {

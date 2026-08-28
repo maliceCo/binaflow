@@ -1,6 +1,9 @@
 export type WorkspaceMode = 'read-only' | 'read-write';
 export type ProjectTrust = 'never' | 'always';
 
+export type SkillPolicy =
+  { mode: 'discover' } | { mode: 'none' } | { mode: 'only'; paths: string[]; required?: string[] };
+
 export interface AgentProfile {
   driver: string;
   provider?: string;
@@ -11,6 +14,7 @@ export interface AgentProfile {
   projectTrust?: ProjectTrust;
   timeoutMs: number;
   retryLimit: number;
+  skills?: SkillPolicy;
 }
 
 export function resolveProfile(

@@ -10,19 +10,26 @@ function write(value) {
 
 process.stdin.on('data', (chunk) => {
   buffer += chunk.toString();
-  const index = buffer.indexOf('\n');
-  if (index < 0) return;
-  const command = JSON.parse(buffer.slice(0, index));
-  write({ id: command.id, type: 'response', success: true });
-  if (kind === 'delta') {
-    write({
-      type: 'message_update',
-      assistantMessageEvent: { type: 'text_delta', delta: 'x'.repeat(size) },
-    });
-  } else {
-    write({
-      type: 'message_end',
-      message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(size) }] },
-    });
+  let index = buffer.indexOf('\n');
+  while (index >= 0) {
+    const command = JSON.parse(buffer.slice(0, index));
+    buffer = buffer.slice(index + 1);
+    if (command.type === 'get_commands') {
+      write({ id: command.id, type: 'response', success: true, data: { commands: [] } });
+    } else {
+      write({ id: command.id, type: 'response', success: true });
+      if (kind === 'delta') {
+        write({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', delta: 'x'.repeat(size) },
+        });
+      } else {
+        write({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(size) }] },
+        });
+      }
+    }
+    index = buffer.indexOf('\n');
   }
 });

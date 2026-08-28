@@ -1,9 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { AgentProfile, WorkspaceMode } from './core/agent-profile.js';
+import type { AgentProfile, SkillPolicy, WorkspaceMode } from './core/agent-profile.js';
 import { isReadOnlyPiTool } from './pi-tools.js';
 
-export type { AgentProfile, ProjectTrust, WorkspaceMode } from './core/agent-profile.js';
+export type {
+  AgentProfile,
+  ProjectTrust,
+  SkillPolicy,
+  WorkspaceMode,
+} from './core/agent-profile.js';
 export { resolveProfile } from './core/agent-profile.js';
 
 export interface BinaflowConfig {
@@ -34,7 +39,7 @@ export function parseConfigValue(parsed: unknown, absoluteConfigPath: string): B
     AgentProfile
   >;
   for (const [name, value] of Object.entries(parsed.profiles)) {
-    profiles[name] = parseProfile(name, value);
+    profiles[name] = parseProfile(name, value, absoluteConfigPath);
   }
   if (parsed.dataDir !== undefined && typeof parsed.dataDir !== 'string') {
     throw new Error('Binaflow config dataDir must be a string');
@@ -69,8 +74,8 @@ export async function loadDataDir(configPath: string, cwd = process.cwd()): Prom
   return resolve(dirname(absoluteConfigPath), parsed.dataDir ?? './data');
 }
 
-function parseProfile(name: string, value: unknown): AgentProfile {
-  const result = validateAgentProfile(name, value);
+function parseProfile(name: string, value: unknown, configPath: string): AgentProfile {
+  const result = validateAgentProfile(name, value, configPath);
   if (result.errors.length > 0) {
     throw new Error(`Profile ${name} has invalid configuration: ${result.errors.join('; ')}`);
   }
@@ -82,7 +87,11 @@ export interface AgentProfileValidation {
   errors: string[];
 }
 
-export function validateAgentProfile(name: string, value: unknown): AgentProfileValidation {
+export function validateAgentProfile(
+  name: string,
+  value: unknown,
+  configPath?: string,
+): AgentProfileValidation {
   if (isUnsafeProfileName(name)) return { errors: ['profile name is reserved'] };
   if (!isRecord(value)) return { errors: ['must be an object'] };
   const errors: string[] = [];
@@ -139,6 +148,7 @@ export function validateAgentProfile(name: string, value: unknown): AgentProfile
   if (value.thinking !== undefined && typeof value.thinking !== 'string') {
     errors.push('thinking must be a string');
   }
+  const skills = parseSkillPolicy(value.skills, configPath, errors);
   if (errors.length > 0) return { errors };
 
   const profile: AgentProfile = {
@@ -148,6 +158,7 @@ export function validateAgentProfile(name: string, value: unknown): AgentProfile
     workspaceMode: value.workspaceMode as WorkspaceMode,
     timeoutMs: value.timeoutMs as number,
     retryLimit: value.retryLimit as number,
+    skills,
   };
   if (value.projectTrust === 'never' || value.projectTrust === 'always') {
     profile.projectTrust = value.projectTrust;
@@ -155,6 +166,60 @@ export function validateAgentProfile(name: string, value: unknown): AgentProfile
   if (typeof value.provider === 'string') profile.provider = value.provider;
   if (typeof value.thinking === 'string') profile.thinking = value.thinking;
   return { profile, errors };
+}
+
+function parseSkillPolicy(
+  value: unknown,
+  configPath: string | undefined,
+  errors: string[],
+): SkillPolicy {
+  if (value === undefined) return { mode: 'discover' };
+  if (!isRecord(value)) {
+    errors.push('skills must be an object');
+    return { mode: 'discover' };
+  }
+
+  const mode = value.mode;
+  if (mode === 'discover' || mode === 'none') {
+    if (value.paths !== undefined || value.required !== undefined) {
+      errors.push(`skills mode ${mode} cannot define paths or required names`);
+    }
+    return { mode };
+  }
+  if (mode !== 'only') {
+    errors.push('skills mode must be discover, none, or only');
+    return { mode: 'discover' };
+  }
+
+  const paths = value.paths;
+  if (
+    !Array.isArray(paths) ||
+    paths.length === 0 ||
+    !paths.every((path) => typeof path === 'string' && path.trim().length > 0)
+  ) {
+    errors.push('skills only mode requires non-empty paths');
+  }
+  const required = value.required;
+  if (
+    required !== undefined &&
+    (!Array.isArray(required) ||
+      !required.every((name) => typeof name === 'string' && name.trim().length > 0))
+  ) {
+    errors.push('skills required must contain non-empty names');
+  }
+  if (Array.isArray(required) && new Set(required).size !== required.length) {
+    errors.push('skills required names must be unique');
+  }
+  if (errors.length > 0) return { mode: 'discover' };
+
+  const resolvedPaths = (paths as string[]).map((path) =>
+    configPath ? resolve(dirname(configPath), path) : path,
+  );
+  return {
+    mode: 'only',
+    paths: resolvedPaths,
+    ...(Array.isArray(required) ? { required: [...required] } : {}),
+  };
 }
 
 export function validatePiCommand(value: unknown): string[] {

@@ -1,3 +1,5 @@
+import type { SkillPolicy } from './agent-profile.js';
+
 export type RunStatus =
   'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export type StepStatus = RunStatus | 'skipped';
@@ -38,6 +40,7 @@ export interface AgentProfileSnapshot {
   projectTrust?: 'never' | 'always';
   timeoutMs: number;
   retryLimit: number;
+  skills?: SkillPolicy;
 }
 
 export type StepDisposition =

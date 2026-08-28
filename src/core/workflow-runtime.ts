@@ -688,6 +688,7 @@ function snapshotProfile(profile: AgentProfile): AgentProfileSnapshot {
     workspaceMode: profile.workspaceMode,
     timeoutMs: profile.timeoutMs,
     retryLimit: profile.retryLimit,
+    skills: profile.skills ?? { mode: 'discover' },
   };
   if (profile.provider !== undefined) snapshot.provider = profile.provider;
   if (profile.thinking !== undefined) snapshot.thinking = profile.thinking;

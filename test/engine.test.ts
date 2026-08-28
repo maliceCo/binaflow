@@ -299,6 +299,7 @@ describe('WorkflowEngine', () => {
       workspaceMode: 'read-only',
       timeoutMs: 1000,
       retryLimit: 0,
+      skills: { mode: 'discover' },
     });
     const inputArtifact = (await store.getArtifacts('success')).find(
       (artifact) => artifact.stepId === 'run' && artifact.name === 'input',

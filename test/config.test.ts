@@ -94,6 +94,50 @@ describe('Binaflow config', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('Profile planner has invalid');
   });
 
+  it('resolves an explicit skill policy relative to the config file', () => {
+    const validation = validateAgentProfile(
+      'qa',
+      {
+        driver: 'pi',
+        model: 'claude-test',
+        tools: ['read'],
+        workspaceMode: 'read-only',
+        timeoutMs: 1000,
+        retryLimit: 0,
+        skills: { mode: 'only', paths: ['./skills/review'], required: ['review'] },
+      },
+      '/workspace/.binaflow/config.json',
+    );
+
+    expect(validation.errors).toEqual([]);
+    expect(validation.profile?.skills).toEqual({
+      mode: 'only',
+      paths: ['/workspace/.binaflow/skills/review'],
+      required: ['review'],
+    });
+  });
+
+  it.each([
+    { skills: { mode: 'none', paths: ['./skills/review'] }, error: 'cannot define paths' },
+    { skills: { mode: 'only', paths: [] }, error: 'requires non-empty paths' },
+    {
+      skills: { mode: 'only', paths: ['./skills/review'], required: [' '] },
+      error: 'non-empty names',
+    },
+  ])('rejects invalid skill policy: $error', ({ skills, error }) => {
+    const validation = validateAgentProfile('qa', {
+      driver: 'pi',
+      model: 'claude-test',
+      tools: ['read'],
+      workspaceMode: 'read-only',
+      timeoutMs: 1000,
+      retryLimit: 0,
+      skills,
+    });
+
+    expect(validation.errors.join('; ')).toContain(error);
+  });
+
   it.each(['write', 'edit', 'bash'])('rejects %s in a read-only profile', (tool) => {
     const validation = validateAgentProfile('planner', {
       driver: 'pi',

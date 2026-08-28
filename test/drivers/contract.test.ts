@@ -229,7 +229,63 @@ function processIsAlive(pid: number): boolean {
 }
 
 describe('PiDriver', () => {
-  it('normalizes Pi text, session, usage, cost, and events', async () => {
+  it('passes explicit skill paths and verifies required skills before prompting', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-skills-'));
+    const promptFile = join(directory, 'prompted');
+    const argsFile = join(directory, 'args');
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/skill-aware-pi.mjs'],
+      env: {
+        ...process.env,
+        BINAFLOW_ARGS_FILE: argsFile,
+        BINAFLOW_PROMPT_FILE: promptFile,
+        BINAFLOW_SKILL_NAME: 'review',
+      },
+    });
+
+    const result = await driver.execute(
+      requestFor({
+        skills: { mode: 'only', paths: ['/workspace/skills/review'], required: ['review'] },
+      }),
+      () => undefined,
+      new AbortController().signal,
+    );
+
+    expect(result.text).toBe('done');
+    expect(existsSync(promptFile)).toBe(true);
+    expect(JSON.parse(readFileSync(argsFile, 'utf8'))).toEqual(
+      expect.arrayContaining(['--no-skills', '--skill', '/workspace/skills/review']),
+    );
+  });
+
+  it('fails before prompting when a required skill is unavailable', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-missing-skill-'));
+    const promptFile = join(directory, 'prompted');
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/skill-aware-pi.mjs'],
+      env: {
+        ...process.env,
+        BINAFLOW_ARGS_FILE: join(directory, 'args'),
+        BINAFLOW_PROMPT_FILE: promptFile,
+        BINAFLOW_SKILL_NAME: 'other',
+      },
+    });
+
+    await expect(
+      driver.execute(
+        requestFor({
+          skills: { mode: 'only', paths: ['/workspace/skills/review'], required: ['review'] },
+        }),
+        () => undefined,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: 'PI_MISSING_SKILL', retryable: false });
+    expect(existsSync(promptFile)).toBe(false);
+  });
+
+  it('normalizes Pi text, session, usage, cost, and events, using the default skill discovery policy', async () => {
     const events: NormalizedEvent[] = [];
     const driver = new PiDriver({
       command: process.execPath,

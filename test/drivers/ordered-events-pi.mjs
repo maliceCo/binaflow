@@ -12,7 +12,9 @@ process.stdin.on('data', (chunk) => {
   while (index >= 0) {
     const command = JSON.parse(buffer.slice(0, index));
     buffer = buffer.slice(index + 1);
-    if (command.type === 'prompt') {
+    if (command.type === 'get_commands') {
+      write({ id: command.id, type: 'response', success: true, data: { commands: [] } });
+    } else if (command.type === 'prompt') {
       write({ id: command.id, type: 'response', command: 'prompt', success: true });
       write({
         type: 'message_update',

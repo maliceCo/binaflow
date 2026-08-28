@@ -52,7 +52,7 @@
   - **Verificacion:** `pnpm test -- test/config-operations.test.ts test/cli-output.test.ts`.
   - **Commit Msg:** `feat: register plan build qa workflow`
 
-- [ ] **Tarea 1.3: Configurar politicas de skills por perfil de Pi**
+- [x] **Tarea 1.3: Configurar politicas de skills por perfil de Pi**
   - **Archivos:** modificar `src/core/agent-profile.ts`, `src/config.ts`, `src/drivers/pi-rpc.ts`, `src/application/config-operations.ts`; crear o ampliar `test/config.test.ts` y `test/drivers/contract.test.ts`.
   - **Descripcion:** Extender `AgentProfile` con una politica serializable de skills: `discover`, `none` u `only`, rutas explicitas de skills y nombres requeridos. Validar tipos, rutas no vacias y combinaciones validas; resolver rutas relativas respecto del archivo de configuracion. Hacer que `PiDriver` use `--no-skills` y `--skill` cuando corresponda, consulte `get_commands` antes de ejecutar y falle antes de la tarea si falta una skill requerida. Registrar la politica resuelta en el snapshot `profile_json` de cada intento.
   - **Evitar:** Crear un gestor de plugins, confiar en que el modelo use una skill sin validarla, o permitir que una skill amplie tools/permisos del perfil.
