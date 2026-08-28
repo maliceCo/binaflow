@@ -172,9 +172,13 @@ describe('application run view', () => {
       mediaType: 'application/json',
       sizeBytes: 1,
     };
+    const steps: StepRun[] = [
+      { runId: run.id, stepId: 'fix-1', profile: 'builder', status: 'completed', attempt: 1 },
+      { runId: run.id, stepId: 'qa-2', profile: 'qa', status: 'failed', attempt: 1 },
+    ];
     const view = await getRunView(
       {
-        store: store(run, [], [input, report]) as RunStore,
+        store: store(run, steps, [input, report]) as RunStore,
         artifacts: {
           read: async (artifact) =>
             artifact.name === 'input'
@@ -202,6 +206,19 @@ describe('application run view', () => {
       run.id,
     );
 
+    expect(view.phases.map((phase) => phase.id)).toEqual([
+      'scope',
+      'plan',
+      'build',
+      'qa',
+      'fix-1',
+      'qa-2',
+    ]);
+    expect(view.phases.find((phase) => phase.id === 'fix-1')).toMatchObject({
+      kind: 'agent',
+      profile: 'builder',
+      status: 'completed',
+    });
     expect(view.currentPhaseId).toBe('qa-2');
     expect(view.qa).toEqual({
       phaseId: 'qa-2',

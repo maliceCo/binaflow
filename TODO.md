@@ -60,7 +60,7 @@
   - **Verificacion / TDD:** Ejecutar `pnpm vitest run test/interactive-review-workflow.test.ts test/interactive-review-contracts.test.ts test/cli-review.test.ts`.
   - **Commit Msg:** `fix: alinear targets interactivos con hilos persistidos`
 
-- [ ] **Tarea 3.2: Representar correctamente fases QA dinamicas en la vista**
+- [x] **Tarea 3.2: Representar correctamente fases QA dinamicas en la vista**
   - **Archivo:** `src/application/plan-build-qa-coordinator.ts`, `src/application/run-view.ts`, `test/plan-build-qa-workflow.test.ts`, `test/application-run-view.test.ts`
   - **Descripcion:** Mantener los IDs de iteracion persistidos (`qa-2`, `fix-1`, etc.) y ajustar la proyeccion de `RunView` para que no muestre el `fix` base inexistente como pendiente ni clasifique las fases dinamicas conocidas como `unknown`. La vista debe conservar perfiles, orden, estado y metricas de cada iteracion.
   - **Evitar:** No falsificar filas `fix` en SQLite y no convertir el workflow serializable en una abstraccion DAG o dinamica generica.

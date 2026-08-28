@@ -231,14 +231,30 @@ function buildPhases(
 ): RunPhaseView[] {
   const persisted = new Map(steps.map((step) => [step.stepId, step]));
   const definitions = workflow ? workflowPhaseDefinitions(workflow) : [];
-  const phases = definitions.map(({ id, kind, profile }) =>
+  const baseDefinitions = definitions.filter(
+    (definition) => !(workflow?.id === 'plan-build-qa' && definition.id === 'fix'),
+  );
+  const phases = baseDefinitions.map(({ id, kind, profile }) =>
     toPhaseView(persisted.get(id), id, kind, profile, nowMs, runIsActive),
   );
-  const definedIds = new Set(definitions.map(({ id }) => id));
+  const definedIds = new Set(baseDefinitions.map(({ id }) => id));
+  const dynamicQaIds = new Set(
+    steps
+      .filter(
+        (step) =>
+          workflow?.id === 'plan-build-qa' &&
+          (/^qa-\d+$/.test(step.stepId) || /^fix-\d+$/.test(step.stepId)),
+      )
+      .map((step) => step.stepId),
+  );
 
   for (const step of steps) {
-    if (!definedIds.has(step.stepId))
+    if (definedIds.has(step.stepId)) continue;
+    if (dynamicQaIds.has(step.stepId)) {
+      phases.push(toPhaseView(step, step.stepId, 'agent', step.profile, nowMs, runIsActive));
+    } else {
       phases.push(toPhaseView(step, step.stepId, 'unknown', undefined, nowMs, runIsActive));
+    }
   }
   return phases;
 }
