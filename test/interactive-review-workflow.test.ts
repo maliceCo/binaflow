@@ -138,10 +138,19 @@ describe('interactive plan-build-qa workflow', () => {
       { kind: 'scope', id: 'scope' },
     ]);
 
-    const explanationRequest = {
+    const scopeDecision = {
       runId: first.id,
       threadId: scopeReview.threads[0]!.thread.id,
       target: { kind: 'scope' as const, id: 'scope' },
+    };
+    const rejected = await decideReview(context, { ...scopeDecision, decision: 'reject' });
+    expect(rejected.status).toBe('waiting');
+    expect((await getReview(context, first.id)).threads[0]!.decisions.at(-1)?.decision).toBe(
+      'reject',
+    );
+
+    const explanationRequest = {
+      ...scopeDecision,
       evidence: 'The scope artifact supports this decision.',
     };
     await explainReview(context, explanationRequest);
@@ -150,9 +159,7 @@ describe('interactive plan-build-qa workflow', () => {
     expect((await store.getRun(first.id))?.status).toBe('waiting');
 
     const afterScope = await decideReview(context, {
-      runId: first.id,
-      threadId: scopeReview.threads[0]!.thread.id,
-      target: { kind: 'scope', id: 'scope' },
+      ...scopeDecision,
       decision: 'approve',
     });
     expect(afterScope.status).toBe('waiting');
@@ -180,7 +187,7 @@ describe('interactive plan-build-qa workflow', () => {
       runId: first.id,
       threadId: qa.thread.id,
       target: qa.thread.target,
-      decision: 'approve',
+      decision: 'accept-risk',
     });
     expect(completed.status).toBe('completed');
     expect(

@@ -569,7 +569,6 @@ export class SqliteRunStore implements RunStore {
   }
 
   async saveReviewDecision(decision: ReviewDecision, nextState: ReviewThreadState): Promise<void> {
-    if (nextState === 'waiting') throw new Error('A decision must advance review state');
     const transaction = this.database.transaction(() => {
       const result = this.database
         .prepare(

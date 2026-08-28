@@ -44,7 +44,7 @@
   - **Verificacion / TDD:** Agregar un driver que falle durante scope, plan/build y QA; ejecutar `pnpm vitest run test/interactive-review-workflow.test.ts test/application-infrastructure.test.ts`.
   - **Commit Msg:** `fix: clasificar fallos de fases interactivas`
 
-- [ ] **Tarea 2.4: Aplicar el contrato de decisiones a la continuacion**
+- [x] **Tarea 2.4: Aplicar el contrato de decisiones a la continuacion**
   - **Archivo:** `src/application/review-operations.ts`, `src/application/interactive-plan-build-qa-coordinator.ts`, `test/interactive-review-workflow.test.ts`
   - **Descripcion:** Usar la semantica aprobada en Tarea 1.1 para validar la decision antes de reclamar el run y para que `advance()` solo ejecute fases autorizadas. Mantener los hilos abiertos cuando la decision no autoriza continuar; ejecutar `fix` solo para una correccion QA autorizada; y reflejar el resultado en el informe final sin inferir aprobacion de un estado distinto de `waiting`.
   - **Evitar:** No usar `thread.state !== 'waiting'` como sustituto de una decision de negocio y no sobrescribir decisiones ni revisiones existentes.

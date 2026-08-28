@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
-import type { ReviewDecision, ReviewMessage, ReviewThread } from '../core/interactive-review.js';
+import {
+  interactiveDecisionEffect,
+  type InteractiveDecision,
+  type ReviewDecision,
+  type ReviewMessage,
+  type ReviewThread,
+} from '../core/interactive-review.js';
 import { validateInteractiveTarget } from '../workflows/plan-build-qa-interactive.js';
 import { resolveWorkflow } from '../workflows/catalog.js';
 import type { WorkflowRun } from '../core/run.js';
@@ -308,22 +314,28 @@ async function continueReview(
   if (request.target.kind !== thread.target.kind || request.target.id !== thread.target.id) {
     throw new Error(`Review target does not belong to thread ${thread.id}`);
   }
+  const effect = decisionEffect(thread, decisionKind);
+  const now = new Date().toISOString();
+  const decision = {
+    threadId: thread.id,
+    target: request.target,
+    decision: decisionKind,
+    revision: thread.revision,
+    ...(request.details?.trim() ? { details: request.details.trim() } : {}),
+    createdAt: now,
+  };
+  if (effect === 'stay') {
+    await reviewStore.saveReviewDecision(decision, 'waiting');
+    const current = await context.store.getRun(request.runId);
+    if (!current) throw new Error(`Unknown run: ${request.runId}`);
+    return current;
+  }
+
   const claimed = await context.store.claimRunForExecution(request.runId, ['waiting']);
   if (!claimed) throw new Error(`Run ${request.runId} is no longer waiting for review`);
 
-  const now = new Date().toISOString();
   try {
-    await reviewStore.saveReviewDecision(
-      {
-        threadId: thread.id,
-        target: request.target,
-        decision: decisionKind,
-        revision: thread.revision,
-        ...(request.details?.trim() ? { details: request.details.trim() } : {}),
-        createdAt: now,
-      },
-      nextState,
-    );
+    await reviewStore.saveReviewDecision(decision, nextState);
     await request.onRunStarted?.(claimed.run);
     const workflow = resolveWorkflow(claimed.run.workflowId);
     const input = await loadInput(context, claimed.run.id);
@@ -401,6 +413,23 @@ async function loadInput(context: ReviewContext, runId: string): Promise<Record<
     throw new Error('Persisted review input must be a JSON object');
   }
   return parsed as Record<string, unknown>;
+}
+
+function decisionEffect(
+  thread: ReviewThread,
+  decision: ReviewDecisionRequest['decision'],
+): ReturnType<typeof interactiveDecisionEffect> {
+  if (
+    decision !== 'approve' &&
+    decision !== 'reject' &&
+    decision !== 'correct' &&
+    decision !== 'withdraw' &&
+    decision !== 'accept-risk' &&
+    decision !== 'postpone'
+  ) {
+    throw new Error(`Invalid interactive review decision: ${decision}`);
+  }
+  return interactiveDecisionEffect(thread.phase, decision as InteractiveDecision);
 }
 
 function requireReviewStore(context: ReviewContext) {
