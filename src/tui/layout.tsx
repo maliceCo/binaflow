@@ -165,6 +165,17 @@ function footerHints(state: TuiState): Array<[string, string]> {
       ['Enter', 'preview'],
       ['q', 'back'],
     ];
+  if (state.detail === 'review')
+    return [
+      ['j/k', 'move'],
+      ['Enter', 'open thread'],
+      ['q', 'back'],
+    ];
+  if (state.detail === 'review-thread' || state.detail === 'qa-review')
+    return [
+      ['Enter', 'send message'],
+      ['Esc', 'back'],
+    ];
   if (state.detail === 'bugs')
     return [
       ['j/k', 'move'],

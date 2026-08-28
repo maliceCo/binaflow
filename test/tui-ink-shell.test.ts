@@ -12,6 +12,7 @@ import type { WorkflowEngine } from '../src/core/engine.js';
 import type { NormalizedEvent } from '../src/core/events.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import type { RunView } from '../src/application/run-view.js';
+import type { ReviewView } from '../src/application/review-operations.js';
 
 const directories: string[] = [];
 
@@ -105,6 +106,93 @@ describe('Ink shell', () => {
     terminal.input.push('q');
     await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
+    await running;
+  }, 15_000);
+
+  it('navigates interactive review threads and posts messages through the application facade', async () => {
+    const directory = await temporaryDirectory();
+    await writeConfig(directory);
+    const reviewRun = {
+      ...createRun('waiting'),
+      id: 'run-interactive',
+      workflowId: 'plan-build-qa-interactive',
+    };
+    const thread = {
+      id: 'scope-thread',
+      runId: reviewRun.id,
+      phase: 'scope' as const,
+      target: { kind: 'scope' as const, id: 'scope' as const },
+      artifactRevision: 1,
+      state: 'waiting' as const,
+      revision: 1,
+      createdAt: reviewRun.createdAt,
+      updatedAt: reviewRun.updatedAt,
+    };
+    let review: ReviewView = {
+      runId: reviewRun.id,
+      status: reviewRun.status,
+      threads: [{ thread, messages: [], decisions: [] }],
+    };
+    const context = createApplicationService(
+      async () => reviewRun,
+      () => undefined,
+    );
+    context.listRuns = async () => ({ runs: [reviewRun] });
+    context.inspectRun = async () => ({
+      run: reviewRun,
+      steps: [],
+      artifacts: [],
+      eventCount: 0,
+    });
+    context.getRunView = async () => createRunView(reviewRun);
+    context.getReview = async () => review;
+    context.postReviewMessage = async (request) => {
+      review = {
+        ...review,
+        threads: review.threads.map((entry) =>
+          entry.thread.id === request.threadId
+            ? {
+                ...entry,
+                messages: [
+                  ...entry.messages,
+                  {
+                    id: 'message-1',
+                    threadId: request.threadId,
+                    sequence: 1,
+                    role: 'user' as const,
+                    content: request.content,
+                    generationStatus: 'sent' as const,
+                    createdAt: reviewRun.createdAt,
+                    updatedAt: reviewRun.updatedAt,
+                  },
+                ],
+              }
+            : entry,
+        ),
+      };
+      return review;
+    };
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: context,
+    });
+
+    await openHistory(terminal);
+    await terminal.output.waitFor('Run detail');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Interactive review');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Review thread');
+    terminal.input.push('Keep the scope stable');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Keep the scope stable');
+    await waitForCondition(() => review.threads[0]?.messages.length === 1);
+    terminal.input.push('\u0003');
     await running;
   }, 15_000);
 

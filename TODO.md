@@ -170,7 +170,7 @@
   - **Verificacion:** `pnpm test -- test/interactive-review-workflow.test.ts test/interactive-review-persistence.test.ts`.
   - **Commit Msg:** `feat: adjudicate disputed qa findings`
 
-- [ ] **Tarea 4.5: Construir las pantallas TUI de revision ASCII**
+- [x] **Tarea 4.5: Construir las pantallas TUI de revision ASCII**
   - **Archivos:** crear `src/tui/screens/review.tsx`, `src/tui/screens/review-thread.tsx`, `src/tui/screens/qa-review.tsx`; modificar `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/screens.ts`, `src/tui/shell-controller.tsx`, `src/tui/shell-input.ts`, `src/tui/shell-view.tsx`; crear `test/tui-review.test.tsx`; ampliar `test/tui-reduce.test.ts` y `test/tui-ink-shell.test.ts`.
   - **Descripcion:** Mostrar alcance, tareas, dependencias, cambios y QA con IDs estables y graficos ASCII redimensionables. Permitir seleccionar un elemento, abrir su hilo, escribir multiples mensajes, solicitar explicacion, tomar decision y volver sin decidir. Mostrar estado `waiting`, preguntas pendientes, errores recuperables y acciones de reintento. Usar color solo como complemento; la informacion debe funcionar por SSH, teclado, terminal de 80 columnas y `NO_COLOR`.
   - **Evitar:** Browser, mouse requerido, dependencias de UI externas, acceso directo a SQLite/artefactos, o avanzar al cerrar un modal/pantalla.

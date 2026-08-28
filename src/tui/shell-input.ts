@@ -69,11 +69,17 @@ export function handleShellInput({
     launchInputActive ||
     setupInputActive ||
     current.overlay === 'recovery-confirm' ||
-    current.overlay === 'rejection-feedback';
+    current.overlay === 'rejection-feedback' ||
+    current.detail === 'review-thread' ||
+    current.detail === 'qa-review';
   if (textInputActive) {
-    if (key.escape) {
+    if ((current.detail === 'review-thread' || current.detail === 'qa-review') && input === 'q') {
+      dispatch({ type: 'review-back' });
+    } else if (key.escape) {
       if (launchInputActive) dispatch({ type: 'launch-cancel' });
       else if (setupInputActive) dispatch({ type: 'setup-cancel' });
+      else if (current.detail === 'review-thread' || current.detail === 'qa-review')
+        dispatch({ type: 'review-back' });
       else dispatch({ type: 'close-detail-prompt' });
     }
     return;
@@ -247,6 +253,17 @@ export function handleShellInput({
     return;
   }
 
+  if (current.detail === 'review') {
+    if (input === 'q' || key.escape) dispatch({ type: 'review-back' });
+    else if (direction !== 0) {
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+    } else if (input === '\r' || key.return) {
+      const entry = current.review?.threads[current.selection];
+      if (entry) dispatch({ type: 'open-review-thread', threadId: entry.thread.id });
+    }
+    return;
+  }
+
   if (current.detail === 'inspect') {
     if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
     else if (direction !== 0) {
@@ -260,6 +277,7 @@ export function handleShellInput({
       else if (action.kind === 'mark-interrupted') dispatch({ type: 'open-recovery-confirm' });
       else if (action.kind === 'clarification') dispatch({ type: 'open-launch' });
       else if (action.kind === 'browse-artifacts') dispatch({ type: 'open-artifacts' });
+      else if (action.kind === 'review') dispatch({ type: 'open-review' });
       else dispatch({ type: 'inspect-back' });
     }
     return;

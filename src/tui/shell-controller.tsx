@@ -90,6 +90,7 @@ export function InkShellController({
   const artifactRequest = useRef(0);
   const qaHistoryRequest = useRef(0);
   const qaDefectRequest = useRef(0);
+  const reviewRequest = useRef(0);
   const activeRunId = useRef<string | undefined>(undefined);
   const liveRef = useRef<LiveState | undefined>(undefined);
   const activityBufferRef = useRef<LiveActivityBuffer | undefined>(undefined);
@@ -510,6 +511,37 @@ export function InkShellController({
     await request;
   };
 
+  const loadReview = async (runId: string): Promise<void> => {
+    const requestId = ++reviewRequest.current;
+    const request = (async () => {
+      const application = await ensureContext();
+      if (!application.getReview)
+        throw new Error('Interactive review is unavailable for this run.');
+      const review = await application.getReview(runId);
+      if (
+        active.current &&
+        requestId === reviewRequest.current &&
+        stateRef.current.activeRunId === runId
+      ) {
+        dispatch({ type: 'review-set', review });
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
+  const sendReviewMessage = async (content: string): Promise<void> => {
+    const current = stateRef.current;
+    const runId = current.activeRunId;
+    const threadId = current.reviewThreadId;
+    const application = lifecycle.context?.application;
+    if (!runId || !threadId || !application?.postReviewMessage) return;
+    const request = application.postReviewMessage({ runId, threadId, content });
+    lifecycle.trackRequest(request);
+    const review = await request;
+    if (active.current) dispatch({ type: 'review-message-sent', review });
+  };
+
   const loadArtifact = async (): Promise<void> => {
     const current = stateRef.current;
     const artifact = current.runView?.artifacts[current.artifactSelected];
@@ -736,6 +768,70 @@ export function InkShellController({
           break;
         case 'open-qa-defect':
           if (next.detail === 'bugs') await loadQaDefectDetails(event.id);
+          break;
+        case 'open-review':
+          if (next.detail === 'review' && next.activeRunId) await loadReview(next.activeRunId);
+          break;
+        case 'review-message-submit':
+          if (next !== previous) await sendReviewMessage(event.content);
+          break;
+        case 'review-explain': {
+          if (next === previous) break;
+          const review = next.review;
+          const thread = review?.threads.find((entry) => entry.thread.id === next.reviewThreadId);
+          const application = lifecycle.context?.application;
+          const runId = next.activeRunId;
+          if (!thread || !application?.explainReview || !runId) break;
+          const request = application.explainReview({
+            runId,
+            threadId: thread.thread.id,
+            target: thread.thread.target,
+            evidence: thread.messages
+              .map((message) => message.content ?? '')
+              .join('\\n')
+              .slice(0, 12_000),
+          });
+          lifecycle.trackRequest(request);
+          const result = await request;
+          if (active.current) dispatch({ type: 'review-explained', review: result.review });
+          break;
+        }
+        case 'review-decide':
+          if (next === previous) break;
+          if (next.activeRunId && next.reviewThreadId) {
+            startContinuation(
+              (application, signal, onRunStarted) =>
+                application.decideReview!({
+                  runId: next.activeRunId!,
+                  threadId: next.reviewThreadId!,
+                  target: next.review!.threads.find(
+                    (entry) => entry.thread.id === next.reviewThreadId,
+                  )!.thread.target,
+                  decision: event.decision,
+                  signal,
+                  onRunStarted,
+                }),
+              'plan-build-qa-interactive',
+            );
+          }
+          break;
+        case 'review-finalize':
+          if (next === previous) break;
+          if (next.activeRunId && next.reviewThreadId) {
+            startContinuation(
+              (application, signal, onRunStarted) =>
+                application.finalizeReview!({
+                  runId: next.activeRunId!,
+                  threadId: next.reviewThreadId!,
+                  target: next.review!.threads.find(
+                    (entry) => entry.thread.id === next.reviewThreadId,
+                  )!.thread.target,
+                  signal,
+                  onRunStarted,
+                }),
+              'plan-build-qa-interactive',
+            );
+          }
           break;
         case 'launch-confirm':
           startLaunch();

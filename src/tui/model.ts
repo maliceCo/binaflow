@@ -5,6 +5,7 @@ import type {
 import type { ArtifactContentView } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
 import type { QaDefectDetails, QaHistoryStats } from '../application/qa-history-operations.js';
+import type { ReviewView } from '../application/review-operations.js';
 import type { AgentModel } from '../core/agent.js';
 import type { QaDefect } from '../core/qa-history.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
@@ -47,7 +48,10 @@ export type DetailMode =
   | 'result'
   | 'inspect'
   | 'artifacts'
-  | 'bugs';
+  | 'bugs'
+  | 'review'
+  | 'review-thread'
+  | 'qa-review';
 
 /** Tags the controller must honor after `reduce` returns. The reducer cannot do I/O. */
 export type TuiEffect = 'discover-setup-models' | 'diagnose-cwd';
@@ -100,6 +104,8 @@ export interface TuiState {
   qaDefects?: QaDefect[];
   qaHistoryStats?: QaHistoryStats;
   qaDefectDetails?: QaDefectDetails;
+  review?: ReviewView;
+  reviewThreadId?: string;
 }
 
 export interface TuiModelOptions {
@@ -173,6 +179,16 @@ export type TuiEvent =
   | { type: 'open-qa-defect'; id: string }
   | { type: 'qa-history-loaded'; defects: QaDefect[]; stats: QaHistoryStats }
   | { type: 'qa-defect-details-set'; details: QaDefectDetails }
+  | { type: 'open-review' }
+  | { type: 'review-set'; review: ReviewView }
+  | { type: 'open-review-thread'; threadId: string }
+  | { type: 'review-back' }
+  | { type: 'review-message-submit'; content: string }
+  | { type: 'review-message-sent'; review: ReviewView }
+  | { type: 'review-explain' }
+  | { type: 'review-explained'; review: ReviewView }
+  | { type: 'review-decide'; decision: 'approve' | 'correct' | 'accept-risk' | 'postpone' }
+  | { type: 'review-finalize' }
   | { type: 'launch-cancel' }
   | { type: 'launch-set'; input: LaunchInputState }
   | { type: 'launch-input'; value: string }

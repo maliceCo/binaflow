@@ -196,6 +196,80 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         qaDefectOffset: 0,
         status: 'Loading QA history...',
       };
+    case 'open-review':
+      if (
+        state.overlay !== 'none' ||
+        (state.detail !== 'inspect' && state.detail !== 'result') ||
+        state.runView?.workflow.id !== 'plan-build-qa-interactive'
+      )
+        return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'review'),
+        detail: 'review',
+        focus: 'detail',
+        status: 'Loading review...',
+        selection: 0,
+        offset: 0,
+      };
+    case 'review-set':
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        review: event.review,
+        detail:
+          state.detail === 'review-thread' || state.detail === 'qa-review'
+            ? state.detail
+            : 'review',
+        selection: 0,
+        offset: 0,
+      };
+    case 'open-review-thread': {
+      if (state.detail !== 'review' && state.detail !== 'qa-review') return state;
+      const thread = state.review?.threads.find((entry) => entry.thread.id === event.threadId);
+      if (!thread) return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        detail: thread.thread.phase === 'qa' ? 'qa-review' : 'review-thread',
+        reviewThreadId: thread.thread.id,
+        selection: 0,
+        offset: 0,
+        inputValue: '',
+      };
+    }
+    case 'review-back':
+      if (state.detail === 'review-thread' || state.detail === 'qa-review') {
+        return {
+          ...clearField(state, 'error'),
+          detail: 'review',
+          inputValue: '',
+          selection: 0,
+          offset: 0,
+        };
+      }
+      if (state.detail === 'review') {
+        return { ...clearField(state, 'error'), detail: 'inspect', selection: 0, offset: 0 };
+      }
+      return state;
+    case 'review-message-submit':
+      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      if (!event.content.trim()) return { ...state, error: 'Message must be non-empty.' };
+      return { ...clearField(state, 'error'), status: 'Sending review message...' };
+    case 'review-message-sent':
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        review: event.review,
+        inputValue: '',
+      };
+    case 'review-explain':
+      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      return { ...clearField(state, 'error'), status: 'Requesting explanation...' };
+    case 'review-explained':
+      return { ...clearField(clearField(state, 'error'), 'status'), review: event.review };
+    case 'review-decide':
+      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      return { ...clearField(state, 'error'), status: `Applying decision: ${event.decision}...` };
+    case 'review-finalize':
+      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      return { ...clearField(state, 'error'), status: 'Finalizing review...' };
     case 'open-qa-defect':
       if (state.detail !== 'bugs') return state;
       return {
@@ -455,7 +529,10 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         state.detail !== 'inspect' &&
         state.detail !== 'result' &&
         state.detail !== 'artifacts' &&
-        state.detail !== 'bugs'
+        state.detail !== 'bugs' &&
+        state.detail !== 'review' &&
+        state.detail !== 'review-thread' &&
+        state.detail !== 'qa-review'
       )
         return state;
       return {
@@ -621,6 +698,14 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       if (count === 0) return state;
       return moveList(state, count, direction, visibleRows);
     }
+    case 'review': {
+      const count = state.review?.threads.length ?? 0;
+      if (count === 0) return state;
+      return moveList(state, count, direction, visibleRows);
+    }
+    case 'review-thread':
+    case 'qa-review':
+      return state;
     case 'bugs': {
       const count = state.qaDefects?.length ?? 0;
       if (count === 0) return state;

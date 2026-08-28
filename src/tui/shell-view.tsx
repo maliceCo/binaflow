@@ -7,6 +7,9 @@ import { ArtifactsScreen } from './screens/artifacts.js';
 import { BugsScreen } from './screens/bugs.js';
 import { ApprovalScreen } from './screens/approval.js';
 import { DetailScreen } from './screens/detail.js';
+import { QaReviewScreen } from './screens/qa-review.js';
+import { ReviewScreen } from './screens/review.js';
+import { ReviewThreadScreen } from './screens/review-thread.js';
 import { DiagnosisScreen } from './screens/diagnosis.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
 import { LiveScreen } from './screens/live.js';
@@ -111,6 +114,56 @@ export function renderShellDetail({
         />
       );
       break;
+    case 'review':
+      right = state.review ? (
+        <ReviewScreen
+          colors={colors}
+          review={state.review}
+          selected={state.selection}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 10)}
+          {...(state.error ? { error: state.error } : {})}
+        />
+      ) : null;
+      break;
+    case 'review-thread':
+    case 'qa-review': {
+      const entry = state.review?.threads.find(
+        (candidate) => candidate.thread.id === state.reviewThreadId,
+      );
+      right = entry ? (
+        state.detail === 'qa-review' ? (
+          <QaReviewScreen
+            key={entry.thread.id}
+            colors={colors}
+            entry={entry}
+            value={state.inputValue}
+            {...(state.error ? { error: state.error } : {})}
+            onChange={(value) => onEvent({ type: 'input-change', value })}
+            onSubmit={(value) => onEvent({ type: 'review-message-submit', content: value })}
+            onBack={() => onEvent({ type: 'review-back' })}
+            onExplain={() => onEvent({ type: 'review-explain' })}
+            onDecision={(decision) => onEvent({ type: 'review-decide', decision })}
+            onFinalize={() => onEvent({ type: 'review-finalize' })}
+          />
+        ) : (
+          <ReviewThreadScreen
+            key={entry.thread.id}
+            colors={colors}
+            entry={entry}
+            value={state.inputValue}
+            {...(state.error ? { error: state.error } : {})}
+            onChange={(value) => onEvent({ type: 'input-change', value })}
+            onSubmit={(value) => onEvent({ type: 'review-message-submit', content: value })}
+            onBack={() => onEvent({ type: 'review-back' })}
+            onExplain={() => onEvent({ type: 'review-explain' })}
+            onDecision={(decision) => onEvent({ type: 'review-decide', decision })}
+            onFinalize={() => onEvent({ type: 'review-finalize' })}
+          />
+        )
+      ) : null;
+      break;
+    }
     case 'approval':
       right = state.runView ? (
         <ApprovalScreen

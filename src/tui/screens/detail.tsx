@@ -13,7 +13,7 @@ import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from 
 
 export type DetailAction =
   | { kind: 'resume' | 'mark-interrupted'; label: string }
-  | { kind: 'clarification' | 'browse-artifacts' | 'back'; label: string };
+  | { kind: 'clarification' | 'browse-artifacts' | 'review' | 'back'; label: string };
 
 export function detailActionItems(view: RunView): DetailAction[] {
   const actions: DetailAction[] = [];
@@ -23,6 +23,8 @@ export function detailActionItems(view: RunView): DetailAction[] {
   }
   if (view.followUp?.kind === 'clarification')
     actions.push({ kind: 'clarification', label: 'New run with revised objective' });
+  if (view.workflow.id === 'plan-build-qa-interactive')
+    actions.push({ kind: 'review', label: 'Open interactive review' });
   actions.push(
     { kind: 'browse-artifacts', label: 'Browse artifacts' },
     { kind: 'back', label: 'Back to history' },
@@ -38,6 +40,8 @@ export function detailActionHelp(action: string): string {
       return 'Continue from completed steps without redoing finished work.';
     case 'New run with revised objective':
       return 'Start a fresh run using clarification guidance and the prior objective.';
+    case 'Open interactive review':
+      return 'Review scope, changes, and QA findings without advancing accidentally.';
     case 'Browse artifacts':
       return 'Open bounded previews of persisted step outputs.';
     case 'Back to history':
