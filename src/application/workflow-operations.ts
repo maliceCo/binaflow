@@ -1,8 +1,22 @@
 import { validateAgentProfile, type AgentProfile, type BinaflowConfig } from '../config.js';
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { listWorkflowContracts, type WorkflowContract } from '../workflows/catalog.js';
+import type {
+  InteractiveReviewContract,
+  InteractiveReviewOperation,
+  InteractiveReviewPhase,
+  InteractiveReviewState,
+  InteractiveReviewTarget,
+} from '../workflows/plan-build-qa-interactive.js';
 
-export type { WorkflowContract };
+export type {
+  InteractiveReviewContract,
+  InteractiveReviewOperation,
+  InteractiveReviewPhase,
+  InteractiveReviewState,
+  InteractiveReviewTarget,
+  WorkflowContract,
+};
 
 export function discoverWorkflows(): WorkflowContract[] {
   return listWorkflowContracts();

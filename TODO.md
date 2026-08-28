@@ -142,7 +142,7 @@
 
 ### Fase 4: Workflow interactivo por CLI y TUI (feature)
 
-- [ ] **Tarea 4.1: Definir estados y contratos de revision interactiva**
+- [x] **Tarea 4.1: Definir estados y contratos de revision interactiva**
   - **Archivos:** crear `src/workflows/plan-build-qa-interactive.ts`; modificar `src/workflows/catalog.ts`, `src/application/workflow-operations.ts`, `src/application/run-view.ts`; crear `test/interactive-review-contracts.test.ts`.
   - **Descripcion:** Definir `plan-build-qa-interactive` como workflow especifico. El alcance contiene estrategia y tareas propuestas enumeradas; su aprobacion explicita genera el `TODO.md` artefacto sin una segunda aprobacion rutinaria. Definir targets estables para alcance/tarea, cambio y finding QA; definir operaciones separadas `message`, `decide` y `finalize`. `message`, navegacion y explicacion nunca transicionan fase.
   - **Evitar:** Generalizar approvals, permitir feedback ambiguo sin target, renumerar IDs ya publicados o convertir cerrar una pantalla en finalizar una revision.

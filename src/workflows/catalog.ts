@@ -2,6 +2,11 @@ import type { WorkflowDefinition } from '../core/workflow.js';
 import { planBuildWorkflow } from './plan-build.js';
 import { planBuildQaWorkflow } from './plan-build-qa.js';
 import {
+  planBuildQaInteractiveWorkflow,
+  type InteractiveReviewContract,
+  type InteractiveReviewWorkflowDefinition,
+} from './plan-build-qa-interactive.js';
+import {
   researchPlanBuildWorkflow,
   type ResearchWorkflowDefinition,
   type WorkflowApprovalDefinition,
@@ -14,7 +19,7 @@ export interface WorkflowSummary {
 }
 
 export interface WorkflowRegistration {
-  definition: WorkflowDefinition | ResearchWorkflowDefinition;
+  definition: WorkflowDefinition | ResearchWorkflowDefinition | InteractiveReviewWorkflowDefinition;
   description: string;
   experimental?: boolean;
 }
@@ -27,6 +32,10 @@ const registrations: readonly WorkflowRegistration[] = [
   {
     definition: planBuildQaWorkflow,
     description: 'Scope, plan, build, and review the work with bounded QA',
+  },
+  {
+    definition: planBuildQaInteractiveWorkflow,
+    description: 'Review scope, changes, and QA findings interactively',
   },
   {
     definition: researchPlanBuildWorkflow,
@@ -70,6 +79,7 @@ export interface WorkflowContract {
     outputs: WorkflowDefinition['steps'][number]['outputs'];
   }>;
   approval?: WorkflowApprovalDefinition;
+  interactiveReview?: InteractiveReviewContract;
 }
 
 export function listWorkflowContracts(): WorkflowContract[] {
@@ -89,6 +99,9 @@ export function listWorkflowContracts(): WorkflowContract[] {
         outputs: structuredClone(step.outputs),
       })),
       ...('approval' in workflow ? { approval: structuredClone(workflow.approval) } : {}),
+      ...('interactiveReview' in workflow
+        ? { interactiveReview: structuredClone(workflow.interactiveReview) }
+        : {}),
     };
   });
 }

@@ -14,6 +14,10 @@ import { resolveWorkflow } from '../workflows/catalog.js';
 import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { parsePlanBuildQaQaReport } from '../workflows/plan-build-qa.js';
+import type {
+  InteractiveReviewPhase,
+  InteractiveReviewState,
+} from '../workflows/plan-build-qa-interactive.js';
 import {
   buildRunRecoveryExplanation,
   findWaitingApprovalStep,
@@ -38,6 +42,14 @@ export interface RunView {
   pendingAction?: PendingRunAction;
   followUp?: RunFollowUp;
   qa?: RunQaView;
+  review?: RunInteractiveReviewView;
+}
+
+export interface RunInteractiveReviewView {
+  phase: InteractiveReviewPhase;
+  state: InteractiveReviewState;
+  revision: number;
+  targetCount: number;
 }
 
 export interface RunQaView {
