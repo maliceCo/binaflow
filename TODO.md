@@ -67,7 +67,7 @@
   - **Verificacion / TDD:** Agregar expectativas para una ejecucion con una y con varias iteraciones; ejecutar `pnpm vitest run test/plan-build-qa-workflow.test.ts test/application-run-view.test.ts`.
   - **Commit Msg:** `fix: mostrar fases QA iterativas correctamente`
 
-- [ ] **Tarea 3.3: Actualizar el estado materializado de defectos QA**
+- [x] **Tarea 3.3: Actualizar el estado materializado de defectos QA**
   - **Archivo:** `src/application/ports.ts`, `src/storage/run-store.ts`, `src/storage/sqlite-run-store.ts`, `src/application/plan-build-qa-coordinator.ts`, `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/qa-history-operations.ts`, `test/qa-history.test.ts`, `test/plan-build-qa-workflow.test.ts`
   - **Descripcion:** Añadir la operacion minima de persistencia necesaria para que, al registrar eventos `fixed`, `verified`, o una futura reapertura, el estado actual de `QaDefect` se actualice transaccionalmente con su evento. Asegurar que `bugs --stats`, `byStatus` y la metrica de regresiones leen el estado actual correcto, mientras las ocurrencias y el historial de eventos conservan su trazabilidad.
   - **Evitar:** No recalcular estados destructivamente desde texto, no cambiar historiales de otros workspaces y no introducir un sistema generico de tickets.

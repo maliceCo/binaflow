@@ -419,7 +419,10 @@ async function recordInteractiveQaHistory(
     await history.saveQaDefectEvent({
       defectId: defect.id,
       occurrenceId,
-      status: 'detected',
+      status:
+        exact && (exact.status === 'fixed' || exact.status === 'verified')
+          ? 'reopened'
+          : 'detected',
       createdAt: now,
     });
   }

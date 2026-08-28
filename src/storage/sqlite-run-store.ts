@@ -412,19 +412,26 @@ export class SqliteRunStore implements RunStore {
   }
 
   async saveQaDefectEvent(event: QaDefectEvent): Promise<void> {
-    this.database
-      .prepare(
-        `INSERT INTO qa_defect_events
-          (defect_id, occurrence_id, status, details_json, created_at)
-         VALUES (@defectId, @occurrenceId, @status, @details, @createdAt)`,
-      )
-      .run({
-        defectId: event.defectId,
-        occurrenceId: event.occurrenceId ?? null,
-        status: event.status,
-        details: event.details ?? null,
-        createdAt: event.createdAt,
-      });
+    const transaction = this.database.transaction(() => {
+      const updated = this.database
+        .prepare('UPDATE qa_defects SET status = ?, updated_at = ? WHERE id = ?')
+        .run(event.status, event.createdAt, event.defectId);
+      if (updated.changes !== 1) throw new Error(`Unknown QA defect: ${event.defectId}`);
+      this.database
+        .prepare(
+          `INSERT INTO qa_defect_events
+            (defect_id, occurrence_id, status, details_json, created_at)
+           VALUES (@defectId, @occurrenceId, @status, @details, @createdAt)`,
+        )
+        .run({
+          defectId: event.defectId,
+          occurrenceId: event.occurrenceId ?? null,
+          status: event.status,
+          details: event.details ?? null,
+          createdAt: event.createdAt,
+        });
+    });
+    transaction();
   }
 
   async getQaDefects(): Promise<QaDefect[]> {

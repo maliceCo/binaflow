@@ -189,6 +189,7 @@ describe('plan-build-qa workflow', () => {
     expect(await store.getQaDefects()).toHaveLength(1);
     expect(await store.getQaOccurrences()).toHaveLength(1);
     const defect = (await store.getQaDefects())[0]!;
+    expect(defect.status).toBe('verified');
     expect((await store.getQaDefectEvents(defect.id)).map((event) => event.status)).toEqual([
       'detected',
       'fixed',

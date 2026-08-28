@@ -84,12 +84,13 @@ describe('QA history persistence', () => {
     await store.saveQaDefectEvent(detected);
     await store.saveQaDefectEvent(fixed);
 
-    expect(await store.getQaDefects()).toEqual([defect]);
+    const persistedDefect = { ...defect, status: 'fixed' as const, updatedAt: fixed.createdAt };
+    expect(await store.getQaDefects()).toEqual([persistedDefect]);
     expect(await store.searchQaDefects('fingerprint-1', 'unrelated')).toEqual([
-      { defect, exact: true },
+      { defect: persistedDefect, exact: true },
     ]);
     expect(await store.searchQaDefects('other-fingerprint', 'invalid input')).toEqual([
-      { defect, exact: false },
+      { defect: persistedDefect, exact: false },
     ]);
     await store.saveQaDefect({
       ...defect,
@@ -110,7 +111,7 @@ describe('QA history persistence', () => {
           },
           exact: false,
         },
-        { defect, exact: false },
+        { defect: persistedDefect, exact: false },
       ]),
     );
     await store.reindexQaSearch();
