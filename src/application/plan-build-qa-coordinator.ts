@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
 import type { WorkflowArtifactStore } from '../core/ports.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
 import { isStepRetryEligible } from '../core/run.js';
 import type { AgentStep, WorkflowDefinition } from '../core/workflow.js';
 import type { WorkflowRuntime } from '../core/workflow-runtime.js';
-import type { ApplicationRunStore } from './ports.js';
+import type { ApplicationQaHistoryStore, ApplicationRunStore } from './ports.js';
 import {
   renderFinalReport,
   renderQaFixes,
@@ -54,6 +55,7 @@ export class PlanBuildQaCoordinator {
     private readonly runtime: PlanBuildQaRuntime,
     private readonly persistence: PlanBuildQaPersistence,
     private readonly artifactsStore: WorkflowArtifactStore,
+    private readonly qaHistory?: ApplicationQaHistoryStore,
   ) {}
 
   async execute(
@@ -182,7 +184,11 @@ export class PlanBuildQaCoordinator {
           JSON.parse(await this.artifactsStore.read(qaArtifact)),
         );
         recordQaReport(qaReports, iteration + 1, report);
-        if (!isBlockingReport(report)) return finish('completed');
+        await recordQaHistory(run.id, iteration + 1, report, qaArtifact, this.qaHistory);
+        if (!isBlockingReport(report)) {
+          await verifyPreviousQaFindings(run.id, iteration + 1, this.qaHistory);
+          return finish('completed');
+        }
         artifacts = await persistCoordinatorArtifact(
           run.id,
           `QA-FIXES-${iteration + 1}.md`,
@@ -217,6 +223,7 @@ export class PlanBuildQaCoordinator {
           requiredArtifact(artifacts, currentFixStep.id, 'result'),
           this.artifactsStore,
         );
+        await markQaFindings(run.id, iteration + 1, report, 'fixed', this.qaHistory);
 
         iteration += 1;
         const nextInput = { ...input, [QA_ITERATION_INPUT]: iteration };
@@ -343,7 +350,7 @@ async function loadBuildResults(
   const buildArtifacts = artifacts.filter(
     (artifact) =>
       artifact.name === 'result' &&
-      (artifact.stepId === 'build' || /^fix-\\d+$/.test(artifact.stepId)),
+      (artifact.stepId === 'build' || /^fix-\d+$/.test(artifact.stepId)),
   );
   const results: FinalReportBuild[] = [];
   for (const artifact of buildArtifacts) {
@@ -365,7 +372,7 @@ async function loadQaReports(
 ): Promise<FinalReportQa[]> {
   const reportArtifacts = artifacts.filter(
     (artifact) =>
-      artifact.name === 'report' && (artifact.stepId === 'qa' || /^qa-\\d+$/.test(artifact.stepId)),
+      artifact.name === 'report' && (artifact.stepId === 'qa' || /^qa-\d+$/.test(artifact.stepId)),
   );
   const reports: FinalReportQa[] = [];
   for (const artifact of reportArtifacts) {
@@ -404,4 +411,114 @@ function recordQaReport(
   report: PlanBuildQaReport,
 ): void {
   if (!reports.some((entry) => entry.iteration === iteration)) reports.push({ iteration, report });
+}
+
+async function recordQaHistory(
+  runId: string,
+  iteration: number,
+  report: PlanBuildQaReport,
+  reportArtifact: ArtifactReference,
+  history: ApplicationQaHistoryStore | undefined,
+): Promise<void> {
+  if (!history) return;
+  for (const finding of report.findings) {
+    const fingerprint = findingFingerprint(finding);
+    const exact = (await history.searchQaDefects(fingerprint, ''))[0]?.defect;
+    const now = new Date().toISOString();
+    const defect = exact ?? {
+      id: `defect-${fingerprint}`,
+      fingerprint,
+      title: finding.title,
+      summary: finding.explanation,
+      category: finding.category,
+      severity: finding.severity,
+      status: 'detected' as const,
+      createdAt: now,
+      updatedAt: now,
+      locations: finding.evidence,
+    };
+    if (!exact) await history.saveQaDefect(defect);
+    const occurrenceId = qaOccurrenceId(runId, iteration, finding.id);
+    const existing = (await history.getQaOccurrences(defect.id)).find(
+      (occurrence) => occurrence.id === occurrenceId,
+    );
+    if (existing) continue;
+    await history.saveQaOccurrence({
+      id: occurrenceId,
+      runId,
+      defectId: defect.id,
+      qaIteration: iteration,
+      findingId: finding.id,
+      reportArtifactId: reportArtifact.id,
+      createdAt: now,
+    });
+    await history.saveQaDefectEvent({
+      defectId: defect.id,
+      occurrenceId,
+      status: 'detected',
+      createdAt: now,
+    });
+  }
+}
+
+async function markQaFindings(
+  runId: string,
+  iteration: number,
+  report: PlanBuildQaReport,
+  status: 'fixed' | 'verified',
+  history: ApplicationQaHistoryStore | undefined,
+): Promise<void> {
+  if (!history) return;
+  for (const finding of report.findings) {
+    const defect = (await history.searchQaDefects(findingFingerprint(finding), ''))[0]?.defect;
+    if (!defect) continue;
+    const occurrenceId = qaOccurrenceId(runId, iteration, finding.id);
+    const events = await history.getQaDefectEvents(defect.id);
+    if (events.some((event) => event.occurrenceId === occurrenceId && event.status === status))
+      continue;
+    await history.saveQaDefectEvent({
+      defectId: defect.id,
+      occurrenceId,
+      status,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+async function verifyPreviousQaFindings(
+  runId: string,
+  iteration: number,
+  history: ApplicationQaHistoryStore | undefined,
+): Promise<void> {
+  if (!history) return;
+  for (const occurrence of await history.getQaOccurrences()) {
+    if (occurrence.runId !== runId || occurrence.qaIteration >= iteration) continue;
+    const events = await history.getQaDefectEvents(occurrence.defectId);
+    if (events.some((event) => event.occurrenceId === occurrence.id && event.status === 'verified'))
+      continue;
+    await history.saveQaDefectEvent({
+      defectId: occurrence.defectId,
+      occurrenceId: occurrence.id,
+      status: 'verified',
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+function findingFingerprint(finding: PlanBuildQaReport['findings'][number]): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        category: finding.category,
+        title: finding.title,
+        explanation: finding.explanation,
+        impact: finding.impact,
+        evidence: [...finding.evidence].sort(),
+      }),
+    )
+    .digest('hex');
+}
+
+function qaOccurrenceId(runId: string, iteration: number, findingId: string): string {
+  return `${runId}:${iteration}:${findingId}`;
 }

@@ -126,7 +126,7 @@
   - **Verificacion:** `pnpm test -- test/qa-history.test.ts test/migrations.test.ts`.
   - **Commit Msg:** `feat: search qa history with fts5`
 
-- [ ] **Tarea 3.4: Alimentar historial desde el coordinador automatico**
+- [x] **Tarea 3.4: Alimentar historial desde el coordinador automatico**
   - **Archivos:** modificar `src/application/plan-build-qa-coordinator.ts`, `src/application/runtime.ts`, `src/application/service.ts`; ampliar `test/plan-build-qa-workflow.test.ts` y `test/qa-history.test.ts`.
   - **Descripcion:** Cuando `qaHistory.enabled` sea true, registrar cada finding de cada iteracion y sus transiciones de correccion/verificacion. Clasificar solo con evidencia suficiente como `new`, `known-open`, `duplicate`, `reopened` o `regression`; conservar candidatos ambiguos sin confirmar. Cuando este desactivado, no crear defects, ocurrencias, eventos ni consultas FTS5.
   - **Evitar:** Cambiar la decision de correccion automatica por una coincidencia FTS, registrar dos veces una ocurrencia tras resume, o impedir que el workflow funcione con historial desactivado.

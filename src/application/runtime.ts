@@ -68,7 +68,12 @@ export async function openApplicationContext(
     interpretDisposition: interpretWorkflowDisposition,
   });
   const researchCoordinator = new ResearchPlanBuildCoordinator(runtime, store, artifacts);
-  const planBuildQaCoordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
+  const planBuildQaCoordinator = new PlanBuildQaCoordinator(
+    runtime,
+    store,
+    artifacts,
+    config.qaHistory.enabled ? store : undefined,
+  );
   const application = createApplicationService({
     config,
     store,

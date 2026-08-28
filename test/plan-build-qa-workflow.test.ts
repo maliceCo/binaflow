@@ -143,7 +143,7 @@ describe('plan-build-qa workflow', () => {
     const runtime = createWorkflowRuntime(store, artifacts, driver, undefined, {
       interpretDisposition: interpretWorkflowDisposition,
     });
-    const coordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
+    const coordinator = new PlanBuildQaCoordinator(runtime, store, artifacts, store);
 
     const run = await coordinator.execute(planBuildQaWorkflow, {
       runId: 'qa-run',
@@ -186,6 +186,14 @@ describe('plan-build-qa workflow', () => {
       (artifact) => artifact.stepId === 'coordinator' && artifact.name === 'FINAL-REPORT.md',
     );
     expect(await artifacts.read(finalReport!)).toContain('finding-1');
+    expect(await store.getQaDefects()).toHaveLength(1);
+    expect(await store.getQaOccurrences()).toHaveLength(1);
+    const defect = (await store.getQaDefects())[0]!;
+    expect((await store.getQaDefectEvents(defect.id)).map((event) => event.status)).toEqual([
+      'detected',
+      'fixed',
+      'verified',
+    ]);
     store.close();
   });
 
