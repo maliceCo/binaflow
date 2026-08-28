@@ -195,11 +195,24 @@ describe('configuration operations', () => {
     await writeConfigurationAtomically(generated);
 
     const loaded = await loadConfig(generated.configPath);
+    expect(loaded.profiles.analyst).toMatchObject({
+      provider: 'provider-a',
+      model: 'planner-model',
+      workspaceMode: 'read-only',
+      skills: { mode: 'discover' },
+    });
     expect(loaded.profiles.planner).toMatchObject({
       provider: 'provider-a',
       model: 'planner-model',
       workspaceMode: 'read-only',
       projectTrust: 'never',
+      skills: { mode: 'discover' },
+    });
+    expect(loaded.profiles.qa).toMatchObject({
+      provider: 'provider-a',
+      model: 'planner-model',
+      workspaceMode: 'read-only',
+      skills: { mode: 'discover' },
     });
     expect(loaded.profiles.builder).toMatchObject({
       provider: 'provider-b',

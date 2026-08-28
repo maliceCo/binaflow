@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import type { AgentProfile } from '../../config.js';
 import {
   cliUsageError,
   machineMode,
@@ -231,7 +232,7 @@ function printDiagnosis(diagnosis: ConfigurationDiagnosis): void {
         `  driver=${profile.settings.driver} provider=${profile.settings.provider ?? '-'} model=${profile.settings.model}`,
       );
       console.log(
-        `  tools=${profile.settings.tools.join(',')} workspace=${profile.settings.workspaceMode} trust=${profile.settings.projectTrust ?? '-'} timeoutMs=${profile.settings.timeoutMs} retryLimit=${profile.settings.retryLimit}`,
+        `  tools=${profile.settings.tools.join(',')} workspace=${profile.settings.workspaceMode} trust=${profile.settings.projectTrust ?? '-'} skills=${formatSkillPolicy(profile.settings.skills)} timeoutMs=${profile.settings.timeoutMs} retryLimit=${profile.settings.retryLimit}`,
       );
     }
   }
@@ -242,6 +243,12 @@ function printDiagnosis(diagnosis: ConfigurationDiagnosis): void {
     );
   }
   console.log(`Ready: ${diagnosis.ready ? 'yes' : 'no'}`);
+}
+
+function formatSkillPolicy(policy: AgentProfile['skills']): string {
+  if (!policy || policy.mode === 'discover') return 'discover';
+  if (policy.mode === 'none') return 'none';
+  return `only(${policy.paths.join(',')})${policy.required?.length ? ` required=${policy.required.join(',')}` : ''}`;
 }
 
 function rootOptions(command: Command): RootOptions {

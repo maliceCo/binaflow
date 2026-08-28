@@ -62,7 +62,9 @@ describe('Ink setup and launch safety', () => {
       JSON.parse(await readFile(join(directory, '.binaflow', 'config.json'), 'utf8')),
     ).toMatchObject({
       profiles: {
+        analyst: { provider: 'provider-a', model: 'planner-model', workspaceMode: 'read-only' },
         planner: { provider: 'provider-a', model: 'planner-model', workspaceMode: 'read-only' },
+        qa: { provider: 'provider-a', model: 'planner-model', workspaceMode: 'read-only' },
         builder: { provider: 'provider-b', model: 'builder-model', workspaceMode: 'read-only' },
       },
     });

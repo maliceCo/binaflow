@@ -125,10 +125,14 @@ export function SetupPreviewScreen({
   setupPreviewOffset: number;
   showFullConfig: boolean;
 }) {
+  const analyst = generated.config.profiles.analyst;
   const planner = generated.config.profiles.planner;
+  const qa = generated.config.profiles.qa;
   const builder = generated.config.profiles.builder;
   const summary = [
+    `Analyst: ${analyst?.provider ?? '-'} / ${analyst?.model ?? '-'} (read-only)`,
     `Planner: ${planner?.provider ?? '-'} / ${planner?.model ?? '-'} (read-only)`,
+    `QA: ${qa?.provider ?? '-'} / ${qa?.model ?? '-'} (read-only, no shell)`,
     `Builder: ${builder?.provider ?? '-'} / ${builder?.model ?? '-'} (${builder && isWriteCapable(builder) ? 'WRITE+SHELL' : 'read-only'})`,
     `Config path: ${generated.configPath}`,
     `Pi command: ${generated.config.piCommand}`,

@@ -239,27 +239,32 @@ export function generateConfiguration(input: ConfigurationGenerationInput): Gene
   const builderTools = input.builderWriteAccess
     ? ['ls', 'find', 'read', 'write', 'edit', 'bash']
     : ['ls', 'find', 'read'];
+  const planner = {
+    driver: 'pi' as const,
+    provider: input.plannerProvider.trim(),
+    model: input.plannerModel.trim(),
+    tools: ['ls', 'find', 'read'],
+    workspaceMode: 'read-only' as const,
+    projectTrust: 'never' as const,
+    skills: { mode: 'discover' as const },
+    timeoutMs: 180_000,
+    retryLimit: 0,
+  };
   const config = {
     dataDir: './data',
     piCommand: 'pi',
     profiles: {
-      planner: {
-        driver: 'pi',
-        provider: input.plannerProvider.trim(),
-        model: input.plannerModel.trim(),
-        tools: ['ls', 'find', 'read'],
-        workspaceMode: 'read-only' as const,
-        projectTrust: 'never' as const,
-        timeoutMs: 180_000,
-        retryLimit: 0,
-      },
+      analyst: { ...planner },
+      planner: { ...planner },
+      qa: { ...planner },
       builder: {
-        driver: 'pi',
+        driver: 'pi' as const,
         provider: input.builderProvider.trim(),
         model: input.builderModel.trim(),
         tools: builderTools,
         workspaceMode: input.builderWriteAccess ? ('read-write' as const) : ('read-only' as const),
         projectTrust: input.builderWriteAccess ? ('always' as const) : ('never' as const),
+        skills: { mode: 'discover' as const },
         timeoutMs: 180_000,
         retryLimit: 0,
       },

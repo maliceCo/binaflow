@@ -59,7 +59,7 @@
   - **Verificacion:** `pnpm test -- test/config.test.ts test/drivers/contract.test.ts test/config-operations.test.ts`.
   - **Commit Msg:** `feat: configure pi skills per agent profile`
 
-- [ ] **Tarea 1.4: Actualizar configuracion inicial y documentacion de perfiles QA**
+- [x] **Tarea 1.4: Actualizar configuracion inicial y documentacion de perfiles QA**
   - **Archivos:** modificar `src/application/config-operations.ts`, `src/cli/commands/configuration.ts`, `src/tui/launch.ts`, `src/tui/screens/setup.tsx`, `README.md`; ampliar `test/cli.test.ts` y `test/tui-setup-safety.test.ts`.
   - **Descripcion:** Permitir que la configuracion inicial ofrezca perfiles para el workflow QA y muestre claramente sus permisos: analyst/planner/qa read-only y builder read-write. Documentar perfiles con modelos distintos, thinking y skills; documentar que QA analiza los resultados de verificacion declarados por builder y no ejecuta shell por si mismo.
   - **Evitar:** Guardar credenciales, habilitar `bash` en perfiles read-only, o hacer obligatorio el nuevo workflow para configuraciones que solo usan `plan-build`.

@@ -6,9 +6,11 @@ Binaflow is a local workflow orchestrator for coding agents. It runs a
 structured workflow, persists runs in SQLite, stores artifacts on disk, and
 uses Pi as the first agent driver.
 
-The preview includes two sequential workflows:
+The preview includes three sequential workflows:
 
 - `plan-build`: create a validated implementation plan, then build it.
+- `plan-build-qa`: scope, plan, build, and run bounded read-only QA, with the
+  builder correcting only critical or high findings.
 - `research-plan-build`: experimental research, review, approval, plan, then
   build.
 
@@ -139,12 +141,38 @@ The generated configuration has this shape:
   "dataDir": ".",
   "piCommand": "pi",
   "profiles": {
+    "analyst": {
+      "driver": "pi",
+      "provider": "your-provider",
+      "model": "your-analysis-model",
+      "thinking": "medium",
+      "tools": ["ls", "find", "read"],
+      "workspaceMode": "read-only",
+      "projectTrust": "never",
+      "skills": { "mode": "discover" },
+      "timeoutMs": 180000,
+      "retryLimit": 0
+    },
     "planner": {
       "driver": "pi",
       "provider": "your-provider",
       "model": "your-planner-model",
       "tools": ["ls", "find", "read"],
       "workspaceMode": "read-only",
+      "projectTrust": "never",
+      "skills": { "mode": "discover" },
+      "timeoutMs": 180000,
+      "retryLimit": 0
+    },
+    "qa": {
+      "driver": "pi",
+      "provider": "your-provider",
+      "model": "your-qa-model",
+      "thinking": "high",
+      "tools": ["ls", "find", "read"],
+      "workspaceMode": "read-only",
+      "projectTrust": "never",
+      "skills": { "mode": "discover" },
       "timeoutMs": 180000,
       "retryLimit": 0
     },
@@ -154,6 +182,8 @@ The generated configuration has this shape:
       "model": "your-builder-model",
       "tools": ["ls", "find", "read", "write", "edit", "bash"],
       "workspaceMode": "read-write",
+      "projectTrust": "always",
+      "skills": { "mode": "discover" },
       "timeoutMs": 180000,
       "retryLimit": 0
     }
@@ -165,8 +195,17 @@ Replace the provider and model values with models available in your Pi
 configuration. Binaflow asks for names but does not store credentials or
 manage authentication. Do not commit private configuration files.
 
-The planner is read-only. The builder can modify the workspace and run shell
-commands, so use a test repository first.
+The analyst, planner, and QA profiles are read-only and must not enable shell,
+write, or edit tools. QA reviews the builder's declared verification results; it
+does not execute shell commands itself. The builder is the only profile that may
+modify the workspace or run shell commands, so use a test repository first.
+
+Each profile can set `skills` to `discover` (Pi's normal discovery), `none`, or
+`only` with explicit skill paths and optional required skill names. The `only`
+policy uses `--no-skills` plus `--skill` paths, and a missing required skill
+fails before the agent task starts. Use separate provider, model, thinking, and
+skill settings for analyst, planner, builder, and QA when their responsibilities
+need different behavior.
 
 ## Run A Workflow
 
