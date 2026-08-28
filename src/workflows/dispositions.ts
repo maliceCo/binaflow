@@ -1,5 +1,6 @@
 import type { StepDisposition } from '../core/run.js';
 import { parseBuildPlan } from './plan-build.js';
+import { parsePlanBuildQaScope } from './plan-build-qa.js';
 
 export function interpretWorkflowDisposition(
   disposition: string,
@@ -16,6 +17,20 @@ export function interpretWorkflowDisposition(
               kind: 'stop',
               code: 'PLAN_NEEDS_CLARIFICATION',
               message: plan.clarificationQuestions.join(' '),
+            },
+    };
+  }
+  if (disposition === 'plan-build-qa-scope') {
+    const scope = parsePlanBuildQaScope(value);
+    return {
+      content: JSON.stringify(scope, null, 2),
+      disposition:
+        scope.decision === 'proceed'
+          ? { kind: 'continue' }
+          : {
+              kind: 'stop',
+              code: 'SCOPE_NEEDS_CLARIFICATION',
+              message: scope.questions.join(' '),
             },
     };
   }
