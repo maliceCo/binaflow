@@ -161,6 +161,14 @@ export class ResearchPlanBuildCoordinator {
               reviewStep.id,
               `Research stopped after ${MAX_RESEARCH_ITERATIONS} iterations`,
             );
+            await this.persistExhaustedIteration(
+              run.id,
+              input,
+              artifacts,
+              research,
+              review,
+              stepRuns.get(workflow.approval.id),
+            );
             return this.runtime.saveRunStatus(run, 'failed');
           }
           input = {
@@ -209,6 +217,14 @@ export class ResearchPlanBuildCoordinator {
               run.id,
               workflow.approval.id,
               'Research approval limit reached',
+            );
+            await this.persistExhaustedIteration(
+              run.id,
+              input,
+              artifacts,
+              research,
+              review,
+              approval,
             );
             return this.runtime.saveRunStatus(run, 'failed');
           }
@@ -375,6 +391,28 @@ export class ResearchPlanBuildCoordinator {
       throw new Error('Persisted research iteration is invalid');
     }
     return value;
+  }
+
+  private async persistExhaustedIteration(
+    runId: string,
+    input: Record<string, unknown>,
+    artifacts: import('../core/run.js').ArtifactReference[],
+    research: StepRun,
+    review: StepRun,
+    approval?: StepRun,
+  ): Promise<void> {
+    const exhaustedInput = {
+      ...input,
+      [RESEARCH_ITERATION_INPUT]: MAX_RESEARCH_ITERATIONS,
+    };
+    const inputArtifact = await writeResearchInputArtifact(
+      runId,
+      exhaustedInput,
+      artifacts,
+      this.artifactsStore,
+    );
+    await this.persistence.checkpointResearchIteration(inputArtifact, research, review, approval);
+    await this.removeSupersededInput(artifacts, inputArtifact, runId);
   }
 
   private async removeSupersededInput(

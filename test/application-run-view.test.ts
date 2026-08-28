@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../src/core/run.js';
 import { getRunView } from '../src/application/run-view.js';
+import { explainRunRecovery } from '../src/application/run-operations.js';
 import type { RunStore } from '../src/storage/run-store.js';
 import type { ApplicationArtifactStore } from '../src/application/ports.js';
 
@@ -228,6 +229,51 @@ describe('application run view', () => {
     expect(view.workflow.compatible).toBe(false);
     expect(view.pendingAction).toBeUndefined();
     expect(view.availableActions).toEqual([]);
+  });
+
+  it('does not offer recovery for missing or corrupt research input', async () => {
+    const run = workflowRun({
+      workflowId: 'research-plan-build',
+      workflowVersion: 2,
+      status: 'failed',
+    });
+    const steps: StepRun[] = [
+      {
+        runId: run.id,
+        stepId: 'plan',
+        profile: 'planner',
+        status: 'failed',
+        attempt: 1,
+        error: { message: 'temporary failure', retryable: true },
+      },
+    ];
+    const input: ArtifactReference = {
+      id: 'run-input',
+      runId: run.id,
+      stepId: 'run',
+      name: 'input',
+      kind: 'json',
+      path: 'C:/private/input.json',
+      mediaType: 'application/json',
+      sizeBytes: 1,
+    };
+
+    for (const artifacts of [[], [input]]) {
+      const artifactStore = {
+        read: async () => {
+          if (artifacts.length === 0) throw new Error('not called');
+          throw new Error('corrupt input');
+        },
+        readBounded: async () => ({ content: '', truncated: false }),
+      } as ApplicationArtifactStore;
+      const context = { store: store(run, steps, artifacts) as RunStore, artifacts: artifactStore };
+      const view = await getRunView(context, run.id);
+      const recovery = await explainRunRecovery(context, run.id);
+
+      expect(view.availableActions).toEqual([]);
+      expect(recovery.eligible).toBe(false);
+      expect(recovery.reason).toContain('missing or invalid');
+    }
   });
 
   it('projects resume for compatible failed work and no actions for a completed run', async () => {

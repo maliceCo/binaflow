@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink } from '../src/core/events.js';
-import type { AgentStepResult } from '../src/core/run.js';
+import type { AgentStepResult, WorkflowRun } from '../src/core/run.js';
 import type { AgentProfile } from '../src/config.js';
 import { createWorkflowRuntime } from '../src/core/engine.js';
 import { ResearchPlanBuildCoordinator } from '../src/application/research-plan-build-coordinator.js';
+import { getRunView } from '../src/application/run-view.js';
 import { interpretWorkflowDisposition } from '../src/workflows/dispositions.js';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { AgentDriverError } from '../src/drivers/contract.js';
@@ -244,8 +245,10 @@ describe('research-plan-build workflow', () => {
       reviewResult('ready'),
       reportResult('With user feedback'),
       reviewResult('ready'),
+      reportResult('With second user feedback'),
+      reviewResult('ready'),
     ]);
-    const { engine, store } = createEnvironment(driver);
+    const { engine, store, artifacts } = createEnvironment(driver);
 
     const waiting = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'rejection',
@@ -266,17 +269,48 @@ describe('research-plan-build workflow', () => {
     });
     expect(claim).toBeDefined();
 
-    const resumed = await engine.execute(researchPlanBuildWorkflow, {
+    let resumed = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'rejection',
       profiles,
       resume: true,
       executionClaim: claim!.claim,
     });
 
+    const rejectWaitingRun = async (feedback: string): Promise<WorkflowRun> => {
+      const waitingApproval = (await store.getStepRuns('rejection')).find(
+        (step) => step.stepId === 'research-approval',
+      )!;
+      const nextClaim = await store.claimApprovalForExecution('rejection', {
+        ...waitingApproval,
+        status: 'pending',
+        approval: {
+          decision: 'rejected',
+          feedback,
+          decidedAt: new Date().toISOString(),
+        },
+      });
+      expect(nextClaim).toBeDefined();
+      return engine.execute(researchPlanBuildWorkflow, {
+        runId: 'rejection',
+        profiles,
+        resume: true,
+        executionClaim: nextClaim!.claim,
+      });
+    };
+
+    resumed = await rejectWaitingRun('Check the test coverage too.');
+    const exhausted = await rejectWaitingRun('Check the release process too.');
+
     expect(waiting.status).toBe('waiting');
     expect(resumed.status).toBe('waiting');
+    expect(exhausted.status).toBe('failed');
+    expect(await persistedInput(store, artifacts, exhausted.id)).toMatchObject({
+      researchIteration: 3,
+    });
     expect(driver.calls[2]?.prompt).toContain('Check the persistence migration too.');
     expect(driver.calls.map((call) => call.stepId)).toEqual([
+      'research',
+      'research-review',
       'research',
       'research-review',
       'research',
@@ -294,7 +328,7 @@ describe('research-plan-build workflow', () => {
       reportResult(),
       reviewResult('needs_more_research'),
     ]);
-    const { engine, store } = createEnvironment(driver);
+    const { engine, store, artifacts } = createEnvironment(driver);
 
     const run = await engine.execute(researchPlanBuildWorkflow, {
       runId: 'research-limit',
@@ -303,6 +337,10 @@ describe('research-plan-build workflow', () => {
     });
 
     expect(run.status).toBe('failed');
+    expect(await persistedInput(store, artifacts, run.id)).toMatchObject({
+      researchIteration: 3,
+    });
+    expect((await getRunView({ store, artifacts }, run.id)).availableActions).toEqual([]);
     expect(driver.calls.map((call) => call.stepId)).toEqual([
       'research',
       'research-review',

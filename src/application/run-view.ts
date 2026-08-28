@@ -15,7 +15,7 @@ import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import {
   buildRunRecoveryExplanation,
   findWaitingApprovalStep,
-  isResearchIterationExhausted,
+  researchRecoveryState,
   type ApplicationInternals,
 } from './operations.js';
 
@@ -125,14 +125,24 @@ export async function getRunView(
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
   const recoveryBase = buildRunRecoveryExplanation(run, steps, installedWorkflow);
-  const recovery = (await isResearchIterationExhausted(context, run, artifacts))
-    ? {
-        ...recoveryBase,
-        eligible: false,
-        reason: 'The research iteration limit has been reached; this run is terminal.',
-        actions: [],
-      }
-    : recoveryBase;
+  const recoveryState = await researchRecoveryState(context, run, artifacts);
+  const recovery =
+    recoveryState === 'exhausted'
+      ? {
+          ...recoveryBase,
+          eligible: false,
+          reason: 'The research iteration limit has been reached; this run is terminal.',
+          actions: [],
+        }
+      : recoveryState === 'invalid'
+        ? {
+            ...recoveryBase,
+            eligible: false,
+            reason:
+              'The persisted research input is missing or invalid; this run cannot be resumed.',
+            actions: [],
+          }
+        : recoveryBase;
   const phases = buildPhases(
     compatible ? installedWorkflow : undefined,
     steps,

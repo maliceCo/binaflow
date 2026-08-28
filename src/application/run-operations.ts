@@ -60,14 +60,24 @@ export async function explainRunRecovery(
     steps,
     resolveRecoveryWorkflow(run.workflowId),
   );
-  return (await isResearchIterationExhausted(context, run))
-    ? {
-        ...explanation,
-        eligible: false,
-        reason: 'The research iteration limit has been reached; this run is terminal.',
-        actions: [],
-      }
-    : explanation;
+  const recoveryState = await researchRecoveryState(context, run);
+  if (recoveryState === 'exhausted') {
+    return {
+      ...explanation,
+      eligible: false,
+      reason: 'The research iteration limit has been reached; this run is terminal.',
+      actions: [],
+    };
+  }
+  if (recoveryState === 'invalid') {
+    return {
+      ...explanation,
+      eligible: false,
+      reason: 'The persisted research input is missing or invalid; this run cannot be resumed.',
+      actions: [],
+    };
+  }
+  return explanation;
 }
 
 export async function isResearchIterationExhausted(
@@ -75,25 +85,29 @@ export async function isResearchIterationExhausted(
   run: WorkflowRun,
   artifacts?: ArtifactReference[],
 ): Promise<boolean> {
-  if (run.workflowId !== researchPlanBuildWorkflow.id || !context.artifacts) return false;
+  return (await researchRecoveryState(context, run, artifacts)) === 'exhausted';
+}
+
+export async function researchRecoveryState(
+  context: Pick<ApplicationInternals, 'store'> & Partial<Pick<ApplicationInternals, 'artifacts'>>,
+  run: WorkflowRun,
+  artifacts?: ArtifactReference[],
+): Promise<'exhausted' | 'invalid' | undefined> {
+  if (run.workflowId !== researchPlanBuildWorkflow.id || !context.artifacts) return undefined;
   const inputArtifact = (artifacts ?? (await context.store.getArtifacts(run.id))).find(
     (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
   );
-  if (!inputArtifact) return artifacts !== undefined;
+  if (!inputArtifact) return 'invalid';
   try {
-    const input = JSON.parse(await context.artifacts.read(inputArtifact)) as Record<
-      string,
-      unknown
-    >;
+    const input: unknown = JSON.parse(await context.artifacts.read(inputArtifact));
+    if (!isRecord(input)) return 'invalid';
     const iteration = input[RESEARCH_ITERATION_INPUT];
-    return (
-      typeof iteration !== 'number' ||
-      !Number.isInteger(iteration) ||
-      iteration < 0 ||
-      iteration >= MAX_RESEARCH_ITERATIONS
-    );
+    if (typeof iteration !== 'number' || !Number.isInteger(iteration) || iteration < 0) {
+      return 'invalid';
+    }
+    return iteration >= MAX_RESEARCH_ITERATIONS ? 'exhausted' : undefined;
   } catch {
-    return false;
+    return 'invalid';
   }
 }
 
@@ -310,6 +324,10 @@ function recoveryRetryableStepIds(
 function researchApproval(workflow: WorkflowDefinition): WorkflowApprovalDefinition | undefined {
   if (workflow.id !== researchPlanBuildWorkflow.id) return undefined;
   return (workflow as typeof researchPlanBuildWorkflow).approval;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 type RunStoreContext<Keys extends keyof ApplicationRunStore> = {
