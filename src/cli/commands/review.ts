@@ -83,6 +83,54 @@ export function registerReviewCommands(cli: Command): void {
     );
 
   review
+    .command('adjudicate <run-id>')
+    .requiredOption('--thread <id>', 'review thread ID')
+    .requiredOption('--target-id <id>', 'finding target ID')
+    .requiredOption(
+      '--decision <decision>',
+      'withdrawn, confirmed, reclassified, or needs-human-decision',
+    )
+    .requiredOption('--issue <text>', 'issue under adjudication')
+    .requiredOption('--evidence <items...>', 'additional evidence items')
+    .requiredOption('--scope <text>', 'relevant scope')
+    .requiredOption('--clarification <text>', 'user clarification')
+    .action(
+      async (
+        runId: string,
+        options: {
+          thread: string;
+          targetId: string;
+          decision: string;
+          issue: string;
+          evidence: string[];
+          scope: string;
+          clarification: string;
+        },
+        command: Command,
+      ) => {
+        const mode = machineMode(rootOptions(command));
+        rejectUnsupportedJsonl(mode, 'review adjudicate');
+        const context = await openContext(rootOptions(command));
+        try {
+          const result = await context.application.adjudicateReview!({
+            runId,
+            threadId: options.thread,
+            target: { kind: 'finding', id: options.targetId },
+            decision: adjudicationDecision(options.decision),
+            issue: options.issue,
+            evidence: options.evidence,
+            scope: options.scope,
+            clarification: options.clarification,
+          });
+          if (mode) writeJsonResult('review adjudicate', result);
+          else printReview(result);
+        } finally {
+          context.close();
+        }
+      },
+    );
+
+  review
     .command('decide <run-id>')
     .requiredOption('--thread <id>', 'review thread ID')
     .requiredOption('--target-kind <kind>', 'scope, task, change, or finding')
@@ -171,6 +219,20 @@ function reviewTarget(kind: string, id: string): ReviewTarget {
 
 function isReviewTargetKind(value: string): value is ReviewTargetKind {
   return value === 'scope' || value === 'task' || value === 'change' || value === 'finding';
+}
+
+function adjudicationDecision(
+  value: string,
+): 'withdrawn' | 'confirmed' | 'reclassified' | 'needs-human-decision' {
+  if (
+    value !== 'withdrawn' &&
+    value !== 'confirmed' &&
+    value !== 'reclassified' &&
+    value !== 'needs-human-decision'
+  ) {
+    throw new Error(`Invalid adjudication decision: ${value}`);
+  }
+  return value;
 }
 
 function reviewDecision(

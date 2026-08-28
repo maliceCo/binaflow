@@ -82,6 +82,7 @@ export interface ApplicationReviewStore {
   saveReviewMessage(message: ReviewMessage): Promise<void>;
   getReviewMessages(threadId: string): Promise<ReviewMessage[]>;
   saveReviewDecision(decision: ReviewDecision, nextState: ReviewThreadState): Promise<void>;
+  saveReviewAdjudication(decision: ReviewDecision): Promise<void>;
   getReviewDecisions(threadId: string): Promise<ReviewDecision[]>;
 }
 

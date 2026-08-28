@@ -82,6 +82,13 @@ export interface InteractiveDecideOperation {
   decision: 'approve' | 'reject' | 'correct' | 'withdraw' | 'accept-risk' | 'postpone';
 }
 
+export interface InteractiveAdjudicationOperation {
+  operation: 'adjudicate';
+  target: FindingReviewTarget;
+  decision: 'withdrawn' | 'confirmed' | 'reclassified' | 'needs-human-decision';
+  evidence: string[];
+}
+
 export interface InteractiveFinalizeOperation {
   operation: 'finalize';
   target: ScopeReviewTarget | ChangeReviewTarget | FindingReviewTarget;

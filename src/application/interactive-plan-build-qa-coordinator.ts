@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
-import type { ReviewDecision, ReviewMessage, ReviewThread } from '../core/interactive-review.js';
+import type { ReviewMessage, ReviewThread } from '../core/interactive-review.js';
 import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
 import type { AgentStep, WorkflowDefinition } from '../core/workflow.js';
 import type { WorkflowArtifactStore } from '../core/ports.js';
@@ -17,6 +17,7 @@ import {
   validateInteractiveWorkflowDefinition,
   type InteractiveReviewPhase,
 } from '../workflows/plan-build-qa-interactive.js';
+import { parsePlanBuildQaQaReport } from '../workflows/plan-build-qa.js';
 import type { ApplicationReviewStore, ApplicationRunStore } from './ports.js';
 
 export type InteractivePlanBuildQaRuntime = Pick<
@@ -163,13 +164,27 @@ export class InteractivePlanBuildQaCoordinator {
     }
 
     if (!completed(steps.get(qaStep.id))) await executeStep(qaStep);
-    const qaThread = await this.thread(run.id, 'qa', { kind: 'finding', id: 'qa' });
-    if (qaThread.state === 'waiting') {
-      await this.wait(run, qaThread);
+    const qaArtifact = requiredArtifact(artifacts, qaStep.id, 'report');
+    const qaReport = parsePlanBuildQaQaReport(
+      JSON.parse(await this.artifactsStore.read(qaArtifact)),
+    );
+    const findingIds = qaReport.findings.map((finding) => finding.id);
+    const qaThreads =
+      findingIds.length > 0
+        ? await Promise.all(
+            findingIds.map((id) => this.thread(run.id, 'qa', { kind: 'finding', id })),
+          )
+        : [await this.thread(run.id, 'qa', { kind: 'finding', id: 'qa' })];
+    const waitingThread = qaThreads.find((thread) => thread.state === 'waiting');
+    if (waitingThread) {
+      await this.wait(run, waitingThread);
       return ensureWaiting(run);
     }
 
-    if (qaThread.state === 'decided' && hasDecision(qaThread, 'correct')) {
+    const decisions = await Promise.all(
+      qaThreads.map((thread) => this.persistence.getReviewDecisions(thread.id)),
+    );
+    if (decisions.some((items) => items.some((decision) => decision.decision === 'correct'))) {
       if (!completed(steps.get(fixStep.id))) await executeStep(fixStep);
     }
     return this.runtime.saveRunStatus(run, 'completed');
@@ -253,8 +268,4 @@ function completed(step: StepRun | undefined): boolean {
 
 function ensureWaiting(run: WorkflowRun): WorkflowRun {
   return run.status === 'waiting' ? run : { ...run, status: 'waiting' };
-}
-
-function hasDecision(thread: ReviewThread, decision: ReviewDecision['decision']): boolean {
-  return thread.state === 'decided' && decision === 'correct';
 }

@@ -47,6 +47,20 @@ export interface ReviewExplanation {
   review: ReviewView;
 }
 
+export type ReviewAdjudicationKind =
+  'withdrawn' | 'confirmed' | 'reclassified' | 'needs-human-decision';
+
+export interface ReviewAdjudicationRequest {
+  runId: string;
+  threadId: string;
+  target: ReviewThread['target'];
+  decision: ReviewAdjudicationKind;
+  issue: string;
+  evidence: string[];
+  scope: string;
+  clarification: string;
+}
+
 export interface ReviewFinalizeRequest {
   runId: string;
   threadId: string;
@@ -168,6 +182,83 @@ export async function explainReview(
   }
 }
 
+export async function adjudicateReview(
+  context: ReviewContext,
+  request: ReviewAdjudicationRequest,
+): Promise<ReviewView> {
+  const reviewStore = requireReviewStore(context);
+  const thread = await requireThread(context, request.runId, request.threadId);
+  if (thread.phase !== 'qa' || request.target.kind !== 'finding') {
+    throw new Error('QA adjudications require a finding target');
+  }
+  validateInteractiveTarget(request.target, targetIds(thread));
+  if (request.target.id !== thread.target.id) {
+    throw new Error(`Review target does not belong to thread ${thread.id}`);
+  }
+  const evidence = request.evidence.map((item) => item.trim()).filter(Boolean);
+  if (!request.issue.trim() || !request.scope.trim() || !request.clarification.trim()) {
+    throw new Error('Adjudication issue, scope, and clarification must be non-empty');
+  }
+  if (evidence.length === 0) throw new Error('Adjudication evidence must be non-empty');
+  const previousThreads = await reviewStore.listReviewThreads(request.runId, 'qa');
+  const previous = await Promise.all(
+    previousThreads.map((candidate) => reviewStore.getReviewDecisions(candidate.id)),
+  );
+  const evidenceKey = JSON.stringify(evidence);
+  if (
+    previous
+      .flat()
+      .some(
+        (decision) =>
+          isAdjudication(decision.decision) &&
+          decision.target.id === request.target.id &&
+          readAdjudicationEvidence(decision.details) === evidenceKey,
+      )
+  ) {
+    throw new Error('A new adjudication requires additional evidence');
+  }
+  const adjudicationRevision =
+    Math.max(
+      thread.artifactRevision,
+      ...previousThreads
+        .filter(
+          (candidate) =>
+            candidate.target.kind === request.target.kind &&
+            candidate.target.id === request.target.id,
+        )
+        .map((candidate) => candidate.artifactRevision),
+    ) + 1;
+  const adjudicationThread: ReviewThread = {
+    id: `${thread.id}-adjudication-${randomUUID()}`,
+    runId: request.runId,
+    phase: 'qa',
+    target: request.target,
+    artifactRevision: adjudicationRevision,
+    state: 'waiting',
+    revision: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await reviewStore.createReviewThread(adjudicationThread);
+  await reviewStore.saveReviewDecision(
+    {
+      threadId: adjudicationThread.id,
+      target: request.target,
+      decision: request.decision,
+      revision: adjudicationThread.revision,
+      details: JSON.stringify({
+        issue: request.issue.trim(),
+        evidence,
+        scope: request.scope.trim(),
+        clarification: request.clarification.trim(),
+      }),
+      createdAt: new Date().toISOString(),
+    },
+    'finalized',
+  );
+  return getReview(context, request.runId);
+}
+
 export async function decideReview(
   context: ReviewContext,
   request: ReviewDecisionRequest,
@@ -179,6 +270,24 @@ export async function finalizeReview(
   context: ReviewContext,
   request: ReviewFinalizeRequest,
 ): Promise<WorkflowRun> {
+  const thread = await requireThread(context, request.runId, request.threadId);
+  if (thread.phase === 'qa') {
+    const reviewStore = requireReviewStore(context);
+    const threads = await reviewStore.listReviewThreads(request.runId, 'qa');
+    const decisions = await Promise.all(
+      threads.map((candidate) => reviewStore.getReviewDecisions(candidate.id)),
+    );
+    if (
+      !decisions
+        .flat()
+        .some(
+          (decision) =>
+            isAdjudication(decision.decision) && decision.target.id === request.target.id,
+        )
+    ) {
+      throw new Error('Cannot finalize a QA finding without an adjudication decision');
+    }
+  }
   return continueReview(context, { ...request, decision: 'approve' }, 'finalized', 'approve');
 }
 
@@ -249,6 +358,25 @@ async function requireThread(
   const thread = await reviewStore.getReviewThread(threadId);
   if (!thread || thread.runId !== runId) throw new Error(`Unknown review thread: ${threadId}`);
   return thread;
+}
+
+function isAdjudication(decision: ReviewDecision['decision']): boolean {
+  return (
+    decision === 'withdrawn' ||
+    decision === 'confirmed' ||
+    decision === 'reclassified' ||
+    decision === 'needs-human-decision'
+  );
+}
+
+function readAdjudicationEvidence(details: string | undefined): string | undefined {
+  if (!details) return undefined;
+  try {
+    const parsed = JSON.parse(details) as { evidence?: unknown };
+    return Array.isArray(parsed.evidence) ? JSON.stringify(parsed.evidence) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function targetIds(thread: ReviewThread): {

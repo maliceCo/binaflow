@@ -5,7 +5,16 @@ export type ReviewThreadState = 'waiting' | 'decided' | 'finalized';
 export type ReviewMessageRole = 'user' | 'assistant' | 'system';
 export type ReviewGenerationStatus = 'pending' | 'sent' | 'failed' | 'interrupted';
 export type ReviewDecisionKind =
-  'approve' | 'reject' | 'correct' | 'withdraw' | 'accept-risk' | 'postpone';
+  | 'approve'
+  | 'reject'
+  | 'correct'
+  | 'withdraw'
+  | 'withdrawn'
+  | 'accept-risk'
+  | 'postpone'
+  | 'confirmed'
+  | 'reclassified'
+  | 'needs-human-decision';
 
 export type ReviewTargetKind = 'scope' | 'task' | 'change' | 'finding';
 

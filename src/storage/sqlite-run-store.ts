@@ -581,21 +581,39 @@ export class SqliteRunStore implements RunStore {
       if (result.changes !== 1) {
         throw new Error(`Review thread ${decision.threadId} changed before the decision was saved`);
       }
-      this.database
-        .prepare(
-          `INSERT INTO review_decisions
-            (thread_id, target_kind, target_id, decision, revision, details, created_at)
-           VALUES (@threadId, @targetKind, @targetId, @decision, @revision, @details, @createdAt)`,
-        )
-        .run({
-          threadId: decision.threadId,
-          targetKind: decision.target.kind,
-          targetId: decision.target.id,
-          decision: decision.decision,
-          revision: decision.revision + 1,
-          details: decision.details ?? null,
-          createdAt: decision.createdAt,
-        });
+      this.insertReviewDecision(decision, decision.revision + 1);
+    });
+    transaction();
+  }
+
+  private insertReviewDecision(decision: ReviewDecision, revision: number): void {
+    this.database
+      .prepare(
+        `INSERT INTO review_decisions
+          (thread_id, target_kind, target_id, decision, revision, details, created_at)
+         VALUES (@threadId, @targetKind, @targetId, @decision, @revision, @details, @createdAt)`,
+      )
+      .run({
+        threadId: decision.threadId,
+        targetKind: decision.target.kind,
+        targetId: decision.target.id,
+        decision: decision.decision,
+        revision,
+        details: decision.details ?? null,
+        createdAt: decision.createdAt,
+      });
+  }
+
+  async saveReviewAdjudication(decision: ReviewDecision): Promise<void> {
+    const transaction = this.database.transaction(() => {
+      const thread = this.database
+        .prepare('SELECT state, revision FROM review_threads WHERE id = ?')
+        .get(decision.threadId) as { state: ReviewThreadState; revision: number } | undefined;
+      if (!thread) throw new Error(`Unknown review thread: ${decision.threadId}`);
+      if (thread.state !== 'waiting' || thread.revision !== decision.revision) {
+        throw new Error(`Review thread ${decision.threadId} changed before adjudication was saved`);
+      }
+      this.insertReviewDecision(decision, decision.revision);
     });
     transaction();
   }

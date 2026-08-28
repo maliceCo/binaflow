@@ -43,11 +43,13 @@ import {
 import { discoverAgentModels } from './config-operations.js';
 import { getRunView, type RunView } from './run-view.js';
 import {
+  adjudicateReview,
   decideReview,
   explainReview,
   finalizeReview,
   getReview,
   postReviewMessage,
+  type ReviewAdjudicationRequest,
   type ReviewDecisionRequest,
   type ReviewExplanation,
   type ReviewExplanationRequest,
@@ -105,6 +107,7 @@ export interface ApplicationCommands {
   postReviewMessage?: (request: ReviewMessageRequest) => Promise<ReviewView>;
   decideReview?: (request: ReviewDecisionRequest) => Promise<WorkflowRun>;
   finalizeReview?: (request: ReviewFinalizeRequest) => Promise<WorkflowRun>;
+  adjudicateReview?: (request: ReviewAdjudicationRequest) => Promise<ReviewView>;
 }
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
@@ -205,5 +208,6 @@ export function createApplicationService(
     postReviewMessage: (request) => postReviewMessage(internals, request),
     decideReview: (request) => decideReview(internals, request),
     finalizeReview: (request) => finalizeReview(internals, request),
+    adjudicateReview: (request) => adjudicateReview(internals, request),
   };
 }

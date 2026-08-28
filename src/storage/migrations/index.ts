@@ -8,8 +8,9 @@ import { executionOwnershipMigration } from './005-execution-ownership.js';
 import { qaHistoryMigration } from './006-qa-history.js';
 import { qaSearchMigration } from './007-qa-search.js';
 import { interactiveReviewMigration } from './008-interactive-review.js';
+import { reviewAdjudicationMigration } from './009-review-adjudication.js';
 
-const currentSchemaVersion = 8;
+const currentSchemaVersion = 9;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -85,6 +86,11 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     if (version < 8) {
       database.exec(interactiveReviewMigration);
       recordMigration(database, 8);
+    }
+
+    if (version < 9) {
+      database.exec(reviewAdjudicationMigration);
+      recordMigration(database, 9);
     }
 
     const finalVersion = database

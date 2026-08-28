@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS review_decisions (
   thread_id TEXT NOT NULL REFERENCES review_threads(id) ON DELETE CASCADE,
   target_kind TEXT NOT NULL CHECK (target_kind IN ('scope', 'task', 'change', 'finding')),
   target_id TEXT NOT NULL,
-  decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject', 'correct', 'withdraw', 'accept-risk', 'postpone')),
+  decision TEXT NOT NULL CHECK (decision IN ('approve', 'reject', 'correct', 'withdraw', 'withdrawn', 'accept-risk', 'postpone', 'confirmed', 'reclassified', 'needs-human-decision')),
   revision INTEGER NOT NULL CHECK (revision > 0),
   details TEXT,
   created_at TEXT NOT NULL

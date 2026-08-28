@@ -163,7 +163,7 @@
   - **Verificacion:** `pnpm test -- test/interactive-review-workflow.test.ts test/cli-review.test.ts test/application-claims.test.ts test/cli-protocol.test.ts`.
   - **Commit Msg:** `feat: add interactive review checkpoints`
 
-- [ ] **Tarea 4.4: Adjudicar disputas QA sin cerrar conversaciones**
+- [x] **Tarea 4.4: Adjudicar disputas QA sin cerrar conversaciones**
   - **Archivos:** modificar `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/review-operations.ts`, `src/workflows/plan-build-qa-interactive.ts`; ampliar `test/interactive-review-workflow.test.ts`.
   - **Descripcion:** Al disputar uno o mas findings, mantener el hilo abierto y crear una adjudicacion read-only independiente con issue, evidencia, alcance y aclaracion del usuario. Persistir uno de `withdrawn`, `confirmed`, `reclassified` o `needs-human-decision` por finding. Limitar una nueva adjudicacion sin evidencia adicional. Excluir findings disputados sin decision de los fixes; bloquear `finalize` si queda un finding bloqueante sin decision.
   - **Evitar:** Tratar disputar como ignorar, cerrar el hilo al primer mensaje, corregir antes de decision explicita o permitir loops de adjudicacion infinitos.

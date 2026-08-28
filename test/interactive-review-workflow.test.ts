@@ -6,8 +6,9 @@ import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import { createWorkflowRuntime } from '../src/core/engine.js';
 import type { AgentProfile } from '../src/core/agent-profile.js';
+import type { WorkflowRun } from '../src/core/run.js';
 import { InteractivePlanBuildQaCoordinator } from '../src/application/interactive-plan-build-qa-coordinator.js';
-import { decideReview, getReview } from '../src/application/review-operations.js';
+import { adjudicateReview, decideReview, getReview } from '../src/application/review-operations.js';
 import type { ApplicationInternals } from '../src/application/context.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import { planBuildQaInteractiveWorkflow } from '../src/workflows/plan-build-qa-interactive.js';
@@ -20,6 +21,62 @@ afterEach(() => {
 });
 
 describe('interactive plan-build-qa workflow', () => {
+  it('keeps QA adjudication open and requires new evidence for another adjudication', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-interactive-adjudication-'));
+    directories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
+    const run: WorkflowRun = {
+      id: 'adjudication-run',
+      workflowId: 'plan-build-qa-interactive',
+      workflowVersion: 1,
+      objective: 'Review a finding',
+      status: 'waiting',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await store.createRun(run);
+    await store.createReviewThread({
+      id: 'qa-thread',
+      runId: run.id,
+      phase: 'qa',
+      target: { kind: 'finding', id: 'finding-1' },
+      artifactRevision: 1,
+      state: 'waiting',
+      revision: 1,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+    });
+    const context = { store, artifacts, reviewStore: store } as unknown as ApplicationInternals;
+    const request = {
+      runId: run.id,
+      threadId: 'qa-thread',
+      target: { kind: 'finding' as const, id: 'finding-1' },
+      decision: 'needs-human-decision' as const,
+      issue: 'The finding may be intentional.',
+      evidence: ['The public API documents this behavior.'],
+      scope: 'The requested API behavior.',
+      clarification: 'Confirm whether compatibility is required.',
+    };
+    const review = await adjudicateReview(context, request);
+    expect(review.threads.find((entry) => entry.thread.id === 'qa-thread')?.thread.state).toBe(
+      'waiting',
+    );
+    expect(review.threads.flatMap((entry) => entry.decisions)[0]?.decision).toBe(
+      'needs-human-decision',
+    );
+    await expect(adjudicateReview(context, request)).rejects.toThrow('additional evidence');
+    await adjudicateReview(context, {
+      ...request,
+      evidence: [...request.evidence, 'A compatibility test covers the same behavior.'],
+      decision: 'confirmed',
+    });
+    expect(
+      (await getReview(context, run.id)).threads.flatMap((entry) => entry.decisions),
+    ).toHaveLength(2);
+    store.close();
+  });
+
   it('pauses at scope, changes, and QA checkpoints and resumes only after decisions', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-interactive-workflow-'));
     directories.push(directory);
