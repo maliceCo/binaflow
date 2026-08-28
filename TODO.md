@@ -30,7 +30,7 @@
   - **Verificacion / TDD:** Ejecutar `pnpm vitest run test/interactive-review-workflow.test.ts test/interactive-review-persistence.test.ts` y confirmar que el caso de dos explicaciones pasa con SQLite real.
   - **Commit Msg:** `fix: permitir explicaciones repetidas en revisiones`
 
-- [ ] **Tarea 2.2: Integrar `review explain` en el ciclo de vida adjunto**
+- [x] **Tarea 2.2: Integrar `review explain` en el ciclo de vida adjunto**
   - **Archivo:** `src/cli/commands/review.ts`, `src/tui/shell-controller.tsx`, `src/tui/lifecycle.ts` solo si la interfaz existente no puede representar la operacion, `test/cli-review.test.ts`, `test/tui-ink-shell.test.ts`
   - **Descripcion:** Ejecutar `review explain` mediante el mismo propietario composicional que run, resume y decide: controlador de abort, espera de limpieza, suscripciones y cierre del contexto. Propagar su `AbortSignal` a `explainReview`; el primer Ctrl-C debe solicitar parada ordenada y el segundo debe esperar la limpieza antes de forzar la salida.
   - **Evitar:** No abrir un segundo contexto para la explicacion, no ignorar la promesa como tarea en segundo plano y no cambiar el protocolo JSON/JSONL v1.

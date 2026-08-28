@@ -680,6 +680,7 @@ export function InkShellController({
           }
         } finally {
           lifecycle.unsubscribe();
+          disposeLiveControllers();
           activeRunId.current = undefined;
           setLaunching(false);
         }
@@ -779,21 +780,34 @@ export function InkShellController({
           if (next === previous) break;
           const review = next.review;
           const thread = review?.threads.find((entry) => entry.thread.id === next.reviewThreadId);
-          const application = lifecycle.context?.application;
           const runId = next.activeRunId;
-          if (!thread || !application?.explainReview || !runId) break;
-          const request = application.explainReview({
-            runId,
-            threadId: thread.thread.id,
-            target: thread.thread.target,
-            evidence: thread.messages
-              .map((message) => message.content ?? '')
-              .join('\\n')
-              .slice(0, 12_000),
-          });
-          lifecycle.trackRequest(request);
-          const result = await request;
-          if (active.current) dispatch({ type: 'review-explained', review: result.review });
+          if (!thread || !runId) break;
+          const workflow = discoverWorkflows().find(
+            (candidate) => candidate.id === next.runView?.workflow.id,
+          );
+          if (!workflow) {
+            dispatch({ type: 'error-set', message: 'Interactive review workflow is unavailable.' });
+            break;
+          }
+          startAttachedExecution(
+            workflow,
+            async (application, signal) => {
+              const result = await application.explainReview!({
+                runId,
+                threadId: thread.thread.id,
+                target: thread.thread.target,
+                evidence: thread.messages
+                  .map((message) => message.content ?? '')
+                  .join('\\n')
+                  .slice(0, 12_000),
+                signal,
+              });
+              if (active.current) dispatch({ type: 'review-explained', review: result.review });
+              return undefined;
+            },
+            (reason) =>
+              `Explanation failed: ${reason instanceof Error ? reason.message : String(reason)}`,
+          );
           break;
         }
         case 'review-decide':

@@ -66,19 +66,22 @@ export function registerReviewCommands(cli: Command): void {
         const mode = machineMode(rootOptions(command));
         rejectUnsupportedJsonl(mode, 'review explain');
         const target = reviewTarget(options.targetKind, options.targetId);
-        const context = await openContext(rootOptions(command));
-        try {
-          const explanation = await context.application.explainReview!({
-            runId,
-            threadId: options.thread,
-            target,
-            evidence: options.evidence,
-          });
-          if (mode) writeJsonResult('review explain', explanation);
-          else console.log(explanation.explanation.content ?? 'No explanation returned.');
-        } finally {
-          context.close();
-        }
+        await runAttachedCli(
+          rootOptions(command),
+          runId,
+          'review explain',
+          async (context, lifecycle) => {
+            const explanation = await context.application.explainReview!({
+              runId,
+              threadId: options.thread,
+              target,
+              evidence: options.evidence,
+              signal: lifecycle.signal,
+            });
+            if (mode) writeJsonResult('review explain', explanation);
+            else console.log(explanation.explanation.content ?? 'No explanation returned.');
+          },
+        );
       },
     );
 
