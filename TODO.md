@@ -112,7 +112,7 @@
   - **Verificacion:** `pnpm test -- test/config.test.ts test/application-runtime.test.ts test/config-operations.test.ts`.
   - **Commit Msg:** `feat: configure workspace qa history`
 
-- [ ] **Tarea 3.2: Migrar el registro estructurado de defects y ocurrencias**
+- [x] **Tarea 3.2: Migrar el registro estructurado de defects y ocurrencias**
   - **Archivos:** crear `src/storage/migrations/006-qa-history.ts`; modificar `src/storage/migrations/index.ts`, `src/storage/run-store.ts`, `src/storage/sqlite-run-store.ts`, `src/application/ports.ts`; ampliar `test/migrations.test.ts` y crear `test/qa-history.test.ts`.
   - **Descripcion:** Crear tablas aditivas `qa_defects`, `qa_occurrences` y `qa_defect_events`. Persistir identidad estable, fingerprint determinista, titulo/resumen/categoria/severidad, timestamps y ciclo de vida (`detected`, `linked`, `fixed`, `verified`, `reopened`, `withdrawn`, `accepted-risk`, `archived`). Cada ocurrencia debe referenciar run, iteracion QA, finding ID y artefacto de reporte, con unicidad por `(run_id, qa_iteration, finding_id)`. Mantener eventos append-only para explicar el estado de un defect.
   - **Evitar:** Almacenar conversaciones en estas tablas, depender de numeros de linea como identidad, reescribir eventos historicos o realizar una migracion destructiva.

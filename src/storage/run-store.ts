@@ -1,4 +1,5 @@
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
+import type { QaDefect, QaDefectEvent, QaOccurrence } from '../core/qa-history.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { ExecutionClaim } from '../core/ports.js';
 
@@ -30,6 +31,15 @@ export interface RunEventPageQuery {
 export interface RunEventPage {
   events: PersistedRunEvent[];
   nextCursor?: number;
+}
+
+export interface QaHistoryStore {
+  saveQaDefect(defect: QaDefect): Promise<void>;
+  saveQaOccurrence(occurrence: QaOccurrence): Promise<void>;
+  saveQaDefectEvent(event: QaDefectEvent): Promise<void>;
+  getQaDefects(): Promise<QaDefect[]>;
+  getQaOccurrences(defectId?: string): Promise<QaOccurrence[]>;
+  getQaDefectEvents(defectId: string): Promise<QaDefectEvent[]>;
 }
 
 export type StepResultInclude = boolean | 'usage';

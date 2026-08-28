@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
+import type { QaDefect, QaDefectEvent, QaOccurrence } from '../core/qa-history.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
@@ -366,6 +367,75 @@ export class SqliteRunStore implements RunStore {
     transaction();
   }
 
+  async saveQaDefect(defect: QaDefect): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT INTO qa_defects
+          (id, fingerprint, title, summary, category, severity, status, created_at, updated_at)
+         VALUES (@id, @fingerprint, @title, @summary, @category, @severity, @status, @createdAt, @updatedAt)
+         ON CONFLICT (id) DO UPDATE SET
+           fingerprint = excluded.fingerprint,
+           title = excluded.title,
+           summary = excluded.summary,
+           category = excluded.category,
+           severity = excluded.severity,
+           status = excluded.status,
+           updated_at = excluded.updated_at`,
+      )
+      .run(toQaDefectParams(defect));
+  }
+
+  async saveQaOccurrence(occurrence: QaOccurrence): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT INTO qa_occurrences
+          (id, run_id, defect_id, qa_iteration, finding_id, report_artifact_id, created_at)
+         VALUES (@id, @runId, @defectId, @qaIteration, @findingId, @reportArtifactId, @createdAt)`,
+      )
+      .run(toQaOccurrenceParams(occurrence));
+  }
+
+  async saveQaDefectEvent(event: QaDefectEvent): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT INTO qa_defect_events
+          (defect_id, occurrence_id, status, details_json, created_at)
+         VALUES (@defectId, @occurrenceId, @status, @details, @createdAt)`,
+      )
+      .run({
+        defectId: event.defectId,
+        occurrenceId: event.occurrenceId ?? null,
+        status: event.status,
+        details: event.details ?? null,
+        createdAt: event.createdAt,
+      });
+  }
+
+  async getQaDefects(): Promise<QaDefect[]> {
+    const rows = this.database
+      .prepare('SELECT * FROM qa_defects ORDER BY created_at, id')
+      .all() as QaDefectRow[];
+    return rows.map(fromQaDefectRow);
+  }
+
+  async getQaOccurrences(defectId?: string): Promise<QaOccurrence[]> {
+    const rows = (
+      defectId === undefined
+        ? this.database.prepare('SELECT * FROM qa_occurrences ORDER BY created_at, id').all()
+        : this.database
+            .prepare('SELECT * FROM qa_occurrences WHERE defect_id = ? ORDER BY created_at, id')
+            .all(defectId)
+    ) as QaOccurrenceRow[];
+    return rows.map(fromQaOccurrenceRow);
+  }
+
+  async getQaDefectEvents(defectId: string): Promise<QaDefectEvent[]> {
+    const rows = this.database
+      .prepare('SELECT * FROM qa_defect_events WHERE defect_id = ? ORDER BY id')
+      .all(defectId) as QaDefectEventRow[];
+    return rows.map(fromQaDefectEventRow);
+  }
+
   async saveEvent(event: NormalizedEvent): Promise<void> {
     await this.saveEvents([event]);
   }
@@ -642,6 +712,37 @@ interface ArtifactRow {
   size_bytes: number;
 }
 
+interface QaDefectRow {
+  id: string;
+  fingerprint: string;
+  title: string;
+  summary: string;
+  category: string;
+  severity: QaDefect['severity'];
+  status: QaDefect['status'];
+  created_at: string;
+  updated_at: string;
+}
+
+interface QaOccurrenceRow {
+  id: string;
+  run_id: string;
+  defect_id: string;
+  qa_iteration: number;
+  finding_id: string;
+  report_artifact_id: string;
+  created_at: string;
+}
+
+interface QaDefectEventRow {
+  id: number;
+  defect_id: string;
+  occurrence_id: string | null;
+  status: QaDefectEvent['status'];
+  details_json: string | null;
+  created_at: string;
+}
+
 interface ExecutionOwnerRow {
   run_id: string;
   owner_id: string;
@@ -734,6 +835,69 @@ function toArtifactParams(artifact: ArtifactReference): Record<string, unknown> 
     path: artifact.path,
     mediaType: artifact.mediaType,
     sizeBytes: artifact.sizeBytes,
+  };
+}
+
+function toQaDefectParams(defect: QaDefect): Record<string, unknown> {
+  return {
+    id: defect.id,
+    fingerprint: defect.fingerprint,
+    title: defect.title,
+    summary: defect.summary,
+    category: defect.category,
+    severity: defect.severity,
+    status: defect.status,
+    createdAt: defect.createdAt,
+    updatedAt: defect.updatedAt,
+  };
+}
+
+function toQaOccurrenceParams(occurrence: QaOccurrence): Record<string, unknown> {
+  return {
+    id: occurrence.id,
+    runId: occurrence.runId,
+    defectId: occurrence.defectId,
+    qaIteration: occurrence.qaIteration,
+    findingId: occurrence.findingId,
+    reportArtifactId: occurrence.reportArtifactId,
+    createdAt: occurrence.createdAt,
+  };
+}
+
+function fromQaDefectRow(row: QaDefectRow): QaDefect {
+  return {
+    id: row.id,
+    fingerprint: row.fingerprint,
+    title: row.title,
+    summary: row.summary,
+    category: row.category,
+    severity: row.severity,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function fromQaOccurrenceRow(row: QaOccurrenceRow): QaOccurrence {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    defectId: row.defect_id,
+    qaIteration: row.qa_iteration,
+    findingId: row.finding_id,
+    reportArtifactId: row.report_artifact_id,
+    createdAt: row.created_at,
+  };
+}
+
+function fromQaDefectEventRow(row: QaDefectEventRow): QaDefectEvent {
+  return {
+    id: row.id,
+    defectId: row.defect_id,
+    ...(row.occurrence_id ? { occurrenceId: row.occurrence_id } : {}),
+    status: row.status,
+    ...(row.details_json ? { details: row.details_json } : {}),
+    createdAt: row.created_at,
   };
 }
 
