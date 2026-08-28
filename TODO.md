@@ -23,7 +23,7 @@
 
 ### Fase 2: Correcciones de ejecucion interactiva
 
-- [ ] **Tarea 2.1: Hacer que cada explicacion sea una ejecucion persistible independiente**
+- [x] **Tarea 2.1: Hacer que cada explicacion sea una ejecucion persistible independiente**
   - **Archivo:** `src/application/interactive-plan-build-qa-coordinator.ts`, `src/application/review-operations.ts`, `src/core/workflow-runtime.ts` si fuera estrictamente necesario
   - **Descripcion:** Corregir la identidad y la reutilizacion de los pasos de explicacion para que una explicacion completada nunca intente transicionar de `completed` a `pending`. Cada nueva solicitud debe conservar su pregunta y respuesta como mensajes ordenados, ejecutar una nueva explicacion o reutilizar solo un trabajo incompleto recuperable, y devolver el run a `waiting` tras liberar correctamente la ejecucion.
   - **Evitar:** No permitir que un paso `completed` se rerunnee, no borrar explicaciones previas y no debilitar las transiciones del state machine para ocultar el error.

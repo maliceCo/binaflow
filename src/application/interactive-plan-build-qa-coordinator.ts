@@ -82,12 +82,10 @@ export class InteractivePlanBuildQaCoordinator {
     ) {
       throw new Error('The interactive review explainer requires a read-only analyst profile');
     }
-    const steps = await this.persistence.getStepRuns(run.id);
-    const existing = steps.find((step) => step.stepId === `review-explainer-${thread.id}`);
     const artifacts = await this.persistence.getArtifacts(run.id);
     const step: AgentStep = {
       kind: 'agent',
-      id: `review-explainer-${thread.id}`,
+      id: `review-explainer-${thread.id}-${randomUUID()}`,
       profile: 'analyst',
       prompt: [
         'Explain the selected review target using only the supplied scope and evidence.',
@@ -102,7 +100,7 @@ export class InteractivePlanBuildQaCoordinator {
     const result = await this.runtime.executeStep(
       run,
       step,
-      existing,
+      undefined,
       { objective: run.objective },
       artifacts,
       request,
