@@ -1285,6 +1285,7 @@ function createDiagnosis(workspacePath: string): ConfigurationDiagnosis {
     errors: [],
     profiles: [],
     workflows: [],
+    qaHistory: { enabled: false },
     ready: false,
   };
 }

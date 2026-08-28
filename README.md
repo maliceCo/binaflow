@@ -140,6 +140,7 @@ The generated configuration has this shape:
 {
   "dataDir": ".",
   "piCommand": "pi",
+  "qaHistory": { "enabled": false },
   "profiles": {
     "analyst": {
       "driver": "pi",
@@ -206,6 +207,12 @@ policy uses `--no-skills` plus `--skill` paths, and a missing required skill
 fails before the agent task starts. Use separate provider, model, thinking, and
 skill settings for analyst, planner, builder, and QA when their responsibilities
 need different behavior.
+
+Set `qaHistory.enabled` to `true` to opt this workspace into local QA finding
+history. It is disabled by default for existing configurations; disabling it
+keeps each run's reports but does not update or query history. History belongs
+to the configured `dataDir` for that workspace and is never mixed with another
+workspace database.
 
 ## Run A Workflow
 

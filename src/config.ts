@@ -11,10 +11,15 @@ export type {
 } from './core/agent-profile.js';
 export { resolveProfile } from './core/agent-profile.js';
 
+export interface QaHistoryConfig {
+  enabled: boolean;
+}
+
 export interface BinaflowConfig {
   dataDir: string;
   piCommand: string;
   profiles: Record<string, AgentProfile>;
+  qaHistory: QaHistoryConfig;
 }
 
 export async function loadConfig(configPath: string, cwd = process.cwd()): Promise<BinaflowConfig> {
@@ -50,10 +55,12 @@ export function parseConfigValue(parsed: unknown, absoluteConfigPath: string): B
   }
   const dataDir = parsed.dataDir ?? './data';
   const piCommand = typeof parsed.piCommand === 'string' ? parsed.piCommand : 'pi';
+  const qaHistory = parseQaHistory(parsed.qaHistory);
   return {
     dataDir: resolve(dirname(absoluteConfigPath), dataDir),
     piCommand,
     profiles,
+    qaHistory,
   };
 }
 
@@ -220,6 +227,14 @@ function parseSkillPolicy(
     paths: resolvedPaths,
     ...(Array.isArray(required) ? { required: [...required] } : {}),
   };
+}
+
+function parseQaHistory(value: unknown): QaHistoryConfig {
+  if (value === undefined) return { enabled: false };
+  if (!isRecord(value) || typeof value.enabled !== 'boolean') {
+    throw new Error('Binaflow config qaHistory.enabled must be a boolean');
+  }
+  return { enabled: value.enabled };
 }
 
 export function validatePiCommand(value: unknown): string[] {

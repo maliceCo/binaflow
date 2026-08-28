@@ -44,8 +44,20 @@ describe('Binaflow config', () => {
     const config = await loadConfig(configPath);
 
     expect(config.dataDir).toBe(join(directory, 'data'));
+    expect(config.qaHistory).toEqual({ enabled: false });
     expect(config.profiles.planner?.provider).toBe('anthropic');
     expect(config.profiles.planner?.projectTrust).toBe('always');
+  });
+
+  it('accepts and validates the workspace QA history setting', () => {
+    expect(
+      parseConfigValue({ profiles: {}, qaHistory: { enabled: true } }, 'config.json'),
+    ).toMatchObject({
+      qaHistory: { enabled: true },
+    });
+    expect(() =>
+      parseConfigValue({ profiles: {}, qaHistory: { enabled: 'yes' } }, 'config.json'),
+    ).toThrow('qaHistory.enabled must be a boolean');
   });
 
   it('rejects invalid runtime limits instead of silently accepting them', async () => {

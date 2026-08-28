@@ -400,6 +400,7 @@ function missingConfig(): ConfigurationDiagnosis {
     errors: [],
     profiles: [],
     workflows: [],
+    qaHistory: { enabled: false },
     ready: false,
   };
 }
@@ -413,6 +414,7 @@ function validConfig(): ConfigurationDiagnosis {
     errors: [],
     profiles: [],
     workflows: [],
+    qaHistory: { enabled: false },
     ready: true,
   };
 }
@@ -490,6 +492,7 @@ function invalidConfig(): ConfigurationDiagnosis {
     errors: ['Binaflow config requires a profiles object'],
     profiles: [],
     workflows: [],
+    qaHistory: { enabled: false },
     ready: false,
   };
 }

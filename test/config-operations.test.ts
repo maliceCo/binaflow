@@ -96,6 +96,7 @@ describe('configuration operations', () => {
       configPath,
       JSON.stringify({
         piCommand: process.execPath,
+        qaHistory: { enabled: true },
         profiles: { analyst: profile, planner: profile, builder: profile, qa: profile },
       }),
     );
@@ -103,6 +104,7 @@ describe('configuration operations', () => {
     const diagnosis = await diagnoseConfigurationFile('.binaflow/config.json', directory);
 
     expect(diagnosis.ready).toBe(true);
+    expect(diagnosis.qaHistory).toEqual({ enabled: true });
     expect(diagnosis.workflows.find((workflow) => workflow.id === 'plan-build')).toMatchObject({
       available: true,
     });

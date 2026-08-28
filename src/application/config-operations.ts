@@ -27,6 +27,7 @@ export interface ConfigurationDiagnosis {
   errors: string[];
   profiles: ProfileDiagnosis[];
   workflows: WorkflowDiagnosis[];
+  qaHistory: { enabled: boolean };
   dataDirPath?: string;
   piCommand?: string;
   piCommandLaunchable?: boolean;
@@ -129,6 +130,7 @@ export async function diagnoseConfigurationFile(
       ],
       profiles: [],
       workflows,
+      qaHistory: { enabled: false },
       ready: false,
     };
   }
@@ -147,12 +149,14 @@ export async function diagnoseConfigurationFile(
       ],
       profiles: [],
       workflows,
+      qaHistory: { enabled: false },
       ready: false,
     };
   }
 
   const errors: string[] = [];
   const record = asRecord(parsed);
+  const qaHistory = diagnoseQaHistory(record?.qaHistory, errors);
   if (!record) {
     errors.push('Binaflow config must be a JSON object');
   }
@@ -208,6 +212,7 @@ export async function diagnoseConfigurationFile(
     errors,
     profiles,
     workflows: workflowsWithProfiles,
+    qaHistory,
     dataDirPath,
     piCommand,
     ...(launch ? { piCommandLaunchable: launch.launchable, piCommandMessage: launch.message } : {}),
@@ -253,6 +258,7 @@ export function generateConfiguration(input: ConfigurationGenerationInput): Gene
   const config = {
     dataDir: './data',
     piCommand: 'pi',
+    qaHistory: { enabled: false },
     profiles: {
       analyst: { ...planner },
       planner: { ...planner },
@@ -309,6 +315,16 @@ export async function configurationExists(
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+function diagnoseQaHistory(value: unknown, errors: string[]): { enabled: boolean } {
+  if (value === undefined) return { enabled: false };
+  const record = asRecord(value);
+  if (!record || typeof record.enabled !== 'boolean') {
+    errors.push('Binaflow config qaHistory.enabled must be a boolean');
+    return { enabled: false };
+  }
+  return { enabled: record.enabled };
 }
 
 function workflowDiagnoses(configuredProfiles: Set<string>): WorkflowDiagnosis[] {

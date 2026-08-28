@@ -209,6 +209,7 @@ function printDiagnosis(diagnosis: ConfigurationDiagnosis): void {
   console.log(`Config: ${diagnosis.configPath}`);
   console.log(`Config valid: ${diagnosis.configValid ? 'yes' : 'no'}`);
   if (diagnosis.dataDirPath) console.log(`Data directory: ${diagnosis.dataDirPath}`);
+  console.log(`QA history: ${diagnosis.qaHistory.enabled ? 'enabled' : 'disabled'}`);
   if (diagnosis.piCommand) {
     const launchable =
       diagnosis.piCommandLaunchable === undefined

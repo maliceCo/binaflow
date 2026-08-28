@@ -105,7 +105,7 @@
 
 ### Fase 3: Historial QA y FTS5 por workspace (feature)
 
-- [ ] **Tarea 3.1: Agregar configuracion de historial QA por workspace**
+- [x] **Tarea 3.1: Agregar configuracion de historial QA por workspace**
   - **Archivos:** modificar `src/config.ts`, `src/application/config-operations.ts`, `src/application/runtime.ts`, `README.md`; ampliar `test/config.test.ts` y `test/application-runtime.test.ts`.
   - **Descripcion:** Agregar `qaHistory.enabled` como booleano de configuracion del workspace, con valor por defecto desactivado para configuraciones existentes. Tratar el `dataDir` configurado para ese workspace como el limite de su historial: no mezclar ni buscar datos de otra base. Exponer el estado en `doctor` y documentar que desactivarlo conserva los reportes de cada run pero no actualiza ni consulta el historial.
   - **Evitar:** Override por run, configuracion de web, o asumir que borrar un run borra el historial QA.
