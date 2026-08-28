@@ -12,6 +12,7 @@ import type {
   WorkflowExecutor,
 } from './ports.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
+import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import {
   clarificationQuestions,
   decideApproval,
@@ -77,6 +78,7 @@ export interface CreateApplicationServiceOptions {
   artifacts: ArtifactStore;
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
+  planBuildQaCoordinator?: PlanBuildQaCoordinator;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
@@ -122,6 +124,9 @@ export function createApplicationService(
     artifacts: options.artifacts,
     engine: options.engine,
     researchCoordinator: options.researchCoordinator,
+    ...(options.planBuildQaCoordinator
+      ? { planBuildQaCoordinator: options.planBuildQaCoordinator }
+      : {}),
   };
 
   return {

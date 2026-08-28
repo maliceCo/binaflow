@@ -1,6 +1,7 @@
 import type { BinaflowConfig } from '../config.js';
 import type { ApplicationArtifactStore, ApplicationRunStore, WorkflowExecutor } from './ports.js';
 import type { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
+import type { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 
 /** Internal composition surface. Presentation must use ApplicationService. */
 export interface ApplicationInternals {
@@ -9,4 +10,5 @@ export interface ApplicationInternals {
   artifacts: ApplicationArtifactStore;
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
+  planBuildQaCoordinator?: PlanBuildQaCoordinator;
 }

@@ -16,6 +16,7 @@ import {
   type WorkflowApprovalDefinition,
 } from '../workflows/research-plan-build.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
+import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
 import type { ApplicationInternals } from './context.js';
 import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
 import { validateWorkflowProfiles } from './workflow-operations.js';
@@ -197,6 +198,7 @@ async function validateResumeEligibility(
   workflow: WorkflowDefinition,
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
+  if (run.workflowId === planBuildQaWorkflow.id) return;
   if (
     run.workflowId === researchPlanBuildWorkflow.id &&
     (await isResearchIterationExhausted(context, run))
@@ -270,6 +272,12 @@ async function executeWorkflow(
 ): Promise<WorkflowRun> {
   if (workflow.id === researchPlanBuildWorkflow.id) {
     return context.researchCoordinator.execute(workflow, request);
+  }
+  if (workflow.id === planBuildQaWorkflow.id) {
+    if (!context.planBuildQaCoordinator) {
+      throw new Error('Plan-build-qa coordinator is not configured');
+    }
+    return context.planBuildQaCoordinator.execute(workflow, request);
   }
   return context.engine.execute(workflow, request);
 }

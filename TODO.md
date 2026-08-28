@@ -75,7 +75,7 @@
   - **Verificacion:** `pnpm test -- test/persistence.test.ts test/application-infrastructure.test.ts`.
   - **Commit Msg:** `feat: persist coordinator artifacts atomically`
 
-- [ ] **Tarea 2.2: Implementar el coordinador acotado de plan-build-qa**
+- [x] **Tarea 2.2: Implementar el coordinador acotado de plan-build-qa**
   - **Archivos:** crear `src/application/plan-build-qa-coordinator.ts`; modificar `src/application/ports.ts`, `src/application/service.ts`, `src/application/runtime.ts`, `src/application/execution-operations.ts`; crear `test/plan-build-qa-workflow.test.ts`.
   - **Descripcion:** Implementar un coordinador exclusivo para `plan-build-qa`, equivalente en alcance al coordinador experimental de research pero sin generalizar loops. Ejecutar `scope`, `plan`, `build` y `qa`; cuando QA devuelva findings bloqueantes, renderizar `QA-FIXES-N.md`, ejecutar `fix` con el perfil builder y repetir QA. Mantener un contador persistido de iteracion, con maximo de tres QA. Reutilizar pasos y artefactos completados durante `resume`; nunca repetir silenciosamente una iteracion QA ya persistida.
   - **Evitar:** Modificar `WorkflowEngine` para introducir loop, condicion o approval genericos; llamar a un agente con el transcript completo de otro agente; aplicar fixes para findings medium/low por defecto.

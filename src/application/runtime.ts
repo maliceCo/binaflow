@@ -11,6 +11,7 @@ import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { ApplicationRunStore } from './ports.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
+import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import {
   createApplicationService,
   createApplicationQueries,
@@ -67,12 +68,14 @@ export async function openApplicationContext(
     interpretDisposition: interpretWorkflowDisposition,
   });
   const researchCoordinator = new ResearchPlanBuildCoordinator(runtime, store, artifacts);
+  const planBuildQaCoordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
   const application = createApplicationService({
     config,
     store,
     artifacts,
     engine,
     researchCoordinator,
+    planBuildQaCoordinator,
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
       eventListeners.add(listener);
