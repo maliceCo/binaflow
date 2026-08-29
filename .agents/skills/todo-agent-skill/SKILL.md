@@ -1,5 +1,5 @@
 ---
-name: todo-agent
+name: todo-agent-skill
 description: Genera y coordina planes de implementación detallados en TODO.md para delegar tareas atómicas a otro agente.
 disable-model-invocation: true
 ---
