@@ -27,6 +27,7 @@ const KEYMAP = [
   'n  start a new run',
   'w  choose a different folder (when idle)',
   'd / r  refresh the configuration diagnosis',
+  'c  edit analyst/planner/qa/builder profiles',
   'b  show QA history',
   '?  show this help',
   'Tab / h / l  switch the focused pane',
@@ -186,6 +187,7 @@ function footerHints(state: TuiState): Array<[string, string]> {
     return [
       ['j/k', 'scroll'],
       ['r', 'refresh'],
+      ['c', 'profiles'],
       ['q', 'back'],
     ];
   if (state.detail === 'result' || state.detail === 'inspect') {
@@ -199,6 +201,7 @@ function footerHints(state: TuiState): Array<[string, string]> {
     ['n', 'new run'],
     ['w', 'folder'],
     ['d', 'status'],
+    ['c', 'agents'],
     ['b', 'QA history'],
     ['?', 'help'],
     ['Tab', 'switch'],

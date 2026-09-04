@@ -13,6 +13,7 @@ import type {
 } from './ports.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
+import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 import {
   clarificationQuestions,
   decideApproval,
@@ -121,6 +122,7 @@ export interface CreateApplicationServiceOptions {
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
   planBuildQaCoordinator?: PlanBuildQaCoordinator;
+  todoBuildQaCoordinator?: TodoBuildQaCoordinator;
   interactivePlanBuildQaCoordinator?: import('./interactive-plan-build-qa-coordinator.js').InteractivePlanBuildQaCoordinator;
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
@@ -187,6 +189,9 @@ export function createApplicationService(
     researchCoordinator: options.researchCoordinator,
     ...(options.planBuildQaCoordinator
       ? { planBuildQaCoordinator: options.planBuildQaCoordinator }
+      : {}),
+    ...(options.todoBuildQaCoordinator
+      ? { todoBuildQaCoordinator: options.todoBuildQaCoordinator }
       : {}),
     ...(options.interactivePlanBuildQaCoordinator
       ? { interactivePlanBuildQaCoordinator: options.interactivePlanBuildQaCoordinator }

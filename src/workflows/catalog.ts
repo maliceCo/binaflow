@@ -1,6 +1,7 @@
 import type { WorkflowDefinition } from '../core/workflow.js';
 import { planBuildWorkflow } from './plan-build.js';
 import { planBuildQaWorkflow } from './plan-build-qa.js';
+import { todoBuildQaWorkflow } from './todo-build-qa.js';
 import {
   planBuildQaInteractiveWorkflow,
   type InteractiveReviewContract,
@@ -32,6 +33,10 @@ const registrations: readonly WorkflowRegistration[] = [
   {
     definition: planBuildQaWorkflow,
     description: 'Scope, plan, build, and review the work with bounded QA',
+  },
+  {
+    definition: todoBuildQaWorkflow,
+    description: 'Validate and execute a reviewed TODO, then correct bounded QA findings',
   },
   {
     definition: planBuildQaInteractiveWorkflow,

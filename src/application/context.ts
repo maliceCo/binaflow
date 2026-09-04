@@ -8,6 +8,7 @@ import type {
 import type { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import type { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import type { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
+import type { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 
 /** Internal composition surface. Presentation must use ApplicationService. */
 export type ApplicationConfig = Pick<BinaflowConfig, 'profiles'> &
@@ -20,6 +21,7 @@ export interface ApplicationInternals {
   engine: WorkflowExecutor;
   researchCoordinator: ResearchPlanBuildCoordinator;
   planBuildQaCoordinator?: PlanBuildQaCoordinator;
+  todoBuildQaCoordinator?: TodoBuildQaCoordinator;
   interactivePlanBuildQaCoordinator?: InteractivePlanBuildQaCoordinator;
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   qaHistory?: ApplicationQaHistoryStore;

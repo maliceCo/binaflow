@@ -63,6 +63,39 @@ export function ResultScreen({
           </SafeText>
         ) : null}
       </PaneSection>
+      {view.todoResult ? (
+        <PaneSection title="Outcome" colors={colors}>
+          <SafeText>Result: {view.todoResult.status}</SafeText>
+          <SafeText>
+            Summary:{' '}
+            {view.todoResult.implementation?.summary ??
+              view.todoResult.assessment?.summary ??
+              'No implementation summary is available.'}
+          </SafeText>
+          {view.todoResult.implementation?.resolvedItems.slice(0, 5).map((item) => (
+            <SafeText key={`resolved-${item.id}`}>
+              {' '}
+              [x] {item.title}: {item.resolution}
+            </SafeText>
+          ))}
+          {(view.todoResult.implementation?.resolvedItems.length ?? 0) > 5 ? (
+            <SafeText> More resolved items are available in FINAL-REPORT.md.</SafeText>
+          ) : null}
+          {view.todoResult.implementation?.pendingItems.slice(0, 5).map((item) => (
+            <SafeText key={`pending-${item.id}`}>
+              {' '}
+              [!] {item.title}: {item.reason}
+            </SafeText>
+          ))}
+          {view.todoResult.assessment?.blockers.map((blocker) => (
+            <SafeText key={blocker}> [!] Blocker: {blocker}</SafeText>
+          ))}
+          <SafeText>
+            QA: {view.todoResult.qa.status}; found={view.todoResult.qa.found}; corrected=
+            {view.todoResult.qa.corrected}; pending={view.todoResult.qa.pending.length}
+          </SafeText>
+        </PaneSection>
+      ) : null}
       <PaneSection title="Checklist" colors={colors}>
         {view.phases.map((phase) => (
           <SafeText key={phase.id}>

@@ -83,6 +83,9 @@ export function LaunchConfirmationScreen({
         <SafeText>Workflow: {launchInput.workflow.id}</SafeText>
         <SafeText>Description: {launchInput.workflow.description}</SafeText>
         <SafeText>Objective: {launchInput.values.objective ?? '(missing)'}</SafeText>
+        {launchInput.values.todoPath ? (
+          <SafeText>Reviewed TODO: {launchInput.values.todoPath}</SafeText>
+        ) : null}
         {launchInput.workflow.experimental ? (
           <SafeText {...(colors ? { color: 'yellow' as const } : {})}>
             Experimental workflow

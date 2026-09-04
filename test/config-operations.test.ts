@@ -6,7 +6,10 @@ import {
   configurationExists,
   canLaunchCommand,
   diagnoseConfigurationFile,
+  discoverTodoFiles,
   generateConfiguration,
+  generateUpdatedConfiguration,
+  readTodoFile,
   writeConfigurationAtomically,
 } from '../src/application/config-operations.js';
 import { loadConfig } from '../src/config.js';
@@ -17,6 +20,28 @@ afterEach(async () => {
   for (const directory of temporaryDirectories.splice(0)) {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+describe('TODO file operations', () => {
+  it('discovers bounded TODO Markdown files and reads only workspace-contained content', async () => {
+    const directory = await temporaryDirectory('binaflow-todo-files-');
+    await mkdir(join(directory, 'docs'));
+    await mkdir(join(directory, 'node_modules'));
+    await writeFile(join(directory, 'TODO.md'), '# Root TODO');
+    await writeFile(join(directory, 'docs', 'TODO-auth.md'), '# Auth TODO');
+    await writeFile(join(directory, 'node_modules', 'TODO.md'), '# Ignore me');
+    await writeFile(join(directory, 'todo.txt'), 'not Markdown');
+
+    expect((await discoverTodoFiles(directory)).map((entry) => entry.relativePath)).toEqual([
+      'TODO.md',
+      join('docs', 'TODO-auth.md'),
+    ]);
+    await expect(readTodoFile('TODO.md', directory)).resolves.toMatchObject({
+      relativePath: 'TODO.md',
+      content: '# Root TODO',
+    });
+    await expect(readTodoFile(join(directory, '..', 'outside.md'), directory)).rejects.toThrow();
+  });
 });
 
 describe('configuration operations', () => {
@@ -225,6 +250,83 @@ describe('configuration operations', () => {
     });
     expect(await configurationExists('.binaflow/config.json', directory)).toBe(true);
     expect(await readFile(generated.configPath, 'utf8')).not.toContain('credential');
+  });
+
+  it('updates independent profiles while preserving unrelated config and optional thinking', async () => {
+    const directory = await temporaryDirectory('binaflow-profile-update-');
+    const configPath = join(directory, '.binaflow', 'config.json');
+    await mkdir(join(directory, '.binaflow'));
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        dataDir: './custom-data',
+        piCommand: process.execPath,
+        qaHistory: { enabled: true },
+        customSetting: 'preserve-me',
+        profiles: {
+          analyst: {
+            driver: 'pi',
+            model: 'analyst-old',
+            tools: ['read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+          planner: {
+            driver: 'pi',
+            model: 'planner-old',
+            tools: ['read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+          qa: {
+            driver: 'pi',
+            model: 'qa-old',
+            tools: ['read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+          builder: {
+            driver: 'pi',
+            model: 'builder-old',
+            tools: ['read'],
+            workspaceMode: 'read-only',
+            timeoutMs: 1000,
+            retryLimit: 0,
+          },
+        },
+      }),
+    );
+
+    const generated = await generateUpdatedConfiguration({
+      configPath: '.binaflow/config.json',
+      cwd: directory,
+      profileSettings: {
+        planner: { provider: 'openai', model: 'planner-new', thinking: 'high' },
+        builder: {
+          provider: 'anthropic',
+          model: 'builder-new',
+          thinking: 'Default',
+          writeAccess: true,
+        },
+      },
+    });
+
+    expect(generated.config).toMatchObject({
+      dataDir: './custom-data',
+      piCommand: process.execPath,
+      qaHistory: { enabled: true },
+      customSetting: 'preserve-me',
+      profiles: {
+        analyst: { model: 'analyst-old' },
+        planner: { provider: 'openai', model: 'planner-new', thinking: 'high' },
+        qa: { model: 'qa-old' },
+        builder: { provider: 'anthropic', model: 'builder-new', workspaceMode: 'read-write' },
+      },
+    });
+    expect(generated.config.profiles.builder).not.toHaveProperty('thinking');
   });
 
   it('refuses existing files and invalid generated values before writing', async () => {

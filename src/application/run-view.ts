@@ -14,6 +14,8 @@ import { resolveWorkflow } from '../workflows/catalog.js';
 import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { parsePlanBuildQaQaReport } from '../workflows/plan-build-qa.js';
+import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
+import { parseTodoFinalResult, type TodoFinalResult } from '../workflows/todo-build-qa-render.js';
 import type {
   InteractiveReviewPhase,
   InteractiveReviewState,
@@ -42,6 +44,7 @@ export interface RunView {
   pendingAction?: PendingRunAction;
   followUp?: RunFollowUp;
   qa?: RunQaView;
+  todoResult?: TodoFinalResult;
   review?: RunInteractiveReviewView;
 }
 
@@ -150,29 +153,26 @@ export async function getRunView(
   const installedWorkflow = resolveInstalledWorkflow(run.workflowId);
   const compatible = installedWorkflow?.version === run.workflowVersion;
   const recoveryBase = buildRunRecoveryExplanation(run, steps, installedWorkflow);
-  const recoveryState =
-    run.workflowId === 'plan-build-qa'
-      ? await planBuildQaRecoveryState(context, run, artifacts)
-      : await researchRecoveryState(context, run, artifacts);
+  const recoveryState = isQaWorkflow(run.workflowId)
+    ? await planBuildQaRecoveryState(context, run, artifacts)
+    : await researchRecoveryState(context, run, artifacts);
   const recovery =
     recoveryState === 'exhausted'
       ? {
           ...recoveryBase,
           eligible: false,
-          reason:
-            run.workflowId === 'plan-build-qa'
-              ? 'The QA iteration limit has been reached; this run is terminal.'
-              : 'The research iteration limit has been reached; this run is terminal.',
+          reason: isQaWorkflow(run.workflowId)
+            ? 'The QA iteration limit has been reached; this run is terminal.'
+            : 'The research iteration limit has been reached; this run is terminal.',
           actions: [],
         }
       : recoveryState === 'invalid'
         ? {
             ...recoveryBase,
             eligible: false,
-            reason:
-              run.workflowId === 'plan-build-qa'
-                ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
-                : 'The persisted research input is missing or invalid; this run cannot be resumed.',
+            reason: isQaWorkflow(run.workflowId)
+              ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
+              : 'The persisted research input is missing or invalid; this run cannot be resumed.',
             actions: [],
           }
         : recoveryBase;
@@ -185,6 +185,7 @@ export async function getRunView(
   const pendingAction = compatible ? buildPendingAction(run, installedWorkflow, steps) : undefined;
   const followUp = clarificationFollowUp(run.status, phases);
   const qa = await buildQaView(context, run, artifacts);
+  const todoResult = await buildTodoResultView(context, run, artifacts);
   const availableActions = [
     ...mapRecoveryActions(recovery.actions ?? []),
     ...(pendingAction && compatible ? approvalActions(pendingAction) : []),
@@ -212,6 +213,7 @@ export async function getRunView(
     ...(pendingAction ? { pendingAction } : {}),
     ...(followUp ? { followUp } : {}),
     ...(qa ? { qa } : {}),
+    ...(todoResult ? { todoResult } : {}),
   };
 }
 
@@ -232,7 +234,7 @@ function buildPhases(
   const persisted = new Map(steps.map((step) => [step.stepId, step]));
   const definitions = workflow ? workflowPhaseDefinitions(workflow) : [];
   const baseDefinitions = definitions.filter(
-    (definition) => !(workflow?.id === 'plan-build-qa' && definition.id === 'fix'),
+    (definition) => !(isQaWorkflow(workflow?.id) && definition.id === 'fix'),
   );
   const phases = baseDefinitions.map(({ id, kind, profile }) =>
     toPhaseView(persisted.get(id), id, kind, profile, nowMs, runIsActive),
@@ -242,7 +244,7 @@ function buildPhases(
     steps
       .filter(
         (step) =>
-          workflow?.id === 'plan-build-qa' &&
+          isQaWorkflow(workflow?.id) &&
           (/^qa-\d+$/.test(step.stepId) || /^fix-\d+$/.test(step.stepId)),
       )
       .map((step) => step.stepId),
@@ -350,7 +352,7 @@ async function buildQaView(
   run: WorkflowRun,
   artifacts: ArtifactReference[],
 ): Promise<RunQaView | undefined> {
-  if (run.workflowId !== 'plan-build-qa' || !context.artifacts) return undefined;
+  if (!isQaWorkflow(run.workflowId) || !context.artifacts) return undefined;
   const inputArtifact = findArtifactByName(artifacts, 'run', 'input');
   if (!inputArtifact) return undefined;
   let iteration = 0;
@@ -408,6 +410,25 @@ async function buildQaView(
           ? 'fix'
           : 'none',
   };
+}
+
+async function buildTodoResultView(
+  context: Partial<Pick<ApplicationInternals, 'artifacts'>>,
+  run: WorkflowRun,
+  artifacts: ArtifactReference[],
+): Promise<TodoFinalResult | undefined> {
+  if (run.workflowId !== todoBuildQaWorkflow.id || !context.artifacts) return undefined;
+  const result = findArtifactByName(artifacts, 'coordinator', 'FINAL-RESULT.json');
+  if (!result) return undefined;
+  try {
+    return parseTodoFinalResult(JSON.parse(await context.artifacts.read(result)));
+  } catch {
+    return undefined;
+  }
+}
+
+function isQaWorkflow(workflowId: string | undefined): boolean {
+  return workflowId === 'plan-build-qa' || workflowId === todoBuildQaWorkflow.id;
 }
 
 function findArtifactByName(

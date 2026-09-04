@@ -3,9 +3,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   configurationExists,
   diagnoseConfigurationFile,
+  discoverTodoFiles,
   generateConfiguration,
+  generateUpdatedConfiguration,
   listWorkspaceEntries,
   parentWorkspacePath,
+  readTodoFile,
+  replaceConfigurationAtomically,
   writeConfigurationAtomically,
 } from '../application/config-operations.js';
 import type { NormalizedEvent } from '../core/events.js';
@@ -15,6 +19,7 @@ import type { RunView } from '../application/run-view.js';
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationContext } from '../application/runtime.js';
 import type { ApplicationService } from '../application/service.js';
+import type { AgentModel } from '../core/agent.js';
 import type { ApplicationContextInput } from './shell.js';
 import { explainUserError } from '../presentation/format.js';
 import { MinimumSizeFallback } from './components.js';
@@ -30,12 +35,14 @@ import {
 } from './execution.js';
 import {
   SETUP_FIELDS,
+  SETUP_PROFILES,
   missingProfiles,
   orderedWorkflows,
   profileReview,
   sameProfileReview,
   setupChoices,
-  setupValuesToGeneration,
+  setupProfileChoices,
+  setupProfileFields,
   type LaunchInputState,
 } from './launch.js';
 import {
@@ -63,6 +70,7 @@ interface InkShellControllerProps {
   lifecycle: AttachedExecutionLifecycle<ApplicationContext>;
   openApplicationContext?:
     ((configPath: string, cwd: string) => Promise<ApplicationContextInput>) | undefined;
+  discoverModels?: (() => Promise<AgentModel[]>) | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
 }
 
@@ -73,6 +81,7 @@ export function InkShellController({
   configPath,
   lifecycle,
   openApplicationContext: openContext,
+  discoverModels,
   registerSignalHandler,
 }: InkShellControllerProps): ReactNode {
   const { exit } = useApp();
@@ -354,6 +363,23 @@ export function InkShellController({
     await request;
   };
 
+  const prepareTodoLaunch = async (
+    workflow: WorkflowContract,
+    diagnosis: NonNullable<TuiState['diagnosis']>,
+    path: string,
+  ): Promise<void> => {
+    const todo = await readTodoFile(path, stateRef.current.cwd);
+    dispatch({
+      type: 'launch-set',
+      input: {
+        workflow,
+        values: { todo: todo.content, todoPath: todo.relativePath },
+        field: 0,
+        reviewedProfiles: profileReview(workflow, diagnosis),
+      },
+    });
+  };
+
   const prepareLaunch = async (next: TuiState): Promise<void> => {
     const workflow =
       next.workflows?.[next.workflowSelected] ??
@@ -385,6 +411,19 @@ export function InkShellController({
       dispatch({ type: 'launch-cancel' });
       return;
     }
+    if (workflow.id === 'todo-build-qa') {
+      const candidates = await discoverTodoFiles(next.cwd);
+      if (candidates.length === 0) {
+        dispatch({ type: 'todo-files-found', candidates });
+        return;
+      }
+      if (candidates.length === 1) {
+        await prepareTodoLaunch(workflow, diagnosis, candidates[0]!.path);
+      } else {
+        dispatch({ type: 'todo-files-found', candidates });
+      }
+      return;
+    }
     const input: LaunchInputState = {
       workflow,
       values: {},
@@ -396,12 +435,30 @@ export function InkShellController({
 
   const buildGenerated = async (next: TuiState): Promise<void> => {
     try {
-      const answers = setupValuesToGeneration(next.setupValues);
-      const generated = generateConfiguration({
+      const input = {
         configPath: next.configPath,
         cwd: next.cwd,
-        ...answers,
-      });
+        profileSettings: Object.fromEntries(
+          next.setupEditedProfiles.flatMap((name) => {
+            const profile = next.setupProfileValues[name];
+            if (!profile?.provider || !profile.model) return [];
+            return [
+              [
+                name,
+                {
+                  provider: profile.provider,
+                  model: profile.model,
+                  ...(profile.thinking ? { thinking: profile.thinking } : {}),
+                  ...(name === 'builder' ? { writeAccess: profile.writeAccess === true } : {}),
+                },
+              ],
+            ];
+          }),
+        ),
+      };
+      const generated = next.editingConfiguration
+        ? await generateUpdatedConfiguration(input)
+        : generateConfiguration(input);
       if (active.current) dispatch({ type: 'generated-set', generated });
     } catch (reason) {
       if (active.current) {
@@ -419,14 +476,15 @@ export function InkShellController({
       return;
     }
     try {
-      if (await configurationExists(next.configPath, next.cwd)) {
+      if (!next.editingConfiguration && (await configurationExists(next.configPath, next.cwd))) {
         dispatch({
           type: 'setup-save-failed',
           message: `Configuration already exists at ${next.generated.configPath}; nothing was overwritten.`,
         });
         return;
       }
-      await writeConfigurationAtomically(next.generated);
+      if (next.editingConfiguration) await replaceConfigurationAtomically(next.generated);
+      else await writeConfigurationAtomically(next.generated);
       dispatch({ type: 'setup-written' });
     } catch (reason) {
       dispatch({
@@ -764,6 +822,19 @@ export function InkShellController({
         case 'new-run':
           if (next.detail === 'launch') await prepareLaunch(next);
           break;
+        case 'setup-written':
+          if (previous.editingConfiguration) await replaceWorkspaceContext();
+          break;
+        case 'todo-select': {
+          const candidate = next.todoCandidates?.[next.selection];
+          const workflow =
+            next.workflows?.find((item) => item.id === 'todo-build-qa') ??
+            discoverWorkflows().find((item) => item.id === 'todo-build-qa');
+          if (candidate && workflow && next.diagnosis) {
+            await prepareTodoLaunch(workflow, next.diagnosis, candidate.path);
+          }
+          break;
+        }
         case 'open-bugs':
           if (next.detail === 'bugs') await loadQaHistory();
           break;
@@ -851,6 +922,8 @@ export function InkShellController({
           startLaunch();
           break;
         case 'setup-next':
+        case 'setup-profile-select':
+        case 'setup-choice':
         case 'setup-submit':
           if (next.overlay === 'setup' && next.setupStep === 4 && previous.setupStep !== 4) {
             await buildGenerated(next);
@@ -935,10 +1008,12 @@ export function InkShellController({
           break;
       }
       if (next.effect === 'discover-setup-models') {
-        const context = lifecycle.context;
-        const request = context?.application.discoverModels();
-        if (request) lifecycle.trackRequest(request);
-        const models = request ? await request : [];
+        const request =
+          discoverModels?.() ??
+          lifecycle.context?.application.discoverModels() ??
+          (await import('../application/runtime.js')).discoverAvailableModels();
+        lifecycle.trackRequest(request);
+        const models = await request;
         if (active.current) dispatch({ type: 'setup-models', models });
       } else if (next.effect === 'diagnose-cwd') {
         await runDiagnose(
@@ -1038,21 +1113,57 @@ export function InkShellController({
             selected={state.selection}
           />
         );
-      case 'setup':
+      case 'setup': {
+        const profileMode = state.setupProfile !== undefined && !state.setupProfileSelection;
+        const profileField = profileMode
+          ? setupProfileFields(state.setupProfile!)[state.setupField]
+          : undefined;
+        const choices = profileMode
+          ? setupProfileChoices(
+              state.setupProfile!,
+              state.setupField,
+              state.setupModels ?? [],
+              state.setupProfileValues,
+            )
+          : setupChoices(state.setupField, state.setupModels ?? []);
+        const profileLabels = SETUP_PROFILES.map((profile) => {
+          const configured = state.setupProfileValues[profile]?.model ? 'configured' : 'missing';
+          return `${profile} (${configured})`;
+        }).concat('Review and save');
+        const profileValue = profileMode
+          ? (() => {
+              const value = state.setupProfileValues[state.setupProfile!];
+              if (profileField?.key === 'writeAccess')
+                return value?.writeAccess === true ? 'yes' : 'no';
+              if (profileField?.key === 'thinking') return value?.thinking ?? '';
+              return value?.[profileField?.key ?? 'model'] ?? '';
+            })()
+          : '';
         return (
           <SetupWizardScreen
-            key={`${state.setupStep}-${state.setupField}`}
+            key={`${state.setupStep}-${state.setupField}-${state.setupProfile ?? 'profiles'}`}
             colors={colors}
             step={state.setupStep}
             {...(state.diagnosis ? { diagnosis: state.diagnosis } : {})}
             {...(state.setupStep === 2 || state.setupStep === 3
               ? { field: SETUP_FIELDS[state.setupField]! }
               : {})}
-            choices={setupChoices(state.setupField, state.setupModels ?? [], state.setupValues)}
+            {...(profileField ? { profileField } : {})}
+            choices={choices}
             {...(state.error ? { error: state.error } : {})}
             selected={state.selection}
+            offset={state.offset}
+            setupProfileSelection={state.setupProfileSelection}
+            profileLabels={profileLabels}
             setupPreviewOffset={state.setupPreviewOffset}
-            value={state.inputValue}
+            editing={state.editingConfiguration}
+            value={
+              state.inputValue ||
+              profileValue ||
+              (state.setupStep === 2 || state.setupStep === 3
+                ? (state.setupValues[SETUP_FIELDS[state.setupField]!.key] ?? '')
+                : '')
+            }
             onChange={(value) => dispatch({ type: 'input-change', value })}
             onSubmit={(value) => {
               setTimeout(() => dispatch({ type: 'setup-submit', value }), 0);
@@ -1061,6 +1172,7 @@ export function InkShellController({
             showFullConfig={state.showFullConfig}
           />
         );
+      }
       case 'recovery-confirm':
         return (
           <RecoveryConfirmScreen

@@ -4,7 +4,10 @@ import { ScreenFrame, SafeText, SelectionList, TextViewport } from '../component
 import {
   generatedConfigurationPreview,
   isWriteCapable,
+  setupFieldTitle,
+  type SetupChoice,
   type SetupField,
+  type SetupProfileField,
   type SetupStep,
 } from '../launch.js';
 import { sanitizeInkText } from '../text.js';
@@ -14,12 +17,17 @@ export function SetupWizardScreen({
   step,
   diagnosis,
   field,
+  profileField,
   choices,
   error,
   value,
   selected,
+  offset,
+  setupProfileSelection,
+  profileLabels,
   setupPreviewOffset,
   generated,
+  editing,
   showFullConfig,
   onChange,
   onSubmit,
@@ -28,12 +36,17 @@ export function SetupWizardScreen({
   step: SetupStep;
   diagnosis?: { piCommandMessage?: string; piCommandLaunchable?: boolean };
   field?: SetupField;
-  choices: string[];
+  profileField?: SetupProfileField;
+  choices: SetupChoice[];
   error?: string;
   value: string;
   selected: number;
+  offset: number;
+  setupProfileSelection: boolean;
+  profileLabels: string[];
   setupPreviewOffset: number;
   generated?: GeneratedConfiguration;
+  editing: boolean;
   showFullConfig: boolean;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
@@ -62,11 +75,22 @@ export function SetupWizardScreen({
       </ScreenFrame>
     );
   }
+  if (step === 2 && setupProfileSelection) {
+    return (
+      <ProfileSelectionScreen
+        colors={colors}
+        labels={profileLabels}
+        selected={selected}
+        offset={offset}
+      />
+    );
+  }
   if (step === 4 && generated) {
     return (
       <SetupPreviewScreen
         colors={colors}
         generated={generated}
+        editing={editing}
         error={error}
         selected={selected}
         setupPreviewOffset={setupPreviewOffset}
@@ -76,31 +100,49 @@ export function SetupWizardScreen({
   }
   return (
     <ScreenFrame
-      title="Setup wizard"
-      subtitle={`Step ${step} of 4: ${step === 2 ? 'planner' : 'builder'}`}
+      title={editing ? 'Agent configuration' : 'Setup wizard'}
+      subtitle={
+        profileField
+          ? `Editing ${profileField.title}`
+          : `Step ${step} of 4: ${step === 2 ? 'planner' : 'builder'}`
+      }
       status={error}
       footer="Type a value | Enter submit | Esc cancel"
       colors={colors}
     >
-      <SafeText>{field?.title ?? ''}</SafeText>
+      <SafeText>
+        {profileField
+          ? profileField.title
+          : field
+            ? setupFieldTitle(
+                field,
+                choices.some((choice) => choice.model !== undefined),
+              )
+            : ''}
+      </SafeText>
       {choices.length > 0 ? (
         <>
-          <SelectionList items={choices} selected={selected} offset={0} visibleRows={5} />
-          <SafeText>Use j/k and Enter to choose a discovered value.</SafeText>
+          <SelectionList
+            items={choices.map((choice) => choice.label)}
+            selected={selected}
+            offset={offset}
+            visibleRows={5}
+          />
+          <SafeText>Use j/k and Enter to choose.</SafeText>
         </>
       ) : null}
-      {field?.key === 'builderWriteAccess' ? (
+      {field?.key === 'builderWriteAccess' || profileField?.key === 'writeAccess' ? (
         <SafeText>
           Choose no to keep the builder read-only. Yes enables write, edit, shell, and trust.
         </SafeText>
       ) : null}
       {choices.length === 0 ? (
         <TextInput
-          key={`${step}-${field?.key ?? 'input'}`}
+          key={`${step}-${profileField?.key ?? field?.key ?? 'input'}`}
           defaultValue={sanitizeInkText(value)}
-          {...(field?.key?.endsWith('Provider')
+          {...(field?.key?.endsWith('Provider') || profileField?.key === 'provider'
             ? { placeholder: 'openai' }
-            : field?.key?.endsWith('Model')
+            : field?.key?.endsWith('Model') || profileField?.key === 'model'
               ? { placeholder: 'gpt-4.1' }
               : {})}
           onChange={(next) => onChange(sanitizeInkText(next))}
@@ -110,9 +152,33 @@ export function SetupWizardScreen({
     </ScreenFrame>
   );
 }
+function ProfileSelectionScreen({
+  colors,
+  labels,
+  selected,
+  offset,
+}: {
+  colors: boolean;
+  labels: string[];
+  selected: number;
+  offset: number;
+}) {
+  return (
+    <ScreenFrame
+      title="Agent configuration"
+      subtitle="Choose a profile to edit"
+      footer="j/k move | Enter select | q cancel"
+      colors={colors}
+    >
+      <SelectionList items={labels} selected={selected} offset={offset} visibleRows={5} />
+    </ScreenFrame>
+  );
+}
+
 export function SetupPreviewScreen({
   colors,
   generated,
+  editing,
   error,
   selected,
   setupPreviewOffset,
@@ -120,6 +186,7 @@ export function SetupPreviewScreen({
 }: {
   colors: boolean;
   generated: GeneratedConfiguration;
+  editing: boolean;
   error?: string | undefined;
   selected: number;
   setupPreviewOffset: number;
@@ -140,7 +207,7 @@ export function SetupPreviewScreen({
   const lines = showFullConfig ? generatedConfigurationPreview(generated).split('\n') : summary;
   return (
     <ScreenFrame
-      title="Setup wizard"
+      title={editing ? 'Agent configuration' : 'Setup wizard'}
       subtitle="Step 4 of 4: review configuration"
       status={error}
       footer="j/k move | Enter select | q cancel"
@@ -153,7 +220,7 @@ export function SetupPreviewScreen({
       />
       <SafeText>Nothing has been written yet.</SafeText>
       <SelectionList
-        items={['Save', 'Show full config', 'Go back', 'Cancel']}
+        items={[editing ? 'Save changes' : 'Save', 'Show full config', 'Go back', 'Cancel']}
         selected={selected}
         offset={0}
         visibleRows={4}

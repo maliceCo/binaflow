@@ -3,3 +3,10 @@ node_modules
 coverage
 pnpm-lock.yaml
 scripts/*.sh
+
+# Workflow instructions are maintained as Markdown contracts.
+.agents/skills/qa-review-skill/SKILL.md
+.agents/skills/sustainable-coding-skill/SKILL.md
+.agents/skills/todo-agent-skill/SKILL.md
+.agents/skills/todo-implementation-focused-skill/SKILL.md
+TODO.md

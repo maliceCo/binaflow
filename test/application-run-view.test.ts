@@ -101,6 +101,54 @@ describe('application run view', () => {
     expect(JSON.stringify(view)).not.toContain('omitted from the view');
   });
 
+  it('projects the structured reviewed-TODO outcome for human presentation', async () => {
+    const run = workflowRun({ workflowId: 'todo-build-qa' });
+    const input = artifact(run.id, 'input', 'run');
+    const result = artifact(run.id, 'FINAL-RESULT.json', 'coordinator');
+    const artifacts: ApplicationArtifactStore = {
+      read: async (reference) =>
+        reference.id === input.id
+          ? JSON.stringify({ objective: run.objective, todo: '# TODO', qaIteration: 0 })
+          : JSON.stringify({
+              version: 1,
+              status: 'completed',
+              objective: run.objective,
+              todoSource: 'TODO.md',
+              implementation: {
+                status: 'passed',
+                summary: 'Implemented behavior',
+                resolvedItems: [
+                  {
+                    id: 'task-1',
+                    title: 'Implement behavior',
+                    resolution: 'The behavior now works.',
+                    evidence: ['src/example.ts'],
+                  },
+                ],
+                pendingItems: [],
+                changedFiles: ['src/example.ts'],
+                verifications: [{ command: 'pnpm test', status: 'passed' }],
+              },
+              qa: { status: 'passed', iterations: 1, found: 0, corrected: 0, pending: [] },
+            }),
+      readBounded: async () => ({ content: '', truncated: false }),
+    };
+
+    const view = await getRunView(
+      { store: store(run, [], [input, result]) as RunStore, artifacts },
+      run.id,
+    );
+
+    expect(view.todoResult).toMatchObject({
+      status: 'completed',
+      todoSource: 'TODO.md',
+      implementation: {
+        resolvedItems: [{ id: 'task-1', resolution: 'The behavior now works.' }],
+      },
+      qa: { status: 'passed', pending: [] },
+    });
+  });
+
   it('represents workflow-version incompatibility without offering recovery actions', async () => {
     const run = workflowRun({ workflowId: 'plan-build', workflowVersion: 99, status: 'failed' });
     const steps: StepRun[] = [
@@ -474,6 +522,19 @@ function store(
     getStepRuns: async () => steps,
     getArtifacts: async () => artifacts,
     countEvents: async () => 0,
+  };
+}
+
+function artifact(runId: string, name: string, stepId: string): ArtifactReference {
+  return {
+    id: `${stepId}-${name}`,
+    runId,
+    stepId,
+    name,
+    kind: 'json',
+    path: `/artifacts/${name}`,
+    mediaType: 'application/json',
+    sizeBytes: 1,
   };
 }
 

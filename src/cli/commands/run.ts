@@ -1,13 +1,17 @@
 import type { Command } from 'commander';
 import type { WorkflowRun } from '../../core/run.js';
 import { discoverWorkflows } from '../../application/operations.js';
-import { readJsonInput as readJsonInputFile } from '../../application/config-operations.js';
+import {
+  readJsonInput as readJsonInputFile,
+  readTodoFile,
+} from '../../application/config-operations.js';
 import { cliUsageError, machineMode, runStartedRecord, writeJsonl } from '../protocol.js';
 
 interface RunOptions {
   objective?: string;
   interactive?: boolean;
   inputJson?: string;
+  todoFile?: string;
 }
 
 export function registerRunCommand(cli: Command): void {
@@ -17,10 +21,11 @@ export function registerRunCommand(cli: Command): void {
     .argument('[workflow]', 'workflow name')
     .option('--objective <text>', 'objective for the workflow')
     .option('--input-json <path>', 'workflow input JSON file, or - for stdin')
+    .option('--todo-file <path>', 'reviewed TODO Markdown file for todo-build-qa')
     .option('--interactive', 'choose missing inputs interactively')
     .addHelpText(
       'after',
-      `\nAvailable workflows:\n${formatWorkflowList()}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow run --interactive\n`,
+      `\nAvailable workflows:\n${formatWorkflowList()}\n\nExamples:\n  $ binaflow run plan-build --objective "Fix the failing tests"\n  $ binaflow run todo-build-qa --objective "Execute the reviewed TODO" --todo-file TODO.md\n  $ binaflow run --interactive\n`,
     )
     .action(async (workflowId: string | undefined, options: RunOptions, command: Command) => {
       const outputMode = rootMachineMode(command);
@@ -30,7 +35,17 @@ export function registerRunCommand(cli: Command): void {
           'The --interactive option cannot be combined with --json or --jsonl',
         );
       }
-      const input = await readInputJson(options.inputJson);
+      let input = await readInputJson(options.inputJson);
+      if (options.todoFile) {
+        if (workflowId !== 'todo-build-qa') {
+          throw cliUsageError(
+            'TODO_FILE_WORKFLOW_MISMATCH',
+            'The --todo-file option is only supported by the todo-build-qa workflow',
+          );
+        }
+        const todo = await readTodoInput(options.todoFile, rootCwd(command));
+        input = { ...input, todo: todo.content, todoPath: todo.relativePath };
+      }
       const inputObjective = typeof input.objective === 'string' ? input.objective : undefined;
       const inputs = options.interactive
         ? await promptForMissingInputs(workflowId, options.objective ?? inputObjective, input)
@@ -109,10 +124,14 @@ function requireRunInputs(
   const missing = [
     workflowId ? undefined : 'workflow',
     objective?.trim() ? undefined : 'objective',
+    workflowId === 'todo-build-qa' && (typeof input.todo !== 'string' || !input.todo.trim())
+      ? 'todo'
+      : undefined,
   ].filter((value): value is string => value !== undefined);
   if (missing.length > 0) {
-    const instruction =
-      missing.length === 2
+    const instruction = missing.includes('todo')
+      ? 'Add --todo-file <path> or provide todo in --input-json'
+      : missing.includes('workflow') && missing.includes('objective')
         ? 'Provide a workflow and an objective'
         : missing[0] === 'workflow'
           ? 'Provide a workflow'
@@ -180,10 +199,30 @@ async function readInputJson(path: string | undefined): Promise<Record<string, u
   }
 }
 
+async function readTodoInput(
+  path: string,
+  cwd: string,
+): Promise<Awaited<ReturnType<typeof readTodoFile>>> {
+  try {
+    return await readTodoFile(path, cwd);
+  } catch (error) {
+    throw cliUsageError(
+      'INVALID_TODO_FILE',
+      `Invalid TODO file ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString('utf8');
+}
+
+function rootCwd(command: Command): string {
+  let root = command;
+  while (root.parent) root = root.parent;
+  return root.opts<{ cwd?: string }>().cwd ?? process.cwd();
 }
 
 function rootMachineMode(command: Command): 'json' | 'jsonl' | undefined {

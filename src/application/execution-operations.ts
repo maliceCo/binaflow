@@ -18,6 +18,7 @@ import {
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/workflow.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
+import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
 import { planBuildQaInteractiveWorkflow } from '../workflows/plan-build-qa-interactive.js';
 import type { ApplicationInternals } from './context.js';
 import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
@@ -200,7 +201,8 @@ async function validateResumeEligibility(
   workflow: WorkflowDefinition,
 ): Promise<void> {
   if (run.status !== 'failed' && run.status !== 'interrupted') return;
-  if (run.workflowId === planBuildQaWorkflow.id) return;
+  if (run.workflowId === planBuildQaWorkflow.id || run.workflowId === todoBuildQaWorkflow.id)
+    return;
   if (
     run.workflowId === researchPlanBuildWorkflow.id &&
     (await isResearchIterationExhausted(context, run))
@@ -248,7 +250,7 @@ async function preflightPersistedInput(
       throw new Error('Persisted research iteration is invalid');
     }
   }
-  if (workflow.id === planBuildQaWorkflow.id) {
+  if (workflow.id === planBuildQaWorkflow.id || workflow.id === todoBuildQaWorkflow.id) {
     const iteration = input[QA_ITERATION_INPUT];
     if (
       typeof iteration !== 'number' ||
@@ -291,6 +293,12 @@ async function executeWorkflow(
       throw new Error('Plan-build-qa coordinator is not configured');
     }
     return context.planBuildQaCoordinator.execute(workflow, request);
+  }
+  if (workflow.id === todoBuildQaWorkflow.id) {
+    if (!context.todoBuildQaCoordinator) {
+      throw new Error('Todo-build-qa coordinator is not configured');
+    }
+    return context.todoBuildQaCoordinator.execute(workflow, request);
   }
   if (workflow.id === planBuildQaInteractiveWorkflow.id) {
     if (!context.interactivePlanBuildQaCoordinator) {

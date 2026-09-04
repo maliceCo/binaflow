@@ -14,6 +14,7 @@ import { DiagnosisScreen } from './screens/diagnosis.js';
 import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js';
 import { LiveScreen } from './screens/live.js';
 import { ResultScreen } from './screens/result.js';
+import { TodoSelectionScreen } from './screens/todo-select.js';
 
 export interface ShellDetailViewProps {
   colors: boolean;
@@ -47,6 +48,18 @@ export function renderShellDetail({
           visibleRows={Math.max(1, size.rows - 7)}
           refreshing={false}
           error={state.error}
+        />
+      );
+      break;
+    case 'todo-select':
+      right = (
+        <TodoSelectionScreen
+          colors={colors}
+          candidates={state.todoCandidates ?? []}
+          selected={state.selection}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 8)}
+          {...(state.status ? { status: state.status } : {})}
         />
       );
       break;

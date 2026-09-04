@@ -1,7 +1,7 @@
 import { parentWorkspacePath } from '../application/config-operations.js';
 import { approvalActionItems } from './screens/approval.js';
 import { detailActionItems } from './screens/detail.js';
-import { setupChoices, workflowInputFields } from './launch.js';
+import { setupChoices, setupProfileChoices, workflowInputFields } from './launch.js';
 import { visibleFolderEntries, type TuiEvent, type TuiState } from './model.js';
 
 export interface ShellInputKey {
@@ -61,10 +61,20 @@ export function handleShellInput({
     current.detail === 'launch' &&
     current.launchInput !== undefined &&
     current.launchInput.field < workflowInputFields(current.launchInput.workflow).length;
+  const setupChoicesForInput =
+    current.setupProfile && !current.setupProfileSelection
+      ? setupProfileChoices(
+          current.setupProfile,
+          current.setupField,
+          current.setupModels ?? [],
+          current.setupProfileValues,
+        )
+      : setupChoices(current.setupField, current.setupModels ?? []);
   const setupInputActive =
     current.overlay === 'setup' &&
+    !current.setupProfileSelection &&
     (current.setupStep === 2 || current.setupStep === 3) &&
-    setupChoices(current.setupField, current.setupModels ?? [], current.setupValues).length === 0;
+    setupChoicesForInput.length === 0;
   const textInputActive =
     launchInputActive ||
     setupInputActive ||
@@ -161,11 +171,15 @@ export function handleShellInput({
         }
         break;
       case 'setup': {
-        const choices = setupChoices(
-          current.setupField,
-          current.setupModels ?? [],
-          current.setupValues,
-        );
+        const choices =
+          current.setupProfile && !current.setupProfileSelection
+            ? setupProfileChoices(
+                current.setupProfile,
+                current.setupField,
+                current.setupModels ?? [],
+                current.setupProfileValues,
+              )
+            : setupChoices(current.setupField, current.setupModels ?? []);
         if (current.setupStep === 1) {
           if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
           else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 3 });
@@ -174,6 +188,10 @@ export function handleShellInput({
             else if (current.selection === 1) dispatch({ type: 'setup-retry' });
             else dispatch({ type: 'setup-cancel' });
           }
+        } else if (current.setupStep === 2 && current.setupProfileSelection) {
+          if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
+          else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 5 });
+          else if (input === '\r' || key.return) dispatch({ type: 'setup-profile-select' });
         } else if (current.setupStep === 4) {
           if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
           else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 4 });
@@ -187,8 +205,7 @@ export function handleShellInput({
           if (input === 'q' || key.escape) dispatch({ type: 'setup-cancel' });
           else if (direction !== 0) dispatch({ type: 'move', direction, visibleRows: 5 });
           else if (input === '\r' || key.return) {
-            const choice = choices[current.selection];
-            if (choice) dispatch({ type: 'setup-submit', value: choice });
+            if (choices[current.selection]) dispatch({ type: 'setup-choice' });
           }
         } else if (input === 'q' || key.escape) {
           dispatch({ type: 'setup-cancel' });
@@ -227,6 +244,16 @@ export function handleShellInput({
       if (action?.kind === 'approve-research') dispatch({ type: 'approval-approve' });
       else if (action?.kind === 'reject-research') dispatch({ type: 'approval-reject' });
       else dispatch({ type: 'leave-waiting' });
+    }
+    return;
+  }
+
+  if (current.detail === 'todo-select') {
+    if (input === 'q' || key.escape) dispatch({ type: 'todo-selection-cancel' });
+    else if (direction !== 0) {
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 8) });
+    } else if ((input === '\r' || key.return) && (current.todoCandidates?.length ?? 0) > 0) {
+      dispatch({ type: 'todo-select' });
     }
     return;
   }
@@ -311,6 +338,7 @@ export function handleShellInput({
   }
 
   if (input === 'n') dispatch({ type: 'new-run' });
+  else if (input === 'c') dispatch({ type: 'open-agent-configuration' });
   else if (input === 'w') dispatch({ type: 'open-folder-picker' });
   else if (input === 'd' || input === 'r') dispatch({ type: 'refresh-diagnosis' });
   else if (input === 'b') dispatch({ type: 'open-bugs' });

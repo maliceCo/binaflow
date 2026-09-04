@@ -1,6 +1,17 @@
-import { access, link, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  link,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { dirname, parse, resolve } from 'node:path';
+import { dirname, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
   parseConfigValue,
@@ -65,6 +76,77 @@ export async function readJsonInput(
     throw new Error('input JSON must be an object');
   }
   return parsed as Record<string, unknown>;
+}
+
+export interface TodoFileCandidate {
+  path: string;
+  relativePath: string;
+  sizeBytes: number;
+}
+
+export interface TodoFileInput extends TodoFileCandidate {
+  content: string;
+}
+
+const TODO_FILE_LIMIT = 256 * 1024;
+const TODO_SEARCH_LIMIT = 100;
+const TODO_IGNORED_DIRECTORIES = new Set([
+  '.git',
+  '.binaflow',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+]);
+
+export async function discoverTodoFiles(cwd = process.cwd()): Promise<TodoFileCandidate[]> {
+  const workspace = await realpath(resolve(cwd));
+  const candidates: TodoFileCandidate[] = [];
+
+  async function visit(directory: string): Promise<void> {
+    if (candidates.length >= TODO_SEARCH_LIMIT) return;
+    const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+    for (const entry of entries) {
+      if (candidates.length >= TODO_SEARCH_LIMIT) return;
+      if (entry.isDirectory()) {
+        if (!TODO_IGNORED_DIRECTORIES.has(entry.name)) {
+          await visit(resolve(directory, entry.name));
+        }
+        continue;
+      }
+      if (!entry.isFile() || !/^todo(?:-.*)?\.md$/i.test(entry.name)) continue;
+      const path = resolve(directory, entry.name);
+      const details = await stat(path);
+      if (details.size > TODO_FILE_LIMIT) continue;
+      candidates.push({ path, relativePath: relative(workspace, path), sizeBytes: details.size });
+    }
+  }
+
+  await visit(workspace);
+  return candidates.sort((left, right) => {
+    if (left.relativePath === 'TODO.md') return -1;
+    if (right.relativePath === 'TODO.md') return 1;
+    return left.relativePath.localeCompare(right.relativePath);
+  });
+}
+
+export async function readTodoFile(path: string, cwd = process.cwd()): Promise<TodoFileInput> {
+  const workspace = await realpath(resolve(cwd));
+  const requested = isAbsolute(path) ? path : resolve(workspace, path);
+  const actual = await realpath(requested);
+  const relativePath = relative(workspace, actual);
+  if (relativePath === '..' || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+    throw new Error('TODO file must be inside the selected workspace');
+  }
+  const content = await readFile(actual, 'utf8');
+  const sizeBytes = Buffer.byteLength(content, 'utf8');
+  if (sizeBytes > TODO_FILE_LIMIT) {
+    throw new Error(`TODO file exceeds the ${TODO_FILE_LIMIT}-byte limit`);
+  }
+  if (!content.trim()) throw new Error('TODO file must be non-empty');
+  return { path: actual, relativePath, sizeBytes, content };
 }
 
 export async function listWorkspaceEntries(path: string): Promise<WorkspaceEntry[]> {
@@ -220,60 +302,120 @@ export async function diagnoseConfigurationFile(
   };
 }
 
+export type ConfigurableProfileName = 'analyst' | 'planner' | 'qa' | 'builder';
+
+export interface ConfigurationProfileInput {
+  provider: string;
+  model: string;
+  thinking?: string;
+  writeAccess?: boolean;
+}
+
 export interface ConfigurationGenerationInput {
   configPath: string;
   cwd?: string;
-  plannerProvider: string;
-  plannerModel: string;
-  builderProvider: string;
-  builderModel: string;
-  builderWriteAccess: boolean;
+  plannerProvider?: string;
+  plannerModel?: string;
+  builderProvider?: string;
+  builderModel?: string;
+  builderWriteAccess?: boolean;
+  profileSettings?: Partial<Record<ConfigurableProfileName, ConfigurationProfileInput>>;
 }
+
+export type ConfigurationDocument = Record<string, unknown> & {
+  dataDir: string;
+  piCommand: string;
+  profiles: Record<string, AgentProfile>;
+};
 
 export interface GeneratedConfiguration {
   configPath: string;
-  config: {
-    dataDir: string;
-    piCommand: string;
-    profiles: Record<string, AgentProfile>;
+  config: ConfigurationDocument;
+}
+
+function legacyProfileSettings(
+  input: ConfigurationGenerationInput,
+): Record<ConfigurableProfileName, ConfigurationProfileInput> {
+  return {
+    analyst: {
+      provider: input.plannerProvider ?? '',
+      model: input.plannerModel ?? '',
+    },
+    planner: {
+      provider: input.plannerProvider ?? '',
+      model: input.plannerModel ?? '',
+    },
+    qa: {
+      provider: input.plannerProvider ?? '',
+      model: input.plannerModel ?? '',
+    },
+    builder: {
+      provider: input.builderProvider ?? '',
+      model: input.builderModel ?? '',
+      writeAccess: input.builderWriteAccess === true,
+    },
   };
+}
+
+function profileDocuments(
+  settings: Partial<Record<ConfigurableProfileName, ConfigurationProfileInput>>,
+): Record<string, AgentProfile> {
+  return Object.fromEntries(
+    Object.entries(settings).map(([name, value]) => {
+      if (!value) throw new Error(`${name} profile settings are required.`);
+      const writeAccess = name === 'builder' && value.writeAccess === true;
+      const profile: AgentProfile = {
+        driver: 'pi',
+        provider: value.provider.trim(),
+        model: value.model.trim(),
+        ...(value.thinking && value.thinking.trim().toLowerCase() !== 'default'
+          ? { thinking: value.thinking.trim() }
+          : {}),
+        tools: writeAccess
+          ? ['ls', 'find', 'read', 'write', 'edit', 'bash']
+          : ['ls', 'find', 'read'],
+        workspaceMode: writeAccess ? 'read-write' : 'read-only',
+        projectTrust: writeAccess ? 'always' : 'never',
+        skills: { mode: 'discover' },
+        timeoutMs: 180_000,
+        retryLimit: 0,
+      };
+      return [name, profile];
+    }),
+  );
 }
 
 export function generateConfiguration(input: ConfigurationGenerationInput): GeneratedConfiguration {
   const configPath = resolve(input.cwd ?? process.cwd(), input.configPath);
-  const builderTools = input.builderWriteAccess
-    ? ['ls', 'find', 'read', 'write', 'edit', 'bash']
-    : ['ls', 'find', 'read'];
-  const planner = {
-    driver: 'pi' as const,
-    provider: input.plannerProvider.trim(),
-    model: input.plannerModel.trim(),
-    tools: ['ls', 'find', 'read'],
-    workspaceMode: 'read-only' as const,
-    projectTrust: 'never' as const,
-    skills: { mode: 'discover' as const },
-    timeoutMs: 180_000,
-    retryLimit: 0,
-  };
-  const config = {
+  const profileSettings = input.profileSettings ?? legacyProfileSettings(input);
+  const config: ConfigurationDocument = {
     dataDir: './data',
     piCommand: 'pi',
     qaHistory: { enabled: false },
+    profiles: profileDocuments(profileSettings),
+  };
+  parseConfigValue(config, configPath);
+  return { configPath, config };
+}
+
+export async function generateUpdatedConfiguration(
+  input: ConfigurationGenerationInput,
+): Promise<GeneratedConfiguration> {
+  const current = await readConfigurationDocument(
+    resolve(input.cwd ?? process.cwd(), input.configPath),
+  );
+  if (!input.profileSettings) {
+    const generated = generateConfiguration(input);
+    const config: ConfigurationDocument = { ...current, profiles: generated.config.profiles };
+    parseConfigValue(config, generated.configPath);
+    return { configPath: generated.configPath, config };
+  }
+  const configPath = resolve(input.cwd ?? process.cwd(), input.configPath);
+  const config: ConfigurationDocument = {
+    ...current,
     profiles: {
-      analyst: { ...planner },
-      planner: { ...planner },
-      qa: { ...planner },
-      builder: {
-        driver: 'pi' as const,
-        provider: input.builderProvider.trim(),
-        model: input.builderModel.trim(),
-        tools: builderTools,
-        workspaceMode: input.builderWriteAccess ? ('read-write' as const) : ('read-only' as const),
-        projectTrust: input.builderWriteAccess ? ('always' as const) : ('never' as const),
-        skills: { mode: 'discover' as const },
-        timeoutMs: 180_000,
-        retryLimit: 0,
-      },
+      ...current.profiles,
+      ...profileDocuments(input.profileSettings),
     },
   };
   parseConfigValue(config, configPath);
@@ -304,6 +446,23 @@ export async function writeConfigurationAtomically(
   }
 }
 
+export async function replaceConfigurationAtomically(
+  generated: GeneratedConfiguration,
+): Promise<void> {
+  parseConfigValue(generated.config, generated.configPath);
+  await mkdir(dirname(generated.configPath), { recursive: true });
+  const temporaryPath = `${generated.configPath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(generated.config, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: 'wx',
+    });
+    await rename(temporaryPath, generated.configPath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
 export async function configurationExists(
   configPath: string,
   cwd = process.cwd(),
@@ -315,6 +474,19 @@ export async function configurationExists(
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+async function readConfigurationDocument(path: string): Promise<ConfigurationDocument> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    throw new Error(
+      `Cannot read Binaflow config ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!asRecord(parsed)) throw new Error('Binaflow config must be a JSON object');
+  return parsed as ConfigurationDocument;
 }
 
 function diagnoseQaHistory(value: unknown, errors: string[]): { enabled: boolean } {

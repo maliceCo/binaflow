@@ -6,11 +6,13 @@ Binaflow is a local workflow orchestrator for coding agents. It runs a
 structured workflow, persists runs in SQLite, stores artifacts on disk, and
 uses Pi as the first agent driver.
 
-The preview includes four sequential workflows:
+The preview includes five local workflows:
 
 - `plan-build`: create a validated implementation plan, then build it.
 - `plan-build-qa`: scope, plan, build, and run bounded read-only QA, with the
   builder correcting only critical or high findings.
+- `todo-build-qa`: validate and execute an externally reviewed TODO, then run
+  bounded read-only QA and correct critical or high findings.
 - `plan-build-qa-interactive`: pause at scope, changes, and QA checkpoints for
   explicit human review.
 - `research-plan-build`: experimental research, review, approval, plan, then
@@ -241,6 +243,7 @@ it, inspect its result, and resume only when the persisted state allows it:
 binaflow doctor
 binaflow workflows
 binaflow run plan-build --objective "Add input validation to the user API"
+binaflow run todo-build-qa --objective "Execute the reviewed TODO" --todo-file TODO.md
 binaflow runs
 binaflow show <run-id>
 binaflow artifacts <run-id>
@@ -298,10 +301,14 @@ binaflow --jsonl resume <run-id>
 `--input-json` accepts a JSON object from a file or `-` for stdin. The
 `objective` property is required by the current workflows; `--objective`
 remains the convenient short form and overrides the JSON object's objective.
-The complete input is persisted as the `run.input` JSON artifact and is the
-source used by `resume`, `approve`, and `reject`. Use `artifacts` to list
-references and `artifact` to retrieve one exact artifact. `artifact --raw`
-writes only its content and cannot be combined with `--json` or `--jsonl`.
+`todo-build-qa` additionally requires the reviewed TODO text. Use
+`--todo-file TODO.md`, or provide `todo` and optional `todoPath` through
+`--input-json`. The TODO content is persisted with the run, so resume does not
+depend on the source file remaining unchanged. The complete input is persisted
+as the `run.input` JSON artifact and is the source used by `resume`, `approve`,
+and `reject`. Use `artifacts` to list references and `artifact` to retrieve one
+exact artifact. `artifact --raw` writes only its content and cannot be combined
+with `--json` or `--jsonl`.
 
 The CLI exit codes are: `0` for a successful command (including a run waiting
 for review or approval), `1` for execution or operational failure, `2` for invalid
@@ -373,6 +380,37 @@ steps and their persisted artifacts are reused. Cancelled and completed runs
 cannot be resumed, waiting runs use the research-specific approval actions,
 and workflow-version mismatches block recovery. Planner clarification starts a
 new run with a revised objective rather than changing the existing run.
+
+## Reviewed TODO Workflow
+
+`todo-build-qa` treats an external Markdown TODO as an already reviewed work
+contract. In the TUI, selecting the workflow searches the workspace for
+`TODO.md` and `TODO-*.md`, ignoring Binaflow data, Git data, dependencies, and
+build output. One match is loaded automatically; multiple matches open a file
+selector. The source must be inside the selected workspace and no larger than
+256 KiB.
+
+The read-only `analyst` profile checks repository consistency and viability. It
+may normalize stable task IDs and propose a separate preparation phase, but it
+must preserve the TODO's intent. A blocked TODO stops safely with explicit
+reasons. Otherwise the `builder` performs any required preparation and executes
+the TODO. The read-only `qa` profile reviews the result; critical and high
+findings produce `QA-FIXES-N.md` and bounded builder corrections followed by QA
+verification.
+
+The workflow persists `ORIGINAL-TODO.md`, `FINAL-RESULT.json`, and
+`FINAL-REPORT.md`. The JSON result is the structured source of truth; the human
+report is rendered from it and distinguishes resolved, verified, and pending
+work. Retrieve either result with the normal artifact commands:
+
+```bash
+binaflow artifact <run-id> coordinator.FINAL-RESULT.json --raw
+binaflow artifact <run-id> coordinator.FINAL-REPORT.md --raw
+```
+
+The workflow refers only to logical `analyst`, `builder`, and `qa` profiles. To
+use a particular viability model or QA skill, configure it on those profiles;
+the workflow does not hard-code a provider, model, or harness.
 
 ## Interactive Review Workflow
 

@@ -7,6 +7,46 @@ import type {
 import type { WorkflowContract } from '../application/operations.js';
 import { isReadOnlyPiTool } from '../pi-tools.js';
 
+export const SETUP_PROFILES = ['analyst', 'planner', 'qa', 'builder'] as const;
+export type SetupProfileName = (typeof SETUP_PROFILES)[number];
+
+export interface SetupProfileValues {
+  provider?: string;
+  model?: string;
+  thinking?: string;
+  writeAccess?: boolean;
+}
+
+export const PI_THINKING_LEVELS = [
+  'Default',
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+
+export type SetupProfileField =
+  | { key: 'provider'; title: string }
+  | { key: 'model'; title: string }
+  | { key: 'thinking'; title: string }
+  | { key: 'writeAccess'; title: string };
+
+export function setupProfileFields(profile: SetupProfileName): SetupProfileField[] {
+  const fields: SetupProfileField[] = [
+    { key: 'provider', title: `${profile} provider` },
+    { key: 'model', title: `${profile} model` },
+    { key: 'thinking', title: `${profile} thinking effort` },
+  ];
+  if (profile === 'builder')
+    fields.push({ key: 'writeAccess', title: 'builder permissions (yes/no)' });
+  return fields;
+}
+
+export type SetupProfileValuesByName = Partial<Record<SetupProfileName, SetupProfileValues>>;
+
 export const SETUP_FIELDS = [
   { key: 'plannerProvider', title: 'Planner provider' },
   { key: 'plannerModel', title: 'Planner model' },
@@ -17,23 +57,116 @@ export const SETUP_FIELDS = [
 
 export type SetupField = (typeof SETUP_FIELDS)[number];
 export type SetupValues = Partial<Record<(typeof SETUP_FIELDS)[number]['key'], string>>;
+
+export function setupProfileValuesFromLegacy(values: SetupValues): SetupProfileValuesByName {
+  return {
+    ...(values.plannerProvider || values.plannerModel
+      ? {
+          planner: {
+            ...(values.plannerProvider ? { provider: values.plannerProvider } : {}),
+            ...(values.plannerModel ? { model: values.plannerModel } : {}),
+          },
+        }
+      : {}),
+    ...(values.builderProvider || values.builderModel || values.builderWriteAccess
+      ? {
+          builder: {
+            ...(values.builderProvider ? { provider: values.builderProvider } : {}),
+            ...(values.builderModel ? { model: values.builderModel } : {}),
+            ...(values.builderWriteAccess
+              ? { writeAccess: values.builderWriteAccess.toLowerCase() === 'yes' }
+              : {}),
+          },
+        }
+      : {}),
+  };
+}
 export type SetupStep = 1 | 2 | 3 | 4;
 
-export function setupChoices(
-  fieldIndex: number,
-  models: AgentModel[],
-  values: SetupValues,
-): string[] {
+export interface SetupChoice {
+  label: string;
+  value: string;
+  model?: AgentModel;
+}
+
+export function setupChoices(fieldIndex: number, models: AgentModel[]): SetupChoice[] {
   const field = SETUP_FIELDS[fieldIndex];
   if (!field) return [];
-  if (field.key.endsWith('Provider')) return [...new Set(models.map((model) => model.provider))];
-  if (field.key.endsWith('Model')) {
-    const provider =
-      values[field.key.startsWith('planner') ? 'plannerProvider' : 'builderProvider'];
-    return models.filter((model) => model.provider === provider).map((model) => model.model);
+  if (field.key === 'plannerProvider') return modelChoices(models);
+  if (field.key === 'builderProvider') return modelChoices(models);
+  if (field.key === 'builderWriteAccess') {
+    return [
+      { label: 'no', value: 'no' },
+      { label: 'yes', value: 'yes' },
+    ];
   }
-  if (field.key === 'builderWriteAccess') return ['no', 'yes'];
   return [];
+}
+
+export function setupProfileChoices(
+  profile: SetupProfileName,
+  fieldIndex: number,
+  models: AgentModel[],
+  values: SetupProfileValuesByName,
+): SetupChoice[] {
+  const field = setupProfileFields(profile)[fieldIndex];
+  if (!field) return [];
+  if (field.key === 'provider') return providerChoices(models);
+  if (field.key === 'model') {
+    const provider = values[profile]?.provider;
+    if (!provider) return modelChoices(models);
+    return modelChoices(models.filter((model) => model.provider === provider));
+  }
+  if (field.key === 'thinking') {
+    return PI_THINKING_LEVELS.map((level) => ({
+      label: level,
+      value: level === 'Default' ? '' : level,
+    }));
+  }
+  return [
+    { label: 'no', value: 'no' },
+    { label: 'yes', value: 'yes' },
+  ];
+}
+
+export function setupProfileFieldTitle(
+  profile: SetupProfileName,
+  fieldIndex: number,
+  modelsAvailable: boolean,
+): string {
+  const field = setupProfileFields(profile)[fieldIndex];
+  if (!field) return '';
+  if (modelsAvailable && field.key === 'provider') return `${profile} provider`;
+  return field.title;
+}
+
+function providerChoices(models: AgentModel[]): SetupChoice[] {
+  return [...new Set(models.map((model) => model.provider))]
+    .sort((left, right) => left.localeCompare(right))
+    .map((provider) => ({ label: provider, value: provider }));
+}
+
+export function setupFieldTitle(field: SetupField, modelsAvailable: boolean): string {
+  if (modelsAvailable && field.key === 'plannerProvider') return 'Planning model';
+  if (modelsAvailable && field.key === 'builderProvider') return 'Build model';
+  return field.title;
+}
+
+export function usesDiscoveredModels(models: AgentModel[]): boolean {
+  return models.length > 0;
+}
+
+function modelChoices(models: AgentModel[]): SetupChoice[] {
+  const unique = new Map<string, AgentModel>();
+  for (const model of models) unique.set(`${model.provider}\u0000${model.model}`, model);
+  return [...unique.values()]
+    .sort((left, right) => formatModel(left).localeCompare(formatModel(right)))
+    .map((model) => ({ label: formatModel(model), value: model.model, model }));
+}
+
+function formatModel(model: AgentModel): string {
+  const name = model.displayName?.trim() || model.model;
+  return `${name} (${model.provider})`;
 }
 
 export interface LaunchInputState {
@@ -78,6 +211,7 @@ export function setupValuesToGeneration(values: SetupValues): {
 }
 
 export function workflowInputFields(workflow: WorkflowContract): string[] {
+  if (workflow.id === 'todo-build-qa') return ['objective'];
   return Object.keys(workflow.input.properties);
 }
 

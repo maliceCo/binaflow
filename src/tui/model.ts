@@ -1,6 +1,7 @@
 import type {
   ConfigurationDiagnosis,
   GeneratedConfiguration,
+  TodoFileCandidate,
 } from '../application/config-operations.js';
 import type { ArtifactContentView } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
@@ -10,7 +11,13 @@ import type { AgentModel } from '../core/agent.js';
 import type { QaDefect } from '../core/qa-history.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import type { WorkflowContract } from '../application/operations.js';
-import type { LaunchInputState, SetupStep, SetupValues } from './launch.js';
+import type {
+  LaunchInputState,
+  SetupProfileName,
+  SetupProfileValuesByName,
+  SetupStep,
+  SetupValues,
+} from './launch.js';
 
 export interface FolderEntry {
   path: string;
@@ -42,6 +49,7 @@ export type Overlay =
 export type DetailMode =
   | 'empty'
   | 'diagnosis'
+  | 'todo-select'
   | 'launch'
   | 'live'
   | 'approval'
@@ -64,9 +72,14 @@ export interface TuiState {
   detail: DetailMode;
   setupStep: SetupStep;
   setupField: number;
+  setupProfileSelection: boolean;
+  setupProfile: SetupProfileName | undefined;
+  setupEditedProfiles: SetupProfileName[];
+  editingConfiguration: boolean;
   folderPickerPath: string;
   folderPickerOrigin: 'welcome' | 'studio';
   setupValues: SetupValues;
+  setupProfileValues: SetupProfileValuesByName;
   workflowSelected: number;
   workflowOffset: number;
   runSelected: number;
@@ -88,6 +101,7 @@ export interface TuiState {
   offset: number;
   inputValue: string;
   launchInput?: LaunchInputState;
+  todoCandidates?: TodoFileCandidate[];
   runView?: RunView;
   clarifications: string[];
   approvalPreviews: ArtifactContentView[];
@@ -123,9 +137,14 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     detail: 'empty',
     setupStep: 1,
     setupField: 0,
+    setupProfileSelection: false,
+    setupProfile: undefined,
+    setupEditedProfiles: [],
+    editingConfiguration: false,
     folderPickerPath: cwd,
     folderPickerOrigin: 'welcome',
     setupValues: {},
+    setupProfileValues: {},
     workflowSelected: 0,
     workflowOffset: 0,
     runSelected: 0,
@@ -165,6 +184,8 @@ export type TuiEvent =
   | { type: 'folder-confirm' }
   | { type: 'folder-confirm-back' }
   | { type: 'setup-next' }
+  | { type: 'setup-profile-select' }
+  | { type: 'open-agent-configuration' }
   | { type: 'setup-back' }
   | { type: 'setup-cancel' }
   | { type: 'setup-models'; models: AgentModel[] }
@@ -190,6 +211,9 @@ export type TuiEvent =
   | { type: 'review-decide'; decision: 'approve' | 'correct' | 'accept-risk' | 'postpone' }
   | { type: 'review-finalize' }
   | { type: 'launch-cancel' }
+  | { type: 'todo-files-found'; candidates: TodoFileCandidate[] }
+  | { type: 'todo-select' }
+  | { type: 'todo-selection-cancel' }
   | { type: 'launch-set'; input: LaunchInputState }
   | { type: 'launch-input'; value: string }
   | { type: 'launch-edit' }
@@ -220,6 +244,7 @@ export type TuiEvent =
   | { type: 'generated-set'; generated: GeneratedConfiguration }
   | { type: 'setup-toggle-config' }
   | { type: 'setup-retry' }
+  | { type: 'setup-choice' }
   | { type: 'setup-submit'; value: string }
   | { type: 'input-change'; value: string }
   | { type: 'error-set'; message: string }

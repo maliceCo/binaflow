@@ -22,6 +22,7 @@ import type {
 } from './ports.js';
 import type { ApplicationInternals } from './context.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
+import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
 
 const DEFAULT_RUN_EVENT_LIMIT = 50;
 const MAX_RUN_EVENT_LIMIT = 100;
@@ -61,18 +62,16 @@ export async function explainRunRecovery(
     steps,
     resolveRecoveryWorkflow(run.workflowId),
   );
-  const recoveryState =
-    run.workflowId === 'plan-build-qa'
-      ? await planBuildQaRecoveryState(context, run)
-      : await researchRecoveryState(context, run);
+  const recoveryState = isQaWorkflow(run.workflowId)
+    ? await planBuildQaRecoveryState(context, run)
+    : await researchRecoveryState(context, run);
   if (recoveryState === 'exhausted') {
     return {
       ...explanation,
       eligible: false,
-      reason:
-        run.workflowId === 'plan-build-qa'
-          ? 'The QA iteration limit has been reached; this run is terminal.'
-          : 'The research iteration limit has been reached; this run is terminal.',
+      reason: isQaWorkflow(run.workflowId)
+        ? 'The QA iteration limit has been reached; this run is terminal.'
+        : 'The research iteration limit has been reached; this run is terminal.',
       actions: [],
     };
   }
@@ -80,10 +79,9 @@ export async function explainRunRecovery(
     return {
       ...explanation,
       eligible: false,
-      reason:
-        run.workflowId === 'plan-build-qa'
-          ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
-          : 'The persisted research input is missing or invalid; this run cannot be resumed.',
+      reason: isQaWorkflow(run.workflowId)
+        ? 'The persisted QA input is missing or invalid; this run cannot be resumed.'
+        : 'The persisted research input is missing or invalid; this run cannot be resumed.',
       actions: [],
     };
   }
@@ -103,7 +101,7 @@ export async function planBuildQaRecoveryState(
   run: WorkflowRun,
   artifacts?: ArtifactReference[],
 ): Promise<'exhausted' | 'invalid' | undefined> {
-  if (run.workflowId !== 'plan-build-qa' || !context.artifacts) return undefined;
+  if (!isQaWorkflow(run.workflowId) || !context.artifacts) return undefined;
   const runArtifacts = artifacts ?? (await context.store.getArtifacts(run.id));
   const inputArtifact = runArtifacts.find(
     (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
@@ -365,6 +363,10 @@ function recoveryRetryableStepIds(
 function researchApproval(workflow: WorkflowDefinition): WorkflowApprovalDefinition | undefined {
   if (workflow.id !== researchPlanBuildWorkflow.id) return undefined;
   return (workflow as typeof researchPlanBuildWorkflow).approval;
+}
+
+function isQaWorkflow(workflowId: string): boolean {
+  return workflowId === 'plan-build-qa' || workflowId === todoBuildQaWorkflow.id;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

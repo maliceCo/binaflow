@@ -8,6 +8,7 @@ import { InkShellController } from './shell-controller.js';
 import { createAttachedExecutionLifecycle, type AttachedExecutionLifecycle } from './lifecycle.js';
 import type { ApplicationContext } from '../application/runtime.js';
 import type { ApplicationService } from '../application/service.js';
+import type { AgentModel } from '../core/agent.js';
 
 export type ApplicationContextInput =
   ApplicationContext | (ApplicationService & { close?(): void });
@@ -19,6 +20,7 @@ export interface InkShellOptions extends InkApplicationOptions {
   openApplicationContext?:
     ((configPath: string, cwd: string) => Promise<ApplicationContextInput>) | undefined;
   forceExit?: (signal: NodeJS.Signals) => void;
+  discoverModels?: (() => Promise<AgentModel[]>) | undefined;
 }
 
 interface InkShellProps extends InkApplicationContext {
@@ -26,6 +28,7 @@ interface InkShellProps extends InkApplicationContext {
   configPath: string;
   lifecycle: AttachedExecutionLifecycle<ApplicationContext>;
   openApplicationContext?: InkShellOptions['openApplicationContext'] | undefined;
+  discoverModels?: InkShellOptions['discoverModels'] | undefined;
   registerSignalHandler: (handler: (signal: NodeJS.Signals) => boolean) => () => void;
 }
 
@@ -46,6 +49,7 @@ export async function runInkShell(options: InkShellOptions = {}): Promise<void> 
           configPath={configPath}
           lifecycle={lifecycle}
           openApplicationContext={options.openApplicationContext}
+          discoverModels={options.discoverModels}
           registerSignalHandler={(handler) => {
             signalHandler = handler;
             return () => {

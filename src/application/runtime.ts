@@ -12,7 +12,9 @@ import type { ApplicationRunStore } from './ports.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
+import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 import { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
+import { discoverAgentModels } from './config-operations.js';
 import {
   createApplicationService,
   createApplicationQueries,
@@ -31,6 +33,11 @@ export interface ApplicationStorageContext {
 }
 
 export type ApplicationRuntimeContext = ApplicationContext;
+
+/** Discovers Pi-authenticated models before a Binaflow configuration exists. */
+export async function discoverAvailableModels() {
+  return discoverAgentModels(new PiModelDiscovery());
+}
 
 export interface OpenApplicationOptions {
   configPath?: string;
@@ -75,6 +82,7 @@ export async function openApplicationContext(
     artifacts,
     config.qaHistory.enabled ? store : undefined,
   );
+  const todoBuildQaCoordinator = new TodoBuildQaCoordinator(runtime, store, artifacts);
   const interactivePlanBuildQaCoordinator = new InteractivePlanBuildQaCoordinator(
     runtime,
     store,
@@ -88,6 +96,7 @@ export async function openApplicationContext(
     engine,
     researchCoordinator,
     planBuildQaCoordinator,
+    todoBuildQaCoordinator,
     interactivePlanBuildQaCoordinator,
     reviewStore: store,
     ...(config.qaHistory.enabled ? { qaHistory: store } : {}),

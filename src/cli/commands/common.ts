@@ -163,6 +163,7 @@ export function printRunSummary(view: RunView, stepResults: StepRun[] = []): voi
   console.log(
     `  created=${formatTimestamp(view.createdAt)}  updated=${formatTimestamp(view.updatedAt)}`,
   );
+  if (view.todoResult) printTodoOutcome(view.todoResult);
   const resultsByStep = new Map(stepResults.map((step) => [step.stepId, step]));
   for (const phase of view.phases) {
     const stepResult = resultsByStep.get(phase.id);
@@ -201,6 +202,25 @@ export function printRunSummary(view: RunView, stepResults: StepRun[] = []): voi
     `  total  usage=${totalUsage === undefined ? '-' : `${totalUsage} tokens`}  cost=${totalCost === undefined ? '-' : `$${totalCost.toFixed(4)}`}`,
   );
   printNextAction(view);
+}
+
+function printTodoOutcome(result: NonNullable<RunView['todoResult']>): void {
+  console.log(`  result=${result.status}`);
+  console.log(
+    `    summary=${singleLine(result.implementation?.summary ?? result.assessment?.summary ?? 'No implementation summary is available.', 240)}`,
+  );
+  for (const item of result.implementation?.resolvedItems ?? []) {
+    console.log(`    resolved=${singleLine(item.title, 120)}: ${singleLine(item.resolution, 240)}`);
+  }
+  for (const item of result.implementation?.pendingItems ?? []) {
+    console.log(`    pending=${singleLine(item.title, 120)}: ${singleLine(item.reason, 240)}`);
+  }
+  for (const blocker of result.assessment?.blockers ?? []) {
+    console.log(`    blocker=${singleLine(blocker, 240)}`);
+  }
+  console.log(
+    `    qa=${result.qa.status}  found=${result.qa.found}  corrected=${result.qa.corrected}  pending=${result.qa.pending.length}`,
+  );
 }
 
 export async function printMachineRunResult(

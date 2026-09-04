@@ -28,31 +28,18 @@ describe('Ink setup and launch safety', () => {
       output: terminal.output as unknown as NodeJS.WriteStream,
       errorOutput: terminal.output as unknown as NodeJS.WriteStream,
       env: { NO_COLOR: '' },
+      discoverModels: async () => [],
     });
 
     await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
-    await terminal.output.waitFor('Step 2 of 4: planner');
-    const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
-    const nextFields = [
-      'Planner model',
-      'Builder provider',
-      'Builder model',
-      'Builder permissions',
-      'Step 4 of 4',
-    ];
-    for (let index = 0; index < answers.length; index += 1) {
-      const answer = answers[index]!;
-      await terminal.input.waitUntilReady();
-      terminal.input.push('\x7f'.repeat(100));
-      terminal.input.push(answer);
-      await terminal.output.waitFor(answer);
-      terminal.input.push('\r');
-      await settleInput();
-      await terminal.input.waitUntilReady();
-      await terminal.output.waitFor(nextFields[index]!);
-    }
+    await terminal.output.waitFor('Choose a profile to edit');
+    await completeManualProfile(terminal, 0, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 1, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 2, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 3, 'provider-b', 'builder-model');
+    await chooseReview(terminal);
     await terminal.output.waitFor('Step 4 of 4');
     expect(terminal.output.text()).toContain('Nothing has been written yet.');
     await expect(fileExists(join(directory, '.binaflow', 'config.json'))).resolves.toBe(false);
@@ -81,31 +68,19 @@ describe('Ink setup and launch safety', () => {
       output: terminal.output as unknown as NodeJS.WriteStream,
       errorOutput: terminal.output as unknown as NodeJS.WriteStream,
       env: { NO_COLOR: '' },
+      discoverModels: async () => [],
     });
 
     await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
     await terminal.input.waitUntilReady();
     terminal.input.push('\r');
-    await terminal.output.waitFor('Step 2 of 4: planner');
-    const answers = ['provider-a', 'planner-model', 'provider-b', 'builder-model', 'no'];
-    const nextFields = [
-      'Planner model',
-      'Builder provider',
-      'Builder model',
-      'Builder permissions',
-      'Step 4 of 4',
-    ];
-    for (let index = 0; index < answers.length; index += 1) {
-      await terminal.input.waitUntilReady();
-      terminal.input.push('\x7f'.repeat(100));
-      terminal.input.push(answers[index]!);
-      await terminal.output.waitFor(answers[index]!);
-      terminal.input.push('\r');
-      await settleInput();
-      await terminal.input.waitUntilReady();
-      await terminal.output.waitFor(nextFields[index]!);
-    }
+    await terminal.output.waitFor('Choose a profile to edit');
+    await completeManualProfile(terminal, 0, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 1, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 2, 'provider-a', 'planner-model');
+    await completeManualProfile(terminal, 3, 'provider-b', 'builder-model');
+    await chooseReview(terminal);
     const configPath = join(directory, '.binaflow', 'config.json');
     const original = '{"profiles":{},"piCommand":"pi"}';
     await mkdir(join(directory, '.binaflow'), { recursive: true });
@@ -120,6 +95,145 @@ describe('Ink setup and launch safety', () => {
     await running;
   }, 10_000);
 
+  it('selects discovered models independently for every profile', async () => {
+    const directory = await temporaryDirectory('binaflow-ink-setup-discovered-');
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      discoverModels: async () => [{ provider: 'openai', model: 'gpt-5', displayName: 'GPT 5' }],
+    });
+
+    await acceptWelcome(terminal);
+    await terminal.output.waitFor('Step 1 of 4');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Choose a profile to edit');
+    await completeDiscoveredProfile(terminal, 0, 0);
+    await completeDiscoveredProfile(terminal, 1, 0);
+    await completeDiscoveredProfile(terminal, 2, 0);
+    await completeDiscoveredProfile(terminal, 3, 0);
+    await chooseReview(terminal);
+    await terminal.output.waitFor('Step 4 of 4');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Configuration written. Review diagnosis before launching.');
+
+    expect(
+      JSON.parse(await readFile(join(directory, '.binaflow', 'config.json'), 'utf8')),
+    ).toMatchObject({
+      profiles: {
+        planner: { provider: 'openai', model: 'gpt-5' },
+        builder: { provider: 'openai', model: 'gpt-5' },
+      },
+    });
+    terminal.input.push('q');
+    await running;
+  });
+
+  it('updates configured agents through the model selector without replacing other settings', async () => {
+    const directory = await temporaryDirectory('binaflow-ink-agent-configuration-');
+    await writeConfig(directory, {
+      planner: profile('planner'),
+      builder: profile('builder', true),
+    });
+    const configPath = join(directory, '.binaflow', 'config.json');
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        ...JSON.parse(await readFile(configPath, 'utf8')),
+        qaHistory: { enabled: true },
+        customSetting: 'preserved',
+      }),
+    );
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      discoverModels: async () => [{ provider: 'openai', model: 'gpt-5', displayName: 'GPT 5' }],
+    });
+
+    await waitForStudio(terminal);
+    terminal.input.push('c');
+    await terminal.output.waitFor('Agent configuration');
+    await terminal.output.waitFor('Choose a profile to edit');
+    for (const [index, profile] of ['analyst', 'planner', 'qa', 'builder'].entries()) {
+      for (let move = 0; move < index; move += 1) terminal.input.push('j');
+      terminal.input.push('\r');
+      await terminal.output.waitFor(`${profile} provider`);
+      terminal.input.push('\r');
+      await terminal.output.waitFor(`${profile} model`);
+      terminal.input.push('\r');
+      await terminal.output.waitFor(`${profile} thinking effort`);
+      terminal.input.push('\r');
+      if (profile === 'builder') {
+        await terminal.output.waitFor('builder permissions');
+        terminal.input.push('\r');
+      }
+      await terminal.output.waitFor('Choose a profile to edit');
+    }
+    for (let move = 0; move < 4; move += 1) terminal.input.push('j');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Save changes');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Configuration written. Review diagnosis before launching.');
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toMatchObject({
+      qaHistory: { enabled: true },
+      customSetting: 'preserved',
+      profiles: {
+        planner: { provider: 'openai', model: 'gpt-5' },
+        builder: { provider: 'openai', model: 'gpt-5', workspaceMode: 'read-write' },
+      },
+    });
+    terminal.input.push('q');
+    await running;
+  });
+
+  it('does not write an edited profile when the configuration flow is cancelled', async () => {
+    const directory = await temporaryDirectory('binaflow-ink-agent-cancel-');
+    await writeConfig(directory, {
+      analyst: profile('analyst'),
+      planner: profile('planner'),
+      qa: profile('qa'),
+      builder: profile('builder', true),
+    });
+    const configPath = join(directory, '.binaflow', 'config.json');
+    const original = await readFile(configPath, 'utf8');
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      discoverModels: async () => [{ provider: 'openai', model: 'gpt-5' }],
+    });
+
+    await waitForStudio(terminal);
+    terminal.input.push('c');
+    await terminal.output.waitFor('Choose a profile to edit');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('analyst provider');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('analyst model');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('analyst thinking effort');
+    terminal.input.push('j');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Choose a profile to edit');
+    terminal.input.push('q');
+    await terminal.output.waitFor('Use this folder');
+
+    expect(await readFile(configPath, 'utf8')).toBe(original);
+    terminal.input.push('q');
+    await running;
+  });
+
   it('uses manual text input when Pi discovery has no models', async () => {
     const directory = await temporaryDirectory('binaflow-ink-setup-fallback-');
     const terminal = createTerminal();
@@ -129,32 +243,18 @@ describe('Ink setup and launch safety', () => {
       output: terminal.output as unknown as NodeJS.WriteStream,
       errorOutput: terminal.output as unknown as NodeJS.WriteStream,
       env: { NO_COLOR: '' },
+      discoverModels: async () => [],
     });
 
     await acceptWelcome(terminal);
     await terminal.output.waitFor('Step 1 of 4');
     terminal.input.push('\r');
-    await terminal.output.waitFor('Step 2 of 4: planner');
-    terminal.input.push('manual-provider');
-    await terminal.output.waitFor('manual-provider');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Planner model');
-    terminal.input.push('manual-model');
-    await terminal.output.waitFor('manual-model');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Step 3 of 4: builder');
-    terminal.input.push('manual-provider');
-    await terminal.output.waitFor('manual-provider');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Builder model');
-    terminal.input.push('manual-builder');
-    await terminal.output.waitFor('manual-builder');
-    terminal.input.push('\r');
-    await terminal.output.waitFor('Builder permissions');
-    terminal.input.push('no');
-    await terminal.output.waitFor('no');
-    await terminal.input.waitUntilReady();
-    terminal.input.push('\r');
+    await terminal.output.waitFor('Choose a profile to edit');
+    await completeManualProfile(terminal, 0, 'manual-provider', 'manual-model');
+    await completeManualProfile(terminal, 1, 'manual-provider', 'manual-model');
+    await completeManualProfile(terminal, 2, 'manual-provider', 'manual-model');
+    await completeManualProfile(terminal, 3, 'manual-provider', 'manual-builder');
+    await chooseReview(terminal);
     await terminal.output.waitFor('Step 4 of 4');
     expect(terminal.output.text()).toContain('Nothing has been written yet.');
     terminal.input.push('q');
@@ -197,6 +297,59 @@ describe('Ink setup and launch safety', () => {
     terminal.input.push('q');
     await terminal.output.waitFor('Configuration readiness');
     expect(execute).not.toHaveBeenCalled();
+    terminal.input.push('q');
+    await running;
+  });
+
+  it('loads a discovered reviewed TODO into the todo-build-qa launch input', async () => {
+    const directory = await temporaryDirectory('binaflow-ink-todo-launch-');
+    await writeConfig(directory, {
+      analyst: profile('analyst'),
+      builder: profile('builder', true),
+      qa: profile('qa'),
+    });
+    await writeFile(join(directory, 'TODO.md'), '# Reviewed TODO\n\n- [ ] Implement behavior');
+    const execute = vi
+      .fn<
+        (
+          workflow: unknown,
+          request: { objective: string; input: Record<string, unknown> },
+        ) => Promise<WorkflowRun>
+      >()
+      .mockResolvedValue(completedRun());
+    const terminal = createTerminal();
+    const running = runInkShell({
+      cwd: directory,
+      input: terminal.input as unknown as NodeJS.ReadStream,
+      output: terminal.output as unknown as NodeJS.WriteStream,
+      errorOutput: terminal.output as unknown as NodeJS.WriteStream,
+      env: { NO_COLOR: '' },
+      applicationContext: applicationContext(execute),
+    });
+
+    await waitForStudio(terminal);
+    terminal.input.push('j');
+    await terminal.input.waitUntilReady();
+    terminal.input.push('j');
+    await terminal.input.waitUntilReady();
+    terminal.input.push('n');
+    await terminal.output.waitFor('todo-build-qa input');
+    terminal.input.push('Execute the reviewed TODO');
+    await terminal.output.waitFor('Execute the reviewed TODO');
+    terminal.input.push('\r');
+    await terminal.output.waitFor('Reviewed TODO: TODO.md');
+    terminal.input.push('\r');
+    await vi.waitFor(() => expect(execute).toHaveBeenCalled());
+    expect(execute.mock.calls[0]?.[1]).toMatchObject({
+      objective: 'Execute the reviewed TODO',
+      input: {
+        objective: 'Execute the reviewed TODO',
+        todo: '# Reviewed TODO\n\n- [ ] Implement behavior',
+        todoPath: 'TODO.md',
+      },
+    });
+    terminal.input.push('q');
+    await terminal.output.waitFor('Workspace status');
     terminal.input.push('q');
     await running;
   });
@@ -327,8 +480,62 @@ function createTerminal(): { input: FakeInput; output: FakeOutput } {
   return { input: new FakeInput(), output: new FakeOutput() };
 }
 
-async function settleInput(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 20));
+async function completeManualProfile(
+  terminal: { input: FakeInput; output: FakeOutput },
+  index: number,
+  provider: string,
+  model: string,
+): Promise<void> {
+  for (let move = 0; move < index; move += 1) terminal.input.push('j');
+  terminal.input.push('\r');
+  const profileName = ['analyst', 'planner', 'qa', 'builder'][index]!;
+  await terminal.output.waitFor(`${profileName} provider`);
+  await terminal.input.waitUntilReady();
+  terminal.input.push('\x7f'.repeat(100));
+  terminal.input.push(provider);
+  await terminal.output.waitFor(provider);
+  terminal.input.push('\r');
+  await terminal.output.waitFor(`${profileName} model`);
+  await terminal.input.waitUntilReady();
+  terminal.input.push('\x7f'.repeat(100));
+  terminal.input.push(model);
+  await terminal.output.waitFor(model);
+  terminal.input.push('\r');
+  await terminal.output.waitFor(`${profileName} thinking effort`);
+  terminal.input.push('\r');
+  if (profileName === 'builder') {
+    await terminal.output.waitFor('builder permissions');
+    terminal.input.push('no');
+    terminal.input.push('\r');
+  }
+  await terminal.output.waitFor('Choose a profile to edit');
+}
+
+async function completeDiscoveredProfile(
+  terminal: { input: FakeInput; output: FakeOutput },
+  index: number,
+  modelMove: number,
+): Promise<void> {
+  for (let move = 0; move < index; move += 1) terminal.input.push('j');
+  terminal.input.push('\r');
+  const profileName = ['analyst', 'planner', 'qa', 'builder'][index]!;
+  await terminal.output.waitFor(`${profileName} provider`);
+  terminal.input.push('\r');
+  await terminal.output.waitFor(`${profileName} model`);
+  for (let move = 0; move < modelMove; move += 1) terminal.input.push('j');
+  terminal.input.push('\r');
+  await terminal.output.waitFor(`${profileName} thinking effort`);
+  terminal.input.push('\r');
+  if (profileName === 'builder') {
+    await terminal.output.waitFor('builder permissions');
+    terminal.input.push('\r');
+  }
+  await terminal.output.waitFor('Choose a profile to edit');
+}
+
+async function chooseReview(terminal: { input: FakeInput; output: FakeOutput }): Promise<void> {
+  for (let move = 0; move < 4; move += 1) terminal.input.push('j');
+  terminal.input.push('\r');
 }
 
 async function temporaryDirectory(prefix: string): Promise<string> {

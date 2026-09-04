@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { discoverWorkflows } from '../src/application/operations.js';
 import type { RunView } from '../src/application/run-view.js';
 import type { ConfigurationDiagnosis } from '../src/application/config-operations.js';
+import { setupProfileChoices } from '../src/tui/launch.js';
 import type { LaunchInputState } from '../src/tui/launch.js';
 import type { TuiEvent, TuiState } from '../src/tui/model.js';
 import { createInitialTuiState } from '../src/tui/model.js';
@@ -53,6 +54,30 @@ const transitions: Transition[] = [
       expect(state.setupValues).toEqual({});
       expect(state.setupStep).toBe(1);
       expect(state.effect).toBeUndefined();
+    },
+  },
+  {
+    name: 'discovered models can be selected independently for planner and builder',
+    events: [
+      diagnosed(missingConfig()),
+      useFolder(),
+      {
+        type: 'setup-models',
+        models: [{ provider: 'openai', model: 'gpt-5', displayName: 'GPT 5' }],
+      },
+      { type: 'setup-next' },
+      { type: 'setup-choice' },
+      { type: 'setup-choice' },
+    ],
+    expect: (state) => {
+      expect(state.setupStep).toBe(3);
+      expect(state.setupField).toBe(4);
+      expect(state.setupValues).toMatchObject({
+        plannerProvider: 'openai',
+        plannerModel: 'gpt-5',
+        builderProvider: 'openai',
+        builderModel: 'gpt-5',
+      });
     },
   },
   {
@@ -123,6 +148,31 @@ const transitions: Transition[] = [
     expect: (state) => {
       expect(state.detail).not.toBe('launch');
       expect(state.error).toContain('config file is invalid');
+    },
+  },
+  {
+    name: 'reviewed TODO discovery opens a bounded file selector',
+    events: [
+      diagnosed(validConfig()),
+      useFolder(),
+      {
+        type: 'todo-files-found',
+        candidates: [
+          { path: '/workspaces/demo/TODO.md', relativePath: 'TODO.md', sizeBytes: 120 },
+          {
+            path: '/workspaces/demo/docs/TODO-auth.md',
+            relativePath: 'docs/TODO-auth.md',
+            sizeBytes: 240,
+          },
+        ],
+      },
+      { type: 'move', direction: 1, visibleRows: 10 },
+      { type: 'todo-select' },
+    ],
+    expect: (state) => {
+      expect(state.detail).toBe('todo-select');
+      expect(state.selection).toBe(1);
+      expect(state.status).toBe('Loading reviewed TODO...');
     },
   },
   {
@@ -274,6 +324,29 @@ describe('TUI transitions', () => {
     check(state);
   });
 
+  it('keeps indexed planner and builder answers independent', () => {
+    let state = createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH });
+    state = reduce(state, diagnosed(missingConfig()));
+    state = reduce(state, useFolder());
+    state = reduce(state, {
+      type: 'setup-models',
+      models: [
+        { provider: 'provider-a', model: 'planner-model' },
+        { provider: 'provider-b', model: 'builder-model' },
+      ],
+    });
+    state = reduce(state, { type: 'setup-next' });
+    state = reduce(state, { type: 'setup-choice' });
+    state = reduce(state, { type: 'move', direction: 1, visibleRows: 5 });
+    state = reduce(state, { type: 'move', direction: 1, visibleRows: 5 });
+    state = reduce(state, { type: 'setup-choice' });
+
+    expect(state.setupProfileValues).toEqual({
+      planner: { provider: 'provider-b', model: 'builder-model' },
+      builder: { provider: 'provider-a', model: 'planner-model' },
+    });
+  });
+
   it('moves an existing selection offset upward when selection moves up', () => {
     const state = {
       ...createInitialTuiState({ cwd: CWD, configPath: CONFIG_PATH }),
@@ -284,6 +357,34 @@ describe('TUI transitions', () => {
     expect(reduce(state, { type: 'move', direction: -1, visibleRows: 3 })).toMatchObject({
       selection: 2,
       offset: 1,
+    });
+  });
+
+  it('filters discovered models by provider without showing internal model ids', () => {
+    const models = [
+      { provider: 'openai', model: 'gpt-5', displayName: 'GPT 5' },
+      { provider: 'openai', model: 'gpt-5-mini' },
+      { provider: 'anthropic', model: 'claude' },
+    ];
+
+    expect(setupProfileChoices('planner', 0, models, {})).toEqual([
+      { label: 'anthropic', value: 'anthropic' },
+      { label: 'openai', value: 'openai' },
+    ]);
+    expect(
+      setupProfileChoices('planner', 1, models, { planner: { provider: 'openai' } }),
+    ).toMatchObject([
+      { label: 'GPT 5 (openai)', value: 'gpt-5' },
+      { label: 'gpt-5-mini (openai)', value: 'gpt-5-mini' },
+    ]);
+  });
+
+  it('offers Default thinking without persisting a value', () => {
+    const choices = setupProfileChoices('qa', 2, [], {});
+    expect(choices[0]).toMatchObject({ label: 'Default', value: '' });
+    expect(choices.find((choice) => choice.label === 'high')).toMatchObject({
+      label: 'high',
+      value: 'high',
     });
   });
 

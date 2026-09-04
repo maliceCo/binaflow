@@ -3,8 +3,13 @@ import { discoverWorkflows } from '../application/operations.js';
 import type { ArtifactContentView } from '../application/operations.js';
 import {
   SETUP_FIELDS,
+  SETUP_PROFILES,
   profileReview,
+  setupProfileChoices,
+  setupProfileFields,
+  type SetupProfileName,
   setupChoices,
+  usesDiscoveredModels,
   validateSetupValue,
   validateWorkflowValue,
   validateWorkflowValues,
@@ -25,6 +30,7 @@ export const WELCOME_ACTIONS = [
 ];
 export const FOLDER_CONFIRM_ACTIONS = ['Use this folder', 'Back'];
 export const SETUP_STEP1_ACTIONS = ['Continue', 'Retry diagnosis', 'Cancel'];
+export const SETUP_PROFILE_ACTIONS = ['Analyst', 'Planner', 'QA', 'Builder', 'Review and save'];
 export const REVIEW_ACTIONS = ['Save', 'Show full config', 'Go back', 'Cancel'];
 export const LAUNCH_CONFIRM_ACTIONS = ['Confirm and launch', 'Edit objective', 'Cancel'];
 
@@ -119,6 +125,38 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'setup-next':
       if (state.overlay !== 'setup') return state;
       return nextSetupStep({ ...clearField(state, 'error'), inputValue: '' });
+    case 'setup-profile-select': {
+      if (state.overlay !== 'setup' || !state.setupProfileSelection) return state;
+      if (state.selection === SETUP_PROFILES.length) {
+        const complete = SETUP_PROFILES.every((profile) => {
+          const values = state.setupProfileValues[profile];
+          return (
+            Boolean(values?.provider && values.model) &&
+            ((profile !== 'builder' && values?.writeAccess === undefined) ||
+              (profile === 'builder' && values?.writeAccess !== undefined))
+          );
+        });
+        if (!complete) {
+          return { ...state, error: 'Configure all profiles before reviewing.' };
+        }
+        return { ...clearField(state, 'error'), setupStep: 4, selection: 0, offset: 0 };
+      }
+      const profile = SETUP_PROFILES[state.selection];
+      if (!profile) return state;
+      return {
+        ...clearField(state, 'error'),
+        setupProfileSelection: false,
+        setupProfile: profile,
+        setupStep: 3,
+        setupField: 0,
+        setupEditedProfiles: state.setupEditedProfiles.includes(profile)
+          ? state.setupEditedProfiles
+          : [...state.setupEditedProfiles, profile],
+        selection: selectedProfileChoice(state, profile, 0),
+        offset: 0,
+        inputValue: '',
+      };
+    }
     case 'setup-back':
       if (state.overlay !== 'setup') return state;
       return previousSetupStep({ ...clearField(state, 'error'), inputValue: '' });
@@ -132,7 +170,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         overlay: 'welcome',
         setupStep: 1,
         setupField: 0,
+        editingConfiguration: false,
+        setupProfileSelection: false,
+        setupProfile: undefined,
+        setupEditedProfiles: [],
         setupValues: {},
+        setupProfileValues: {},
         selection: 0,
         offset: 0,
         inputValue: '',
@@ -140,18 +183,88 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
     case 'setup-submit': {
       if (state.overlay !== 'setup' || state.setupStep === 1 || state.setupStep === 4) return state;
+      if (state.setupProfile && !state.setupProfileSelection) {
+        const field = setupProfileFields(state.setupProfile)[state.setupField];
+        if (!field) return state;
+        const invalid = validateSetupProfileValue(field.key, event.value);
+        if (invalid) return { ...state, error: invalid };
+        const next = {
+          ...clearField(state, 'error'),
+          setupProfileValues: updateIndexedProfileValue(
+            state.setupProfileValues,
+            state.setupProfile,
+            field.key,
+            event.value,
+          ),
+          inputValue: '',
+        };
+        return nextProfileStep(next);
+      }
       const field = SETUP_FIELDS[state.setupField] as (typeof SETUP_FIELDS)[number];
       const invalid = validateSetupValue(field, event.value);
       if (invalid) return { ...state, error: invalid };
+      const nextValue = event.value.trim();
       const next = {
         ...clearField(state, 'error'),
-        setupValues: { ...state.setupValues, [field.key]: event.value.trim() },
+        setupValues: { ...state.setupValues, [field.key]: nextValue },
+        setupProfileValues: updateSetupProfileValue(state.setupProfileValues, field.key, nextValue),
         inputValue: '',
       };
       return nextSetupStep(next);
     }
-    case 'setup-models':
-      return { ...clearField(state, 'effect'), setupModels: event.models };
+    case 'setup-models': {
+      const next = { ...clearField(state, 'effect'), setupModels: event.models };
+      return {
+        ...next,
+        selection: selectedSetupChoice(next),
+        offset: 0,
+      };
+    }
+    case 'setup-choice': {
+      if (state.overlay !== 'setup' || state.setupStep === 1 || state.setupStep === 4) return state;
+      if (state.setupProfile && !state.setupProfileSelection) {
+        const choice = setupProfileChoices(
+          state.setupProfile,
+          state.setupField,
+          state.setupModels ?? [],
+          state.setupProfileValues,
+        )[state.selection];
+        if (!choice) return state;
+        return nextProfileStep({
+          ...clearField(state, 'error'),
+          setupProfileValues: updateIndexedProfileValue(
+            state.setupProfileValues,
+            state.setupProfile,
+            setupProfileFields(state.setupProfile)[state.setupField]!.key,
+            choice.value,
+          ),
+          inputValue: '',
+        });
+      }
+      const choice = setupChoices(state.setupField, state.setupModels ?? [])[state.selection];
+      if (!choice) return state;
+      if (choice.model) {
+        const prefix = state.setupField === 0 ? 'planner' : 'builder';
+        return nextSetupStep({
+          ...clearField(state, 'error'),
+          setupValues: {
+            ...state.setupValues,
+            [`${prefix}Provider`]: choice.model.provider,
+            [`${prefix}Model`]: choice.model.model,
+          },
+          setupProfileValues: {
+            ...state.setupProfileValues,
+            [prefix]: {
+              ...state.setupProfileValues[prefix as SetupProfileName],
+              provider: choice.model.provider,
+              model: choice.model.model,
+            },
+          },
+          inputValue: '',
+        });
+      }
+      return reduce(state, { type: 'setup-submit', value: choice.value });
+    }
     case 'setup-save':
       if (state.overlay !== 'setup') return state;
       if (!state.generated) return { ...state, error: 'Configuration preview is not ready yet.' };
@@ -164,6 +277,10 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return {
         ...clearField(state, 'error'),
         overlay: 'none',
+        setupProfileSelection: false,
+        setupProfile: undefined,
+        setupEditedProfiles: [],
+        editingConfiguration: false,
         detail: 'diagnosis',
         effect: 'diagnose-cwd',
         selection: 0,
@@ -287,6 +404,29 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
     case 'qa-defect-details-set':
       return { ...clearField(state, 'error'), status: undefined, qaDefectDetails: event.details };
+    case 'open-agent-configuration': {
+      const diagnosis = state.diagnosis;
+      if (state.overlay !== 'none' || !diagnosis?.configValid) {
+        return { ...state, error: 'A valid configuration is required before editing agents.' };
+      }
+      return {
+        ...clearField(clearField(clearField(state, 'generated'), 'setupModels'), 'error'),
+        overlay: 'setup',
+        setupStep: 2,
+        setupField: 0,
+        setupProfileSelection: true,
+        setupProfile: undefined,
+        setupEditedProfiles: [],
+        editingConfiguration: true,
+        ...setupValuesFromDiagnosis(diagnosis),
+        effect: 'discover-setup-models',
+        selection: 0,
+        offset: 0,
+        inputValue: '',
+        showFullConfig: false,
+        setupPreviewOffset: 0,
+      };
+    }
     case 'new-run': {
       const diagnosis = state.diagnosis;
       if (!diagnosis) {
@@ -298,7 +438,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
           overlay: 'setup',
           setupStep: 1,
           setupField: 0,
+          setupProfileSelection: false,
+          setupProfile: undefined,
+          setupEditedProfiles: [],
+          editingConfiguration: false,
           setupValues: {},
+          setupProfileValues: {},
           effect: 'discover-setup-models',
           selection: 0,
           offset: 0,
@@ -322,13 +467,35 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'launch-cancel':
       if (state.detail !== 'launch') return state;
       return {
-        ...clearField(clearField(state, 'launchInput'), 'error'),
+        ...clearField(clearField(clearField(state, 'launchInput'), 'todoCandidates'), 'error'),
         detail: 'empty',
+        focus: 'workflows',
         inputValue: '',
+      };
+    case 'todo-files-found':
+      return {
+        ...clearField(clearField(state, 'error'), 'launchInput'),
+        detail: 'todo-select',
+        focus: 'detail',
+        todoCandidates: event.candidates,
+        selection: 0,
+        offset: 0,
+      };
+    case 'todo-select':
+      if (state.detail !== 'todo-select') return state;
+      return { ...clearField(state, 'error'), status: 'Loading reviewed TODO...' };
+    case 'todo-selection-cancel':
+      if (state.detail !== 'todo-select') return state;
+      return {
+        ...clearField(clearField(state, 'todoCandidates'), 'status'),
+        detail: 'empty',
+        focus: 'workflows',
+        selection: 0,
+        offset: 0,
       };
     case 'launch-set':
       return {
-        ...clearField(state, 'error'),
+        ...clearField(clearField(clearField(state, 'error'), 'status'), 'todoCandidates'),
         detail: 'launch',
         launchInput: event.input,
         selection: 0,
@@ -582,13 +749,22 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       switch (state.setupStep) {
         case 1:
           return moveList(state, SETUP_STEP1_ACTIONS.length, direction, visibleRows);
-        case 2:
+        case 2: {
+          if (state.setupProfileSelection)
+            return moveList(state, SETUP_PROFILE_ACTIONS.length, direction, visibleRows);
+          const count = setupChoices(state.setupField, state.setupModels ?? []).length;
+          if (count === 0) return state;
+          return moveList(state, count, direction, visibleRows);
+        }
         case 3: {
-          const count = setupChoices(
-            state.setupField,
-            state.setupModels ?? [],
-            state.setupValues,
-          ).length;
+          const count = state.setupProfile
+            ? setupProfileChoices(
+                state.setupProfile,
+                state.setupField,
+                state.setupModels ?? [],
+                state.setupProfileValues,
+              ).length
+            : setupChoices(state.setupField, state.setupModels ?? []).length;
           if (count === 0) return state;
           return moveList(state, count, direction, visibleRows);
         }
@@ -658,6 +834,8 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
           visibleRows,
         ),
       };
+    case 'todo-select':
+      return moveList(state, state.todoCandidates?.length ?? 0, direction, visibleRows);
     case 'launch': {
       const input = state.launchInput;
       if (!input || input.field < workflowInputFields(input.workflow).length) return state;
@@ -811,23 +989,199 @@ function enterFolder(state: TuiState, diagnosis: ConfigurationDiagnosis | undefi
       overlay: 'setup',
       setupStep: 1,
       setupField: 0,
+      editingConfiguration: false,
       setupValues: {},
+      setupProfileValues: {},
       effect: 'discover-setup-models',
     };
   }
   return { ...next, overlay: 'none', detail: 'diagnosis' };
 }
 
+function setupValuesFromDiagnosis(diagnosis: ConfigurationDiagnosis): {
+  setupValues: TuiState['setupValues'];
+  setupProfileValues: TuiState['setupProfileValues'];
+} {
+  const profiles = Object.fromEntries(
+    diagnosis.profiles.flatMap((profile) =>
+      profile.valid && profile.settings ? [[profile.name, profile.settings]] : [],
+    ),
+  );
+  const planner = profiles.planner ?? profiles.analyst ?? profiles.qa;
+  const builder = profiles.builder;
+  const setupProfileValues = Object.fromEntries(
+    Object.entries(profiles).flatMap(([name, profile]) =>
+      name === 'analyst' || name === 'planner' || name === 'qa' || name === 'builder'
+        ? [
+            [
+              name,
+              {
+                ...(profile.provider ? { provider: profile.provider } : {}),
+                model: profile.model,
+                ...(profile.thinking ? { thinking: profile.thinking } : {}),
+                ...(name === 'builder'
+                  ? { writeAccess: profile.workspaceMode === 'read-write' }
+                  : {}),
+              },
+            ],
+          ]
+        : [],
+    ),
+  ) as TuiState['setupProfileValues'];
+  return {
+    setupValues: {
+      ...(planner ? { plannerProvider: planner.provider ?? '', plannerModel: planner.model } : {}),
+      ...(builder
+        ? {
+            builderProvider: builder.provider ?? '',
+            builderModel: builder.model,
+            builderWriteAccess: builder.workspaceMode === 'read-write' ? 'yes' : 'no',
+          }
+        : {}),
+    },
+    setupProfileValues,
+  };
+}
+
+function updateSetupProfileValue(
+  values: TuiState['setupProfileValues'],
+  key: string,
+  value: string,
+): TuiState['setupProfileValues'] {
+  const profileName = key.startsWith('planner') ? 'planner' : 'builder';
+  const field = key.endsWith('Provider')
+    ? 'provider'
+    : key.endsWith('Model')
+      ? 'model'
+      : 'writeAccess';
+  return {
+    ...values,
+    [profileName]: {
+      ...values[profileName],
+      [field]: field === 'writeAccess' ? ['y', 'yes'].includes(value.toLowerCase()) : value,
+    },
+  };
+}
+
+function selectedSetupChoice(state: TuiState): number {
+  const field = SETUP_FIELDS[state.setupField];
+  if (field?.key === 'builderWriteAccess')
+    return state.setupValues.builderWriteAccess === 'yes' ? 1 : 0;
+  if (field?.key !== 'plannerProvider' && field?.key !== 'builderProvider') return 0;
+  const provider = state.setupValues[field.key];
+  const model =
+    state.setupValues[field.key === 'plannerProvider' ? 'plannerModel' : 'builderModel'];
+  const index = setupChoices(state.setupField, state.setupModels ?? []).findIndex(
+    (choice) => choice.model?.provider === provider && choice.model?.model === model,
+  );
+  return index < 0 ? 0 : index;
+}
+
+function selectedProfileChoice(
+  state: TuiState,
+  profile: SetupProfileName,
+  fieldIndex: number,
+): number {
+  const value = state.setupProfileValues[profile];
+  const field = setupProfileFields(profile)[fieldIndex];
+  if (!field) return 0;
+  const target =
+    field.key === 'writeAccess'
+      ? value?.writeAccess === true
+        ? 'yes'
+        : 'no'
+      : field.key === 'thinking'
+        ? (value?.thinking ?? '')
+        : value?.[field.key];
+  const index = setupProfileChoices(
+    profile,
+    fieldIndex,
+    state.setupModels ?? [],
+    state.setupProfileValues,
+  ).findIndex((choice) => choice.value === target);
+  return index < 0 ? 0 : index;
+}
+
+function updateIndexedProfileValue(
+  values: TuiState['setupProfileValues'],
+  profile: SetupProfileName,
+  key: 'provider' | 'model' | 'thinking' | 'writeAccess',
+  value: string,
+): TuiState['setupProfileValues'] {
+  const current = values[profile] ?? {};
+  if (key === 'thinking' && value.trim() === '') {
+    const withoutThinking = { ...current };
+    delete withoutThinking.thinking;
+    return { ...values, [profile]: withoutThinking };
+  }
+  return {
+    ...values,
+    [profile]: {
+      ...current,
+      [key]:
+        key === 'writeAccess' ? ['y', 'yes'].includes(value.trim().toLowerCase()) : value.trim(),
+    },
+  };
+}
+
+function validateSetupProfileValue(
+  key: 'provider' | 'model' | 'thinking' | 'writeAccess',
+  value: string,
+): string | undefined {
+  if (key === 'writeAccess') return validateSetupValue(SETUP_FIELDS[4]!, value);
+  return value.trim() ? undefined : 'A non-empty value is required.';
+}
+
+function nextProfileStep(state: TuiState): TuiState {
+  if (!state.setupProfile) return state;
+  const fields = setupProfileFields(state.setupProfile);
+  if (state.setupField >= fields.length - 1) {
+    return {
+      ...state,
+      setupStep: 2,
+      setupProfileSelection: true,
+      setupProfile: undefined,
+      selection: 0,
+      offset: 0,
+      inputValue: '',
+    };
+  }
+  const setupField = state.setupField + 1;
+  return {
+    ...state,
+    setupField,
+    selection: selectedProfileChoice(state, state.setupProfile, setupField),
+    offset: 0,
+    inputValue: '',
+  };
+}
+
+function withSetupSelection(state: TuiState): TuiState {
+  return { ...state, selection: selectedSetupChoice(state), offset: 0 };
+}
+
 function nextSetupStep(state: TuiState): TuiState {
+  const discovered = usesDiscoveredModels(state.setupModels ?? []);
   switch (state.setupStep) {
     case 1:
-      return { ...state, setupStep: 2, setupField: 0, selection: 0, offset: 0 };
+      return {
+        ...state,
+        setupStep: 2,
+        setupField: 0,
+        setupProfileSelection: true,
+        setupProfile: undefined,
+        selection: 0,
+        offset: 0,
+      };
     case 2:
-      if (state.setupField === 0) return { ...state, setupField: 1, selection: 0, offset: 0 };
-      return { ...state, setupStep: 3, setupField: 2, selection: 0, offset: 0 };
+      if (state.setupField === 0 && !discovered)
+        return withSetupSelection({ ...state, setupField: 1 });
+      return withSetupSelection({ ...state, setupStep: 3, setupField: 2 });
     case 3:
+      if (state.setupField === 2)
+        return withSetupSelection({ ...state, setupField: discovered ? 4 : 3 });
       if (state.setupField < 4)
-        return { ...state, setupField: state.setupField + 1, selection: 0, offset: 0 };
+        return withSetupSelection({ ...state, setupField: state.setupField + 1 });
       return { ...state, setupStep: 4, selection: 0, offset: 0 };
     case 4:
       return state;
@@ -835,13 +1189,22 @@ function nextSetupStep(state: TuiState): TuiState {
 }
 
 function previousSetupStep(state: TuiState): TuiState {
+  const discovered = usesDiscoveredModels(state.setupModels ?? []);
   switch (state.setupStep) {
     case 4:
       return { ...state, setupStep: 3, setupField: 4, selection: 0, offset: 0 };
     case 3:
+      if (state.setupField === 4 && discovered)
+        return { ...state, setupField: 2, selection: 0, offset: 0 };
       if (state.setupField > 2)
         return { ...state, setupField: state.setupField - 1, selection: 0, offset: 0 };
-      return { ...state, setupStep: 2, setupField: 1, selection: 0, offset: 0 };
+      return {
+        ...state,
+        setupStep: 2,
+        setupField: discovered ? 0 : 1,
+        selection: 0,
+        offset: 0,
+      };
     case 2:
       if (state.setupField > 0)
         return { ...state, setupField: state.setupField - 1, selection: 0, offset: 0 };
