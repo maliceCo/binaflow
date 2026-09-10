@@ -16,7 +16,16 @@ import {
   workflowInputFields,
   generatedConfigurationPreview,
 } from './launch.js';
-import { visibleFolderEntries, type TuiEvent, type TuiState } from './model.js';
+import {
+  preparationActionLabels,
+  preparationSettingChoices,
+  serializePreparationSynthesis,
+  type QaSeverityFilter,
+  visibleFolderEntries,
+  type TuiEvent,
+  type TuiState,
+} from './model.js';
+import type { QaFinding } from '../workflows/plan-build-qa.js';
 import { approvalActionItems } from './screens/approval.js';
 import { detailActionItems } from './screens/detail.js';
 import { diagnosisLines } from './screens/diagnosis.js';
@@ -33,6 +42,7 @@ export const SETUP_STEP1_ACTIONS = ['Continue', 'Retry diagnosis', 'Cancel'];
 export const SETUP_PROFILE_ACTIONS = ['Analyst', 'Planner', 'QA', 'Builder', 'Review and save'];
 export const REVIEW_ACTIONS = ['Save', 'Show full config', 'Go back', 'Cancel'];
 export const LAUNCH_CONFIRM_ACTIONS = ['Confirm and launch', 'Edit objective', 'Cancel'];
+export const PREPARATION_ACTIONS = ['Approve plan and execute', 'Back'];
 
 export function reduce(state: TuiState, event: TuiEvent): TuiState {
   switch (event.type) {
@@ -179,6 +189,8 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         selection: 0,
         offset: 0,
         inputValue: '',
+        reviewFocus: 'editor',
+        reviewSelected: 0,
         showFullConfig: false,
       };
     case 'setup-submit': {
@@ -367,7 +379,11 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       }
       return state;
     case 'review-message-submit':
-      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      if (
+        (state.detail !== 'review-thread' && state.detail !== 'qa-review') ||
+        state.reviewFocus !== 'editor'
+      )
+        return state;
       if (!event.content.trim()) return { ...state, error: 'Message must be non-empty.' };
       return { ...clearField(state, 'error'), status: 'Sending review message...' };
     case 'review-message-sent':
@@ -387,6 +403,172 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'review-finalize':
       if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
       return { ...clearField(state, 'error'), status: 'Finalizing review...' };
+    case 'review-focus':
+      if (state.detail !== 'review-thread' && state.detail !== 'qa-review') return state;
+      return {
+        ...state,
+        reviewFocus: state.reviewFocus === 'editor' ? 'actions' : 'editor',
+        reviewSelected: 0,
+      };
+    case 'open-preparation':
+      if (state.overlay !== 'none') return state;
+      {
+        const selectedWorkflow = state.workflows?.[state.workflowSelected]?.id;
+        const workflowId =
+          event.workflowId ??
+          (selectedWorkflow === 'plan-build' ||
+          selectedWorkflow === 'plan-build-qa' ||
+          selectedWorkflow === 'plan-build-qa-interactive'
+            ? selectedWorkflow
+            : undefined);
+        return {
+          ...clearField(clearField(state, 'error'), 'preparation'),
+          detail: 'preparation',
+          focus: 'detail',
+          preparationFocus: 'editor',
+          preparationSelected: 0,
+          ...(workflowId ? { preparationWorkflowId: workflowId } : {}),
+          status: 'Opening preparation...',
+        };
+      }
+    case 'preparations-loaded':
+      return { ...state, preparationDrafts: event.drafts };
+    case 'preparation-set':
+      return {
+        ...clearField(clearField(clearField(state, 'error'), 'status'), 'preparationOverview'),
+        preparation: event.preparation,
+        detail: 'preparation',
+        preparationFocus: state.preparationFocus === 'settings' ? 'settings' : 'editor',
+        preparationSelected: state.preparationFocus === 'settings' ? state.preparationSelected : 0,
+        inputValue: '',
+      };
+    case 'preparation-overview-set':
+      return { ...clearField(state, 'error'), preparationOverview: event.overview };
+    case 'preparation-models-set':
+      return { ...state, preparationModels: event.models };
+    case 'preparation-back':
+      if (state.detail !== 'preparation') return state;
+      return {
+        ...clearField(clearField(state, 'preparation'), 'error'),
+        detail: 'empty',
+        focus: 'workflows',
+        inputValue: '',
+        status: undefined,
+      };
+    case 'preparation-proposal-open':
+      if (state.detail !== 'preparation' || !state.preparation?.proposal) return state;
+      return { ...clearField(state, 'error'), detail: 'proposal', preparationFocus: 'actions' };
+    case 'preparation-proposal-back':
+      if (state.detail !== 'proposal') return state;
+      return { ...state, detail: 'preparation', preparationFocus: 'actions' };
+    case 'preparation-focus':
+      if (state.detail !== 'preparation') return state;
+      if (state.preparationFocus === 'synthesis' || state.preparationFocus === 'settings') {
+        return { ...state, preparationFocus: 'actions', inputValue: '', preparationSelected: 0 };
+      }
+      return {
+        ...state,
+        preparationFocus: state.preparationFocus === 'editor' ? 'actions' : 'editor',
+        preparationSelected: 0,
+      };
+    case 'preparation-message-submit':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'editor') return state;
+      if (!state.preparation) return { ...state, error: 'Preparation is not ready.' };
+      if (!event.content.trim()) return { ...state, error: 'Message must be non-empty.' };
+      if (state.preparation.messages.some((message) => message.generationStatus === 'pending')) {
+        return { ...state, error: 'Wait for the current preparation response.' };
+      }
+      return { ...clearField(state, 'error'), status: 'Generating preparation response...' };
+    case 'preparation-replied':
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        preparation: event.result.conversation,
+        inputValue: '',
+      };
+    case 'preparation-approve':
+      if (
+        state.detail !== 'preparation' ||
+        state.preparationFocus !== 'actions' ||
+        !state.preparation?.proposal ||
+        state.preparation.messages.some((message) => message.generationStatus === 'pending')
+      )
+        return state;
+      return { ...clearField(state, 'error'), status: 'Approving plan and starting workflow...' };
+    case 'preparation-generate-proposal':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'actions') return state;
+      if (state.preparation?.proposal) return state;
+      return { ...clearField(state, 'error'), status: 'Generating proposal...' };
+    case 'preparation-accept-synthesis':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'actions') return state;
+      if (!state.preparationOverview?.suggestion) return state;
+      return { ...clearField(state, 'error'), status: 'Confirming synthesis...' };
+    case 'preparation-retry':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'actions') return state;
+      if (!state.preparationOverview?.operation?.recoverable) return state;
+      return { ...clearField(state, 'error'), status: 'Retrying preparation response...' };
+    case 'preparation-synthesis-edit':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'actions') return state;
+      return {
+        ...clearField(state, 'error'),
+        preparationFocus: 'synthesis',
+        inputValue: serializePreparationSynthesis(
+          state.preparationOverview?.suggestion?.synthesis ??
+            state.preparationOverview?.synthesis.value ?? {
+              objective: state.preparation?.draft.objective ?? '',
+              agreements: [],
+              constraints: [],
+              assumptions: [],
+              questions: [],
+            },
+        ),
+      };
+    case 'preparation-synthesis-save':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'synthesis') return state;
+      return {
+        ...clearField(state, 'error'),
+        preparationFocus: 'actions',
+        inputValue: '',
+        status: 'Saving synthesis...',
+        preparationSynthesisDraft: event.synthesis,
+      };
+    case 'preparation-settings-open':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'actions') return state;
+      return {
+        ...clearField(state, 'error'),
+        preparationFocus: 'settings',
+        preparationSettingRole: 'producer',
+        preparationSelected: 0,
+      };
+    case 'preparation-setting-select':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'settings') return state;
+      return {
+        ...clearField(state, 'error'),
+        status: 'Saving preparation settings...',
+        preparationSelected: event.index,
+      };
+    case 'preparation-settings-advance':
+      if (state.detail !== 'preparation' || state.preparationFocus !== 'settings') return state;
+      if (state.preparationSettingRole === 'producer') {
+        return { ...state, preparationSettingRole: 'reviewer', preparationSelected: 0 };
+      }
+      if (state.preparationSettingRole === 'reviewer') {
+        return { ...state, preparationSettingRole: 'reviewMode', preparationSelected: 0 };
+      }
+      return {
+        ...clearField(state, 'preparationSettingRole'),
+        preparationFocus: 'actions',
+        preparationSelected: 0,
+        status: undefined,
+      };
+    case 'preparation-review-proposal':
+      if (state.detail !== 'preparation' || !state.preparation?.proposal) return state;
+      return { ...clearField(state, 'error'), status: 'Reviewing proposal...' };
+    case 'preparation-ack-review':
+      if (state.detail !== 'preparation' || !state.preparationOverview?.review) return state;
+      return { ...clearField(state, 'error'), status: 'Confirming review reading...' };
+    case 'preparation-open-draft':
+      if (state.detail !== 'preparation') return state;
+      return { ...clearField(state, 'error'), status: 'Reopening preparation draft...' };
     case 'open-qa-defect':
       if (state.detail !== 'bugs') return state;
       return {
@@ -546,7 +728,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...clearField(state, 'error'), status: 'Launching...' };
     case 'run-started':
       return {
-        ...clearField(state, 'error'),
+        ...clearField(clearField(state, 'error'), 'status'),
         detail: 'live',
         activeRunId: event.runId,
         cancellationRequested: false,
@@ -583,13 +765,14 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       if (!state.runView) return state;
       if (state.detail !== 'inspect' && state.detail !== 'result') return state;
       return {
-        ...clearField(state, 'artifactContent'),
+        ...clearField(clearField(state, 'artifactContent'), 'artifactPage'),
         detail: 'artifacts',
         selection: 0,
         offset: 0,
         artifactSelected: state.detail === 'result' ? state.selection : 0,
         artifactOffset: 0,
         artifactContentOffset: 0,
+        artifactOrigin: state.detail === 'result' ? 'result' : 'inspect',
       };
     }
     case 'open-launch': {
@@ -644,7 +827,87 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         artifactContentOffset: 0,
         activeRunId: state.activeRunId ?? event.view.id,
       };
-      return clearField(clearField(base, 'artifactContent'), 'error');
+      return clearField(
+        clearField(
+          clearField(clearField(clearField(base, 'artifactContent'), 'taskOutcome'), 'qaRound'),
+          'qaRoundId',
+        ),
+        'qaFindingId',
+      );
+    }
+    case 'task-outcome-set': {
+      const roundIds = event.outcome.qaRoundIds;
+      const qaRoundId =
+        state.qaRoundId && roundIds.includes(state.qaRoundId) ? state.qaRoundId : roundIds[0];
+      return {
+        ...clearField(state, 'error'),
+        taskOutcome: event.outcome,
+        ...(qaRoundId ? { qaRoundId } : {}),
+      };
+    }
+    case 'open-qa-report': {
+      if (state.detail !== 'inspect' && state.detail !== 'result') return state;
+      const roundIds = state.taskOutcome?.qaRoundIds ?? [];
+      if (roundIds.length === 0) {
+        return { ...state, error: 'No persisted QA rounds are available for this run.' };
+      }
+      const qaRoundId =
+        state.qaRoundId && roundIds.includes(state.qaRoundId) ? state.qaRoundId : roundIds[0]!;
+      return {
+        ...clearField(clearField(state, 'error'), 'qaFindingId'),
+        detail: 'qa-report',
+        qaReportOrigin: state.detail,
+        qaRoundId,
+        ...(state.qaRound ? {} : { qaReportFocus: 'rounds' as const }),
+        qaDetailOffset: state.qaRound ? state.qaDetailOffset : 0,
+        status: 'Loading QA report...',
+      };
+    }
+    case 'qa-round-select': {
+      if (state.detail !== 'qa-report') return state;
+      if (!(state.taskOutcome?.qaRoundIds ?? []).includes(event.roundId)) return state;
+      return {
+        ...clearField(clearField(clearField(state, 'error'), 'qaRound'), 'qaFindingId'),
+        qaRoundId: event.roundId,
+        qaDetailOffset: 0,
+        status: 'Loading QA report...',
+      };
+    }
+    case 'qa-round-set': {
+      if (state.detail !== 'qa-report' || state.qaRoundId !== event.round.roundId) return state;
+      const findingId = filteredFindings(
+        event.round.report?.findings ?? [],
+        state.qaSeverityFilter,
+      )[0]?.id;
+      const next = {
+        ...clearField(clearField(state, 'error'), 'status'),
+        qaRound: event.round,
+        qaDetailOffset: 0,
+      };
+      return findingId ? { ...next, qaFindingId: findingId } : clearField(next, 'qaFindingId');
+    }
+    case 'qa-report-focus':
+      if (state.detail !== 'qa-report') return state;
+      return {
+        ...state,
+        qaReportFocus:
+          state.qaReportFocus === 'rounds'
+            ? 'findings'
+            : state.qaReportFocus === 'findings'
+              ? 'detail'
+              : 'rounds',
+      };
+    case 'qa-filter-cycle': {
+      if (state.detail !== 'qa-report') return state;
+      const filters: QaSeverityFilter[] = ['all', 'critical', 'high', 'medium', 'low'];
+      const nextFilter = filters[(filters.indexOf(state.qaSeverityFilter) + 1) % filters.length]!;
+      const findingId = filteredFindings(state.qaRound?.report?.findings ?? [], nextFilter)[0]?.id;
+      const next = {
+        ...state,
+        qaSeverityFilter: nextFilter,
+        qaDetailOffset: 0,
+      };
+      return findingId ? { ...next, qaFindingId: findingId } : clearField(next, 'qaFindingId');
     }
     case 'approval-set':
       return {
@@ -655,6 +918,12 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       };
     case 'artifact-content-set':
       return { ...state, artifactContent: event.content, artifactContentOffset: 0 };
+    case 'artifact-page-set':
+      return {
+        ...clearField(state, 'artifactContent'),
+        artifactPage: event.page,
+        artifactContentOffset: 0,
+      };
     case 'generated-set':
       return { ...clearField(state, 'error'), generated: event.generated };
     case 'open-recovery-confirm':
@@ -699,12 +968,19 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         state.detail !== 'bugs' &&
         state.detail !== 'review' &&
         state.detail !== 'review-thread' &&
-        state.detail !== 'qa-review'
+        state.detail !== 'qa-review' &&
+        state.detail !== 'qa-report' &&
+        state.detail !== 'preparation'
       )
         return state;
       return {
         ...clearField(clearField(state, 'artifactContent'), 'error'),
-        detail: 'empty',
+        detail:
+          state.detail === 'artifacts'
+            ? state.artifactOrigin
+            : state.detail === 'qa-report'
+              ? state.qaReportOrigin
+              : 'empty',
         selection: 0,
         offset: 0,
         artifactContentOffset: 0,
@@ -883,7 +1159,8 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     }
     case 'review-thread':
     case 'qa-review':
-      return state;
+      if (state.reviewFocus !== 'actions') return state;
+      return { ...state, reviewSelected: clamp(state.reviewSelected + direction, 7) };
     case 'bugs': {
       const count = state.qaDefects?.length ?? 0;
       if (count === 0) return state;
@@ -930,9 +1207,62 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
         artifactOffset: moved.offset,
       };
     }
+    case 'qa-report': {
+      const findings = filteredFindings(
+        state.qaRound?.report?.findings ?? [],
+        state.qaSeverityFilter,
+      );
+      if (state.qaReportFocus === 'findings') {
+        if (findings.length === 0) return state;
+        const selected = Math.max(
+          0,
+          findings.findIndex((finding) => finding.id === state.qaFindingId),
+        );
+        const next = findings[clamp(selected + direction, findings.length)];
+        return next ? { ...state, qaFindingId: next.id, qaDetailOffset: 0 } : state;
+      }
+      if (state.qaReportFocus === 'detail') {
+        return {
+          ...state,
+          qaDetailOffset: scrollText(
+            state.qaDetailOffset,
+            direction,
+            qaFindingLines(
+              state.qaRound?.report?.findings.find((finding) => finding.id === state.qaFindingId),
+            ).length,
+            Math.max(1, visibleRows),
+          ),
+        };
+      }
+      return state;
+    }
+    case 'proposal':
+      return state;
     case 'empty':
     case 'live':
       return state;
+    case 'preparation':
+      if (state.preparationFocus === 'settings') {
+        const count = preparationSettingChoices(
+          state.preparationSettingRole ?? 'producer',
+          state.preparationModels ?? [],
+        ).length;
+        return count === 0
+          ? state
+          : { ...state, preparationSelected: clamp(state.preparationSelected + direction, count) };
+      }
+      if (state.preparationFocus !== 'actions') return state;
+      return {
+        ...state,
+        preparationSelected: clamp(
+          state.preparationSelected + direction,
+          preparationActionLabels(
+            state.preparation,
+            state.preparationOverview,
+            state.preparationDrafts ?? [],
+          ).length,
+        ),
+      };
   }
   return state;
 }
@@ -968,6 +1298,25 @@ function approvalPreviewLineCount(previews: ArtifactContentView[]): number {
 function artifactContentLines(content: ArtifactContentView): string[] {
   if (content.error) return [`ERROR: ${content.error}`];
   return (content.content ?? 'No readable content.').split('\n');
+}
+
+function filteredFindings(findings: QaFinding[], filter: QaSeverityFilter): QaFinding[] {
+  return filter === 'all' ? findings : findings.filter((finding) => finding.severity === filter);
+}
+
+function qaFindingLines(finding: QaFinding | undefined): string[] {
+  if (!finding) return ['No finding is selected.'];
+  return [
+    `${finding.id} | ${finding.severity} | ${finding.category}`,
+    `Title: ${finding.title}`,
+    `Explanation: ${finding.explanation}`,
+    `Impact: ${finding.impact}`,
+    'Evidence:',
+    ...finding.evidence.map((value) => `- ${value}`),
+    `Suggested correction: ${finding.suggestedCorrection}`,
+    'Verifications:',
+    ...finding.verifications.map((value) => `- ${value}`),
+  ];
 }
 
 function enterFolder(state: TuiState, diagnosis: ConfigurationDiagnosis | undefined): TuiState {

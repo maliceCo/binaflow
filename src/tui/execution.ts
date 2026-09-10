@@ -36,6 +36,24 @@ export interface LiveState {
   costUsd?: number | undefined;
 }
 
+export function liveActivityLabel(state: LiveState): string {
+  if (state.cancellationRequested) return 'Cancelling and waiting for cleanup.';
+  const status = state.view?.status ?? state.run.status;
+  if (status === 'waiting') return 'Waiting for a human decision.';
+  if (status === 'pending') return 'Starting attached execution.';
+  if (status === 'running') {
+    const step = (state.view?.phases ?? state.steps).find(
+      (candidate) => candidate.status === 'running',
+    );
+    return step ? `Executing ${step.id} (${step.profile}).` : 'Executing workflow.';
+  }
+  if (status === 'completed') return 'Execution completed.';
+  if (status === 'cancelled') return 'Execution cancelled.';
+  if (status === 'interrupted') return 'Execution interrupted.';
+  if (status === 'failed') return 'Execution failed.';
+  return 'Attached execution active.';
+}
+
 export interface LiveActivityBuffer {
   readonly activity: readonly LiveActivity[];
   readonly activityBytes: number;

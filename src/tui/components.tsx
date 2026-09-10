@@ -1,6 +1,7 @@
 import { Box, Text, type TextProps } from 'ink';
 import { Fragment, type ReactNode } from 'react';
 import { sanitizeInkText } from './text.js';
+import type { TuiTheme } from './theme.js';
 
 /** Centralized dynamic text rendering; all user/persisted strings pass through sanitization. */
 export function SafeText({ children, ...props }: TextProps): ReactNode {
@@ -28,18 +29,20 @@ export function Panel({
   colors,
   width,
   flexGrow,
+  theme,
 }: {
   children: ReactNode;
   focused?: boolean;
   colors: boolean;
   width?: number | string;
   flexGrow?: number;
+  theme?: TuiTheme;
 }): ReactNode {
   return (
     <Box
       flexDirection="column"
       borderStyle="single"
-      {...(focused && colors ? { borderColor: 'cyan' as const } : {})}
+      {...(focused && colors ? { borderColor: theme?.focus ?? 'cyan' } : {})}
       {...(width !== undefined ? { width } : {})}
       {...(flexGrow !== undefined ? { flexGrow } : {})}
       paddingX={1}

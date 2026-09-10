@@ -31,10 +31,73 @@ Script/plugin -> CLI JSON or JSONL -> Binaflow application operations
 Workflow step -> AgentDriver -> Pi (current) or future harness driver
 ```
 
+### Conversational Preparation
+
+The TUI can prepare `plan-build` and `plan-build-qa-interactive` from an
+incomplete idea. Preparation is stored as a draft, so the conversation can be
+reopened without creating a run. The planner may ask questions or publish a
+validated proposal; questions and ordinary chat never authorize execution.
+
+Execution starts only through the focused `Approve plan and execute` action.
+That action transfers the visible proposal to a real run atomically and does
+not call the planner again. The direct launch flow remains available for users
+who already have a complete objective. QA conversations are read-only and do
+not accept risks, apply fixes, or finalize a review; those effects still require
+their explicit review actions.
+
 A plugin that invokes Binaflow consumes the CLI protocol; Binaflow does not
 expose a generic plugin API. That is different from Binaflow invoking OpenCode
 or Codex as an agent driver; those drivers are future integrations and are not
 included in this preview milestone.
+
+### Current TUI Scope And Validation
+
+The task-centered TUI currently covers these presentation flows:
+
+- New task, continue, configuration, and the focused selectors for
+  `plan-build`, `plan-build-qa`, and `todo-build-qa`.
+- Conversational preparation with a bounded draft, confirmed synthesis,
+  immutable proposal, explicit human approval, and attached execution.
+- Bounded artifact/document reading, local search over loaded content, result
+  projections, and read-only QA reports selected by real round and finding IDs.
+- Attached lifecycle ownership: navigation is allowed while an operation is
+  active, but another mutating operation or context change is blocked. Cancel,
+  signals, stream failures, and render failures use the same cleanup path.
+
+For new planning tasks, `preparation.reviewMode` defaults to `human`.
+`required-auto` is a minimum policy for the TUI preparation flow; direct launch
+remains visible but is disabled when that policy requires preparation. This
+policy does not add a gate to the workflow engine and does not alter CLI,
+legacy recovery, or reviewed-TODO behavior. The CLI remains the stable
+automation interface.
+
+Preparation uses the discovered planner profile as producer and derives a
+read-only reviewer from that profile unless explicitly configured per draft.
+Reasoning capabilities are currently unknown: Binaflow does not infer levels
+from model names or copy Pi's global level list. New unknown-capability model
+selections use `Default` rather than an unverified override.
+
+The editor accepts multiline text; Enter inserts a line, while sending is an
+explicit action. Bracketed paste is handled as text, not as commands. The TUI
+uses bounded UTF-8 pages (up to 200 lines or 64 KiB), a small page cache, and
+viewport navigation. QA reports show severity counts, filters, evidence, and
+suggested corrections without accepting risks, changing dispositions,
+activating QA history, or generating fixes/reruns.
+
+The source checkout can be run without building a release bundle:
+
+```bash
+pnpm install
+pnpm run build
+pnpm run cli -- tui
+```
+
+These commands only compile and start the attached local TUI. They do not
+install Pi, authenticate a provider, or create a daemon. Terminal behavior,
+including Windows, narrow terminals, IME/CJK, unsafe unbracketed paste, resize,
+long-document navigation, and cancellation under real stream/render failures,
+still requires human validation. Automated tests and live Pi checks are also
+pending under the current validation pause.
 
 ## Architecture Boundary
 
@@ -61,7 +124,7 @@ agent profiles before allowing a builder to edit files.
 
 ## Requirements
 
-- The release bundle supports Linux x86_64 with glibc
+- The release bundles support Linux x86_64 with glibc and Windows x64
 - Pi installed and available as the `pi` command
 - Pi configured with a provider and authenticated credentials
 
@@ -117,6 +180,31 @@ workspace by using its absolute path:
 The workspace still supplies `.binaflow/config.json`, its run database, and
 artifacts. This direct local bundle is not a managed installation, so
 `binaflow update` is intentionally unavailable.
+
+## Install The Windows Preview
+
+Preview releases also include a self-contained Windows x64 ZIP. It includes the
+Node runtime and production dependencies, including the Windows
+`better-sqlite3` binding. Pi remains an external executable and is not
+installed or updated by Binaflow.
+
+Download the release asset and verify its SHA-256 checksum in PowerShell:
+
+```powershell
+$version = "0.1.0-preview.0"
+$archive = "binaflow-windows-x64-$version.zip"
+$base = "https://github.com/maliceCo/binaflow/releases/download/v$version"
+Invoke-WebRequest "$base/$archive" -OutFile $archive
+Invoke-WebRequest "$base/$archive.sha256" -OutFile "$archive.sha256"
+$expected = (Get-Content "$archive.sha256").Split()[0].ToLowerInvariant()
+$actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "SHA-256 checksum mismatch" }
+Expand-Archive $archive -DestinationPath .\binaflow-install -Force
+.\binaflow-install\binaflow\bin\binaflow.cmd --version
+```
+
+The Windows bundle is portable and can be extracted anywhere. It is not a
+managed installation, so `binaflow update` is intentionally unavailable.
 
 ## Configure A Workspace
 
@@ -507,17 +595,18 @@ change `.binaflow`, configured `dataDir`, or artifacts.
 pnpm install
 pnpm run build
 pnpm run cli -- --help
-pnpm test
-pnpm run build:bundle
 ```
 
-Development requires Node.js 22 or newer and pnpm. Pi integration tests are
-optional and require a working Pi installation and credentials.
+Release bundles are separate from local development. Do not run the bundle
+scripts to start the source TUI. Development requires Node.js 22 or newer and
+pnpm. The validation plan currently keeps the automated test suite, E2E checks,
+and live Pi integration checks pending; when re-enabled, Pi checks require a
+working Pi installation and credentials.
 
 ## Preview Limitations
 
 - Pi is the only supported agent driver.
-- The preview release supports Linux x86_64/glibc only.
+- The preview release supports Linux x86_64/glibc and Windows x64.
 - Execution is local and sequential.
 - The TUI is attached to the current terminal; detached execution and
   reconnection are not supported.

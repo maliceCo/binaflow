@@ -15,6 +15,9 @@ import { LaunchConfirmationScreen, LaunchInputScreen } from './screens/launch.js
 import { LiveScreen } from './screens/live.js';
 import { ResultScreen } from './screens/result.js';
 import { TodoSelectionScreen } from './screens/todo-select.js';
+import { PreparationScreen } from './screens/preparation.js';
+import { ProposalScreen } from './screens/proposal.js';
+import { QaReportScreen } from './screens/qa-report.js';
 
 export interface ShellDetailViewProps {
   colors: boolean;
@@ -24,6 +27,7 @@ export interface ShellDetailViewProps {
   liveOffset: number;
   size: { columns: number; rows: number };
   launching: boolean;
+  operationActive?: boolean;
   onEvent: (event: TuiEvent) => void;
 }
 
@@ -35,6 +39,7 @@ export function renderShellDetail({
   liveOffset,
   size,
   launching,
+  operationActive = false,
   onEvent,
 }: ShellDetailViewProps): ReactNode {
   let right: ReactNode;
@@ -151,6 +156,8 @@ export function renderShellDetail({
             colors={colors}
             entry={entry}
             value={state.inputValue}
+            focus={state.reviewFocus}
+            selected={state.reviewSelected}
             {...(state.error ? { error: state.error } : {})}
             onChange={(value) => onEvent({ type: 'input-change', value })}
             onSubmit={(value) => onEvent({ type: 'review-message-submit', content: value })}
@@ -158,6 +165,7 @@ export function renderShellDetail({
             onExplain={() => onEvent({ type: 'review-explain' })}
             onDecision={(decision) => onEvent({ type: 'review-decide', decision })}
             onFinalize={() => onEvent({ type: 'review-finalize' })}
+            onFocus={() => onEvent({ type: 'review-focus' })}
           />
         ) : (
           <ReviewThreadScreen
@@ -165,6 +173,8 @@ export function renderShellDetail({
             colors={colors}
             entry={entry}
             value={state.inputValue}
+            focus={state.reviewFocus}
+            selected={state.reviewSelected}
             {...(state.error ? { error: state.error } : {})}
             onChange={(value) => onEvent({ type: 'input-change', value })}
             onSubmit={(value) => onEvent({ type: 'review-message-submit', content: value })}
@@ -172,16 +182,60 @@ export function renderShellDetail({
             onExplain={() => onEvent({ type: 'review-explain' })}
             onDecision={(decision) => onEvent({ type: 'review-decide', decision })}
             onFinalize={() => onEvent({ type: 'review-finalize' })}
+            onFocus={() => onEvent({ type: 'review-focus' })}
           />
         )
       ) : null;
       break;
     }
+    case 'preparation':
+      right = (
+        <PreparationScreen
+          colors={colors}
+          {...(state.preparation ? { preparation: state.preparation } : {})}
+          {...(state.preparationOverview ? { overview: state.preparationOverview } : {})}
+          focus={state.preparationFocus}
+          selected={state.preparationSelected}
+          drafts={state.preparationDrafts ?? []}
+          models={state.preparationModels ?? []}
+          {...(state.preparationSettingRole ? { settingRole: state.preparationSettingRole } : {})}
+          value={state.inputValue}
+          {...(state.status ? { status: state.status } : {})}
+          {...(state.error ? { error: state.error } : {})}
+        />
+      );
+      break;
+    case 'proposal':
+      right = (
+        <ProposalScreen
+          colors={colors}
+          {...(state.preparation ? { preparation: state.preparation } : {})}
+          {...(state.preparationOverview ? { overview: state.preparationOverview } : {})}
+        />
+      );
+      break;
+    case 'qa-report':
+      right = state.taskOutcome ? (
+        <QaReportScreen
+          colors={colors}
+          outcome={state.taskOutcome}
+          {...(state.qaRound ? { round: state.qaRound } : {})}
+          {...(state.qaRoundId ? { roundId: state.qaRoundId } : {})}
+          {...(state.qaFindingId ? { findingId: state.qaFindingId } : {})}
+          focus={state.qaReportFocus}
+          filter={state.qaSeverityFilter}
+          detailOffset={state.qaDetailOffset}
+          visibleRows={Math.max(1, size.rows - 10)}
+          {...(state.error ? { error: state.error } : {})}
+        />
+      ) : null;
+      break;
     case 'approval':
       right = state.runView ? (
         <ApprovalScreen
           colors={colors}
           view={state.runView}
+          {...(state.taskOutcome ? { outcome: state.taskOutcome } : {})}
           previews={state.approvalPreviews}
           previewOffset={state.approvalPreviewOffset}
           error={state.error ?? state.launchInput?.error}
@@ -196,6 +250,7 @@ export function renderShellDetail({
         <ResultScreen
           colors={colors}
           view={state.runView}
+          {...(state.taskOutcome ? { outcome: state.taskOutcome } : {})}
           selected={state.selection}
           offset={state.offset}
           visibleRows={Math.max(1, size.rows - 16)}
@@ -226,6 +281,7 @@ export function renderShellDetail({
           selected={state.artifactSelected}
           offset={state.artifactOffset}
           content={state.artifactContent}
+          page={state.artifactPage}
           contentOffset={state.artifactContentOffset}
           visibleRows={Math.max(1, size.rows - 12)}
         />
@@ -245,6 +301,7 @@ export function renderShellDetail({
       {...(live ? { live } : {})}
       liveDetail={liveDetail}
       size={size}
+      operationActive={operationActive}
       right={right}
     />
   );

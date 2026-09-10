@@ -5,10 +5,21 @@ import type {
 } from '../application/config-operations.js';
 import type { ArtifactContentView } from '../application/operations.js';
 import type { RunView } from '../application/run-view.js';
+import type { TaskOutcome, TaskQaRound } from '../application/task-outcome.js';
 import type { QaDefectDetails, QaHistoryStats } from '../application/qa-history-operations.js';
 import type { ReviewView } from '../application/review-operations.js';
+import type {
+  DocumentPage,
+  PreparationConversation,
+  PreparationDraft,
+  PreparationModel,
+  PreparationSelection,
+  PreparationSynthesis,
+  PreparationStoredView,
+} from '../application/preparation.js';
 import type { AgentModel } from '../core/agent.js';
 import type { QaDefect } from '../core/qa-history.js';
+import type { QaFindingSeverity } from '../workflows/plan-build-qa.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import type { WorkflowContract } from '../application/operations.js';
 import type {
@@ -31,6 +42,96 @@ export function visibleFolderEntries(entries: FolderEntry[], filter: string): Fo
   const normalized = filter.trim().toLowerCase();
   if (!normalized) return entries;
   return entries.filter((entry) => entry.isParent || entry.name.toLowerCase().includes(normalized));
+}
+
+export function preparationActionLabels(
+  preparation: PreparationConversation | undefined,
+  overview: PreparationStoredView | undefined,
+  drafts: PreparationDraft[],
+): string[] {
+  const actions = preparation?.proposal
+    ? [
+        'Open proposal',
+        'Review proposal',
+        ...(overview?.review && !overview.review.acknowledged ? ['Acknowledge review'] : []),
+        ...(overview?.draft.validProposalId === preparation.proposal.id
+          ? ['Approve plan and execute']
+          : ['Proposal is stale']),
+        'Edit synthesis',
+        'Configure agents',
+        'Back',
+      ]
+    : [
+        ...(overview?.suggestion ? ['Accept synthesis suggestion'] : []),
+        ...(overview?.operation?.recoverable && overview.operation.userMessageId
+          ? ['Retry last response']
+          : []),
+        'Generate proposal',
+        'Edit synthesis',
+        'Configure agents',
+        'Back',
+      ];
+  return [
+    ...actions,
+    ...drafts.map((draft) => `Reopen ${draft.id.slice(0, 8)} (${draft.workflowId})`),
+  ];
+}
+
+export type PreparationSettingRole = 'producer' | 'reviewer' | 'reviewMode';
+
+export function preparationSettingChoices(
+  role: PreparationSettingRole,
+  models: PreparationModel[],
+): string[] {
+  if (role === 'reviewMode') return ['human', 'optional-auto', 'required-auto'];
+  return models.map((model) => `${model.model} (${model.provider})`);
+}
+
+export function preparationSelectionForModel(model: PreparationModel): PreparationSelection {
+  return { provider: model.provider, model: model.model };
+}
+
+export function serializePreparationSynthesis(synthesis: PreparationSynthesis): string {
+  return [
+    `objective: ${synthesis.objective}`,
+    'agreements:',
+    ...synthesis.agreements.map((value) => `- ${value}`),
+    'constraints:',
+    ...synthesis.constraints.map((value) => `- ${value}`),
+    'assumptions:',
+    ...synthesis.assumptions.map((value) => `- ${value}`),
+    'questions:',
+    ...synthesis.questions.map((value) => `- ${value}`),
+  ].join('\n');
+}
+
+export function parsePreparationSynthesis(value: string): PreparationSynthesis | string {
+  const sections = new Map<string, string[]>();
+  let section = '';
+  for (const line of value.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const header = /^(objective|agreements|constraints|assumptions|questions):(?:\s*(.*))?$/i.exec(
+      trimmed,
+    );
+    if (header) {
+      section = header[1]!.toLowerCase();
+      sections.set(section, header[2] ? [header[2].trim()] : []);
+      continue;
+    }
+    if (!section) return 'Synthesis must start with objective:';
+    sections.get(section)!.push(trimmed.replace(/^-\s*/, '').trim());
+  }
+  const objective = sections.get('objective')?.join(' ').trim();
+  if (!objective) return 'Synthesis objective must be non-empty.';
+  const list = (name: string): string[] => (sections.get(name) ?? []).filter(Boolean);
+  return {
+    objective,
+    agreements: list('agreements'),
+    constraints: list('constraints'),
+    assumptions: list('assumptions'),
+    questions: list('questions'),
+  };
 }
 
 export type FocusPane = 'workflows' | 'runs' | 'detail';
@@ -59,7 +160,16 @@ export type DetailMode =
   | 'bugs'
   | 'review'
   | 'review-thread'
-  | 'qa-review';
+  | 'qa-review'
+  | 'preparation'
+  | 'proposal'
+  | 'qa-report';
+
+export type QaReportFocus = 'rounds' | 'findings' | 'detail';
+export type QaSeverityFilter = 'all' | QaFindingSeverity;
+
+export type PreparationFocus = 'editor' | 'actions' | 'synthesis' | 'settings';
+export type ReviewFocus = 'editor' | 'actions';
 
 /** Tags the controller must honor after `reduce` returns. The reducer cannot do I/O. */
 export type TuiEffect = 'discover-setup-models' | 'diagnose-cwd';
@@ -103,13 +213,23 @@ export interface TuiState {
   launchInput?: LaunchInputState;
   todoCandidates?: TodoFileCandidate[];
   runView?: RunView;
+  taskOutcome?: TaskOutcome;
+  qaRound?: TaskQaRound;
+  qaReportOrigin: 'inspect' | 'result';
+  qaRoundId?: string;
+  qaFindingId?: string;
+  qaReportFocus: QaReportFocus;
+  qaSeverityFilter: QaSeverityFilter;
+  qaDetailOffset: number;
   clarifications: string[];
   approvalPreviews: ArtifactContentView[];
   approvalPreviewOffset: number;
   artifactSelected: number;
   artifactOffset: number;
   artifactContent?: ArtifactContentView;
+  artifactPage?: DocumentPage;
   artifactContentOffset: number;
+  artifactOrigin: 'inspect' | 'result';
   generated?: GeneratedConfiguration;
   showFullConfig: boolean;
   setupPreviewOffset: number;
@@ -120,6 +240,17 @@ export interface TuiState {
   qaDefectDetails?: QaDefectDetails;
   review?: ReviewView;
   reviewThreadId?: string;
+  reviewFocus: ReviewFocus;
+  reviewSelected: number;
+  preparation?: PreparationConversation;
+  preparationOverview?: PreparationStoredView;
+  preparationDrafts?: PreparationDraft[];
+  preparationModels?: PreparationModel[];
+  preparationSettingRole?: PreparationSettingRole;
+  preparationSynthesisDraft?: PreparationSynthesis;
+  preparationWorkflowId?: 'plan-build' | 'plan-build-qa' | 'plan-build-qa-interactive';
+  preparationFocus: PreparationFocus;
+  preparationSelected: number;
 }
 
 export interface TuiModelOptions {
@@ -162,10 +293,19 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     artifactSelected: 0,
     artifactOffset: 0,
     artifactContentOffset: 0,
+    artifactOrigin: 'inspect',
     showFullConfig: false,
     setupPreviewOffset: 0,
     qaDefectSelected: 0,
     qaDefectOffset: 0,
+    qaReportOrigin: 'result',
+    qaReportFocus: 'findings',
+    qaSeverityFilter: 'all',
+    qaDetailOffset: 0,
+    preparationFocus: 'editor',
+    preparationSelected: 0,
+    reviewFocus: 'editor',
+    reviewSelected: 0,
   };
 }
 
@@ -210,6 +350,36 @@ export type TuiEvent =
   | { type: 'review-explained'; review: ReviewView }
   | { type: 'review-decide'; decision: 'approve' | 'correct' | 'accept-risk' | 'postpone' }
   | { type: 'review-finalize' }
+  | { type: 'review-focus' }
+  | {
+      type: 'open-preparation';
+      workflowId?: 'plan-build' | 'plan-build-qa' | 'plan-build-qa-interactive';
+    }
+  | { type: 'preparations-loaded'; drafts: PreparationDraft[] }
+  | { type: 'preparation-set'; preparation: PreparationConversation }
+  | { type: 'preparation-overview-set'; overview: PreparationStoredView }
+  | { type: 'preparation-models-set'; models: PreparationModel[] }
+  | { type: 'preparation-back' }
+  | { type: 'preparation-proposal-open' }
+  | { type: 'preparation-proposal-back' }
+  | { type: 'preparation-focus' }
+  | { type: 'preparation-message-submit'; content: string }
+  | {
+      type: 'preparation-replied';
+      result: import('../application/preparation-operations.js').PreparationReplyResult;
+    }
+  | { type: 'preparation-approve' }
+  | { type: 'preparation-generate-proposal' }
+  | { type: 'preparation-accept-synthesis' }
+  | { type: 'preparation-retry' }
+  | { type: 'preparation-synthesis-edit' }
+  | { type: 'preparation-synthesis-save'; synthesis: PreparationSynthesis }
+  | { type: 'preparation-settings-open' }
+  | { type: 'preparation-setting-select'; index: number }
+  | { type: 'preparation-settings-advance' }
+  | { type: 'preparation-review-proposal' }
+  | { type: 'preparation-ack-review' }
+  | { type: 'preparation-open-draft'; draftId: string }
   | { type: 'launch-cancel' }
   | { type: 'todo-files-found'; candidates: TodoFileCandidate[] }
   | { type: 'todo-select' }
@@ -239,8 +409,15 @@ export type TuiEvent =
   | { type: 'runs-loaded'; runs: WorkflowRun[] }
   | { type: 'folder-listed'; entries: FolderEntry[] }
   | { type: 'run-view-set'; view: RunView; clarifications: string[] }
+  | { type: 'task-outcome-set'; outcome: TaskOutcome }
+  | { type: 'open-qa-report' }
+  | { type: 'qa-round-select'; roundId: string }
+  | { type: 'qa-round-set'; round: TaskQaRound }
+  | { type: 'qa-report-focus' }
+  | { type: 'qa-filter-cycle' }
   | { type: 'approval-set'; previews: ArtifactContentView[] }
   | { type: 'artifact-content-set'; content: ArtifactContentView }
+  | { type: 'artifact-page-set'; page: DocumentPage }
   | { type: 'generated-set'; generated: GeneratedConfiguration }
   | { type: 'setup-toggle-config' }
   | { type: 'setup-retry' }

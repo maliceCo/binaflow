@@ -10,7 +10,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import {
@@ -18,8 +18,10 @@ import {
   validateAgentProfile,
   validatePiCommand,
   type AgentProfile,
+  type PreparationReviewMode,
 } from '../config.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
+import type { PreparationModel } from './preparation.js';
 import { discoverWorkflows } from './workflow-operations.js';
 
 export async function discoverAgentModels(discovery: AgentModelDiscovery): Promise<AgentModel[]> {
@@ -28,6 +30,13 @@ export async function discoverAgentModels(discovery: AgentModelDiscovery): Promi
   } catch {
     return [];
   }
+}
+
+export async function discoverPreparationModels(
+  discovery: AgentModelDiscovery,
+): Promise<PreparationModel[]> {
+  const models = await discoverAgentModels(discovery);
+  return models.map((model) => ({ ...model }));
 }
 
 export interface ConfigurationDiagnosis {
@@ -326,11 +335,19 @@ export type ConfigurationDocument = Record<string, unknown> & {
   dataDir: string;
   piCommand: string;
   profiles: Record<string, AgentProfile>;
+  preparation?: { reviewMode?: PreparationReviewMode };
 };
 
 export interface GeneratedConfiguration {
   configPath: string;
   config: ConfigurationDocument;
+  sourceHash?: string;
+}
+
+export interface PreparationConfigurationGenerationInput {
+  configPath: string;
+  cwd?: string;
+  reviewMode: PreparationReviewMode;
 }
 
 function legacyProfileSettings(
@@ -422,6 +439,30 @@ export async function generateUpdatedConfiguration(
   return { configPath, config };
 }
 
+export async function generateUpdatedPreparationConfiguration(
+  input: PreparationConfigurationGenerationInput,
+): Promise<GeneratedConfiguration> {
+  if (
+    input.reviewMode !== 'human' &&
+    input.reviewMode !== 'optional-auto' &&
+    input.reviewMode !== 'required-auto'
+  ) {
+    throw new Error('Invalid preparation review mode');
+  }
+  const configPath = resolve(input.cwd ?? process.cwd(), input.configPath);
+  const current = await readConfigurationDocument(configPath);
+  const sourceHash = await configurationSourceHash(configPath);
+  const config: ConfigurationDocument = {
+    ...current,
+    preparation: {
+      ...(asRecord(current.preparation) ?? {}),
+      reviewMode: input.reviewMode,
+    },
+  };
+  parseConfigValue(config, configPath);
+  return { configPath, config, sourceHash };
+}
+
 export async function writeConfigurationAtomically(
   generated: GeneratedConfiguration,
 ): Promise<void> {
@@ -450,6 +491,12 @@ export async function replaceConfigurationAtomically(
   generated: GeneratedConfiguration,
 ): Promise<void> {
   parseConfigValue(generated.config, generated.configPath);
+  if (generated.sourceHash !== undefined) {
+    const currentHash = await configurationSourceHash(generated.configPath);
+    if (currentHash !== generated.sourceHash) {
+      throw new Error('Binaflow config changed since the preparation preview; confirm again');
+    }
+  }
   await mkdir(dirname(generated.configPath), { recursive: true });
   const temporaryPath = `${generated.configPath}.${randomUUID()}.tmp`;
   try {
@@ -487,6 +534,11 @@ async function readConfigurationDocument(path: string): Promise<ConfigurationDoc
   }
   if (!asRecord(parsed)) throw new Error('Binaflow config must be a JSON object');
   return parsed as ConfigurationDocument;
+}
+
+async function configurationSourceHash(path: string): Promise<string> {
+  const content = await readFile(path);
+  return createHash('sha256').update(content).digest('hex');
 }
 
 function diagnoseQaHistory(value: unknown, errors: string[]): { enabled: boolean } {

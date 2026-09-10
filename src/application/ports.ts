@@ -12,6 +12,27 @@ import type { WorkflowDefinition } from '../core/workflow.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
 import type { WorkflowRuntime } from '../core/workflow-runtime.js';
+import type {
+  BeginPreparationReviewRequest,
+  BeginPreparationReviewResult,
+  BeginPreparationTurnRequest,
+  BeginPreparationTurnResult,
+  DocumentPage,
+  FinishPreparationReviewRequest,
+  FinishPreparationTurnRequest,
+  PreparationDraftPage,
+  PreparationConversation,
+  PreparationDraft,
+  PreparationMessage,
+  PreparationMessagePage,
+  PreparationProposalPage,
+  PreparationProposal,
+  PreparationRevision,
+  PreparationStoredView,
+  TaskRunPage,
+  UpdatePreparationRequest,
+  UpdatePreparationSynthesisRequest,
+} from './preparation.js';
 
 export interface ApplicationArtifactStore {
   read(artifact: ArtifactReference): Promise<string>;
@@ -22,6 +43,90 @@ export interface ApplicationArtifactStore {
     content: string;
     truncated: boolean;
   }>;
+  readPage?(
+    artifact: ArtifactReference,
+    options: { offset: number; maxBytes: number; maxLines: number },
+  ): Promise<{
+    content: string;
+    endOffset: number;
+    hasMore: boolean;
+    startsMidLine: boolean;
+    endsMidLine: boolean;
+    version: string;
+  }>;
+}
+
+export interface ApplicationPreparationArtifactStore {
+  write(
+    runId: string,
+    stepId: string,
+    name: string,
+    kind: 'json' | 'text',
+    content: string,
+    mediaType: string,
+  ): Promise<ArtifactReference>;
+  remove(artifact: ArtifactReference): Promise<void>;
+}
+
+export interface ApplicationPreparationStore {
+  createPreparation(draft: PreparationDraft): Promise<void>;
+  listPreparations(workspace?: string): Promise<PreparationDraft[]>;
+  getPreparation(draftId: string): Promise<PreparationConversation | undefined>;
+  claimPreparation(draftId: string, revision: PreparationRevision): Promise<string | undefined>;
+  releasePreparation(draftId: string, claimToken: string): Promise<void>;
+  savePreparationMessage(
+    message: PreparationMessage,
+    expectedRevision: number,
+    claimToken: string,
+  ): Promise<void>;
+  publishPreparationProposal(
+    proposal: PreparationProposal,
+    expectedRevision: number,
+    claimToken: string,
+  ): Promise<void>;
+  recoverPreparation(draftId: string): Promise<void>;
+  getPreparationOverview?(draftId: string): Promise<PreparationStoredView | undefined>;
+  listPreparationDraftsPage?(query: {
+    workspace?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PreparationDraftPage>;
+  listPreparationMessagesPage?(query: {
+    draftId: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PreparationMessagePage>;
+  listPreparationProposalsPage?(query: {
+    draftId: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<PreparationProposalPage>;
+  readPreparationDocumentPage?(query: {
+    draftId: string;
+    kind: import('./preparation.js').PreparationDocumentKind;
+    documentId: string;
+    view?: 'readable' | 'source';
+    cursor?: string;
+  }): Promise<DocumentPage>;
+  updatePreparationSettings?(request: UpdatePreparationRequest): Promise<PreparationStoredView>;
+  updatePreparationSynthesis?(
+    request: UpdatePreparationSynthesisRequest,
+  ): Promise<PreparationStoredView>;
+  beginPreparationTurn?(request: BeginPreparationTurnRequest): Promise<BeginPreparationTurnResult>;
+  finishPreparationTurn?(request: FinishPreparationTurnRequest): Promise<PreparationStoredView>;
+  beginPreparationReview?(
+    request: BeginPreparationReviewRequest,
+  ): Promise<BeginPreparationReviewResult>;
+  finishPreparationReview?(request: FinishPreparationReviewRequest): Promise<PreparationStoredView>;
+  acknowledgePreparationReview?(request: {
+    draftId: string;
+    expectedRevision: number;
+    reviewId: string;
+  }): Promise<PreparationStoredView>;
+  recoverPreparationView?(
+    draftId: string,
+    expectedRevision: number,
+  ): Promise<PreparationStoredView>;
 }
 
 export interface WorkflowExecutor {
@@ -118,6 +223,11 @@ export interface ApplicationRunStore {
     runId: string,
     query?: ApplicationRunEventPageQuery,
   ): Promise<ApplicationRunEventPage>;
+  listTaskRunsPage?(query?: { limit?: number; cursor?: string }): Promise<TaskRunPage>;
+  createRunFromPreparation?(seed: import('./preparation.js').PreparationExecutionSeed): Promise<{
+    run: WorkflowRun;
+    claim: ExecutionClaim;
+  }>;
 }
 
 export interface ResearchPersistence extends Pick<

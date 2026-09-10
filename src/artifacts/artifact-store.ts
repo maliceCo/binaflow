@@ -12,9 +12,28 @@ export interface ArtifactStore {
   remove(artifact: ArtifactReference): Promise<void>;
   read(artifact: ArtifactReference): Promise<string>;
   readBounded(artifact: ArtifactReference, maxBytes: number): Promise<BoundedArtifactContent>;
+  readPage?(
+    artifact: ArtifactReference,
+    options: ArtifactPageOptions,
+  ): Promise<ArtifactPageContent>;
 }
 
 export interface BoundedArtifactContent {
   content: string;
   truncated: boolean;
+}
+
+export interface ArtifactPageOptions {
+  offset: number;
+  maxBytes: number;
+  maxLines: number;
+}
+
+export interface ArtifactPageContent {
+  content: string;
+  endOffset: number;
+  hasMore: boolean;
+  startsMidLine: boolean;
+  endsMidLine: boolean;
+  version: string;
 }

@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   loadConfig,
@@ -124,7 +124,7 @@ describe('Binaflow config', () => {
     expect(validation.errors).toEqual([]);
     expect(validation.profile?.skills).toEqual({
       mode: 'only',
-      paths: ['/workspace/.binaflow/skills/review'],
+      paths: [resolve('/workspace/.binaflow/skills/review')],
       required: ['review'],
     });
   });

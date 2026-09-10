@@ -2,11 +2,20 @@ import { parentWorkspacePath } from '../application/config-operations.js';
 import { approvalActionItems } from './screens/approval.js';
 import { detailActionItems } from './screens/detail.js';
 import { setupChoices, setupProfileChoices, workflowInputFields } from './launch.js';
-import { visibleFolderEntries, type TuiEvent, type TuiState } from './model.js';
+import {
+  preparationActionLabels,
+  parsePreparationSynthesis,
+  visibleFolderEntries,
+  type TuiEvent,
+  type TuiState,
+} from './model.js';
 
 export interface ShellInputKey {
   backspace?: boolean;
   ctrl?: boolean;
+  meta?: boolean;
+  pageDown?: boolean;
+  pageUp?: boolean;
   downArrow?: boolean;
   escape?: boolean;
   return?: boolean;
@@ -20,6 +29,7 @@ export interface ShellInputOptions {
   current: TuiState;
   belowMinimumSize: boolean;
   launching: boolean;
+  operationActive?: boolean;
   hasLiveExecution: boolean;
   size: { columns: number; rows: number };
   dispatch: (event: TuiEvent) => void;
@@ -27,7 +37,7 @@ export interface ShellInputOptions {
   exit: (code?: number) => void;
   toggleLiveDetail: () => void;
   moveLive: (direction: -1 | 1) => void;
-  loadArtifact: () => void;
+  loadArtifact: (cursor?: string) => void;
 }
 
 export function handleShellInput({
@@ -36,6 +46,7 @@ export function handleShellInput({
   current,
   belowMinimumSize,
   launching,
+  operationActive = false,
   hasLiveExecution,
   size,
   dispatch,
@@ -52,7 +63,7 @@ export function handleShellInput({
     return;
   }
   if (input === 'c' && key.ctrl) {
-    if (hasLiveExecution || launching) requestCancellation();
+    if (hasLiveExecution || launching || operationActive) requestCancellation();
     else exit(130);
     return;
   }
@@ -82,10 +93,80 @@ export function handleShellInput({
     current.overlay === 'rejection-feedback' ||
     current.detail === 'review-thread' ||
     current.detail === 'qa-review';
+  if (current.detail === 'preparation') {
+    if (current.preparationFocus === 'editor' || current.preparationFocus === 'synthesis') {
+      if (current.preparationFocus === 'synthesis' && key.ctrl && key.return) {
+        const synthesis = parsePreparationSynthesis(current.inputValue);
+        if (typeof synthesis === 'string') dispatch({ type: 'error-set', message: synthesis });
+        else dispatch({ type: 'preparation-synthesis-save', synthesis });
+      } else if (key.tab || key.escape) dispatch({ type: 'preparation-focus' });
+      else if (key.backspace || input === '\x7f') {
+        dispatch({ type: 'input-change', value: current.inputValue.slice(0, -1) });
+      } else if (key.return || input === '\r' || input === '\n') {
+        dispatch({ type: 'input-change', value: `${current.inputValue}\n` });
+      } else if (input.length > 0 && !key.ctrl && !key.meta) {
+        dispatch({ type: 'input-change', value: `${current.inputValue}${input}` });
+      }
+      return;
+    }
+    if (current.preparationFocus === 'settings') {
+      if (key.escape || key.tab) dispatch({ type: 'preparation-focus' });
+      else {
+        const direction =
+          input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
+        if (direction !== 0)
+          dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+        else if (key.return || input === '\r')
+          dispatch({ type: 'preparation-setting-select', index: current.preparationSelected });
+      }
+      return;
+    }
+    if (key.escape) dispatch({ type: 'preparation-back' });
+    else if (key.tab) dispatch({ type: 'preparation-focus' });
+    const direction = input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
+    if (current.preparationFocus === 'actions' && direction !== 0) {
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+    } else if (current.preparationFocus === 'actions' && (key.return || input === '\r')) {
+      const action = preparationActionLabels(
+        current.preparation,
+        current.preparationOverview,
+        current.preparationDrafts ?? [],
+      )[current.preparationSelected];
+      if (action === 'Accept synthesis suggestion')
+        dispatch({ type: 'preparation-accept-synthesis' });
+      else if (action === 'Retry last response') dispatch({ type: 'preparation-retry' });
+      else if (action === 'Edit synthesis') dispatch({ type: 'preparation-synthesis-edit' });
+      else if (action === 'Configure agents') dispatch({ type: 'preparation-settings-open' });
+      else if (action === 'Generate proposal') dispatch({ type: 'preparation-generate-proposal' });
+      else if (action === 'Open proposal') dispatch({ type: 'preparation-proposal-open' });
+      else if (action === 'Review proposal') dispatch({ type: 'preparation-review-proposal' });
+      else if (action === 'Acknowledge review') dispatch({ type: 'preparation-ack-review' });
+      else if (action === 'Approve plan and execute') dispatch({ type: 'preparation-approve' });
+      else if (action === 'Back') dispatch({ type: 'preparation-back' });
+      else if (action?.startsWith('Reopen ')) {
+        const draft = current.preparationDrafts?.find((candidate) =>
+          action.startsWith(`Reopen ${candidate.id.slice(0, 8)}`),
+        );
+        if (draft) dispatch({ type: 'preparation-open-draft', draftId: draft.id });
+      }
+    }
+    return;
+  }
+  if (current.detail === 'proposal') {
+    if (key.escape || input === 'q') dispatch({ type: 'preparation-proposal-back' });
+    return;
+  }
+  if (
+    (current.detail === 'review-thread' || current.detail === 'qa-review') &&
+    current.reviewFocus === 'actions'
+  ) {
+    const direction = input === 'j' || key.downArrow ? 1 : input === 'k' || key.upArrow ? -1 : 0;
+    if (direction !== 0)
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+    return;
+  }
   if (textInputActive) {
-    if ((current.detail === 'review-thread' || current.detail === 'qa-review') && input === 'q') {
-      dispatch({ type: 'review-back' });
-    } else if (key.escape) {
+    if (key.escape) {
       if (launchInputActive) dispatch({ type: 'launch-cancel' });
       else if (setupInputActive) dispatch({ type: 'setup-cancel' });
       else if (current.detail === 'review-thread' || current.detail === 'qa-review')
@@ -292,7 +373,8 @@ export function handleShellInput({
   }
 
   if (current.detail === 'inspect') {
-    if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+    if (input === 'r') dispatch({ type: 'open-qa-report' });
+    else if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
     else if (direction !== 0) {
       dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
     } else if (input === '\r' || key.return) {
@@ -311,7 +393,8 @@ export function handleShellInput({
   }
 
   if (current.detail === 'result') {
-    if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+    if (input === 'r') dispatch({ type: 'open-qa-report' });
+    else if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
     else if (direction !== 0) {
       dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 16) });
     } else if (input === '\r' || key.return) dispatch({ type: 'open-artifacts' });
@@ -322,7 +405,30 @@ export function handleShellInput({
     if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
     else if (direction !== 0) {
       dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 12) });
-    } else if (input === '\r' || key.return) loadArtifact();
+    } else if (input === '[' || key.pageUp) loadArtifact(current.artifactPage?.previousCursor);
+    else if (input === ']' || key.pageDown) loadArtifact(current.artifactPage?.nextCursor);
+    else if (input === '\r' || key.return) loadArtifact();
+    return;
+  }
+
+  if (current.detail === 'qa-report') {
+    if (input === 'q' || key.escape) dispatch({ type: 'inspect-back' });
+    else if (input === 'f') dispatch({ type: 'qa-filter-cycle' });
+    else if (key.tab) dispatch({ type: 'qa-report-focus' });
+    else if (direction !== 0) {
+      if (current.qaReportFocus === 'rounds') {
+        const roundIds = current.taskOutcome?.qaRoundIds ?? [];
+        const selected = Math.max(0, roundIds.indexOf(current.qaRoundId ?? ''));
+        const roundId = roundIds[Math.max(0, Math.min(roundIds.length - 1, selected + direction))];
+        if (roundId) dispatch({ type: 'qa-round-select', roundId });
+      } else {
+        dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+      }
+    } else if (input === '\r' || key.return) {
+      if (current.qaReportFocus === 'rounds' && current.qaRoundId)
+        dispatch({ type: 'qa-round-select', roundId: current.qaRoundId });
+      else if (current.qaReportFocus === 'findings') dispatch({ type: 'qa-report-focus' });
+    }
     return;
   }
 
@@ -337,11 +443,22 @@ export function handleShellInput({
     return;
   }
 
-  if (input === 'n') dispatch({ type: 'new-run' });
+  if (operationActive && (input === 'n' || input === 'c' || input === 'w' || input === 'p')) {
+    dispatch({
+      type: 'status-set',
+      message: 'An operation is active; cancel it before changing context.',
+    });
+  } else if (operationActive && (input === '\r' || key.return) && current.focus === 'workflows') {
+    dispatch({
+      type: 'status-set',
+      message: 'An operation is active; cancel it before starting another run.',
+    });
+  } else if (input === 'n') dispatch({ type: 'new-run' });
   else if (input === 'c') dispatch({ type: 'open-agent-configuration' });
   else if (input === 'w') dispatch({ type: 'open-folder-picker' });
   else if (input === 'd' || input === 'r') dispatch({ type: 'refresh-diagnosis' });
   else if (input === 'b') dispatch({ type: 'open-bugs' });
+  else if (input === 'p') dispatch({ type: 'open-preparation' });
   else if (input === '?') dispatch({ type: 'open-help' });
   else if (key.tab) {
     dispatch({

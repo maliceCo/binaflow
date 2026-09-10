@@ -12,6 +12,9 @@ export function QaReviewScreen(props: {
   onExplain: () => void;
   onDecision: (decision: 'approve' | 'correct' | 'accept-risk' | 'postpone') => void;
   onFinalize: () => void;
+  focus: import('../model.js').ReviewFocus;
+  selected: number;
+  onFocus: () => void;
 }) {
   return <ReviewThreadScreen {...props} />;
 }

@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, realpath, rename, rm } from 'node:fs/promises';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import type { ArtifactReference } from '../core/run.js';
-import type { ArtifactStore, BoundedArtifactContent } from './artifact-store.js';
+import type {
+  ArtifactPageContent,
+  ArtifactPageOptions,
+  ArtifactStore,
+  BoundedArtifactContent,
+} from './artifact-store.js';
 
 export class FileArtifactStore implements ArtifactStore {
   private readonly root: string;
@@ -103,6 +108,73 @@ export class FileArtifactStore implements ArtifactStore {
       await handle.close();
     }
   }
+
+  async readPage(
+    artifact: ArtifactReference,
+    options: ArtifactPageOptions,
+  ): Promise<ArtifactPageContent> {
+    if (
+      !Number.isSafeInteger(options.offset) ||
+      options.offset < 0 ||
+      !Number.isInteger(options.maxBytes) ||
+      options.maxBytes < 1 ||
+      !Number.isInteger(options.maxLines) ||
+      options.maxLines < 1
+    ) {
+      throw new Error('Invalid artifact page limits');
+    }
+    const safePath = await validatedReadPath(this.root, artifact.path);
+    const handle = await open(safePath, 'r');
+    try {
+      const before = await handle.stat();
+      const version = artifactVersion(before.size, before.mtimeMs);
+      if (options.offset > before.size)
+        throw new Error('Artifact page offset is outside the document');
+      const previous = Buffer.alloc(options.offset > 0 ? 1 : 0);
+      if (previous.length > 0) await handle.read(previous, 0, 1, options.offset - 1);
+      const buffer = Buffer.alloc(options.maxBytes + 4);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, options.offset);
+      let contentBytes = Math.min(bytesRead, options.maxBytes);
+      let endOffset = options.offset + contentBytes;
+      const incompleteBytes = trailingIncompleteUtf8Bytes(buffer.subarray(0, contentBytes));
+      if (incompleteBytes > 0) {
+        contentBytes -= incompleteBytes;
+        endOffset -= incompleteBytes;
+      }
+      let contentBuffer = buffer.subarray(0, contentBytes);
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      decoder.decode(contentBuffer);
+      let content = contentBuffer.toString('utf8');
+      const lineBreaks = [...content].filter((character) => character === '\n').length;
+      if (lineBreaks > options.maxLines) {
+        let index = 0;
+        for (let line = 0; line < options.maxLines; line += 1) {
+          index = content.indexOf('\n', index) + 1;
+        }
+        content = content.slice(0, index);
+        contentBuffer = Buffer.from(content, 'utf8');
+        endOffset = options.offset + contentBuffer.byteLength;
+      }
+      const after = await handle.stat();
+      if (after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
+        throw new Error('Artifact changed while it was being read');
+      }
+      return {
+        content,
+        endOffset,
+        hasMore: endOffset < before.size,
+        startsMidLine: options.offset > 0 && previous[0] !== 0x0a,
+        endsMidLine: endOffset < before.size && contentBuffer[contentBuffer.length - 1] !== 0x0a,
+        version,
+      };
+    } finally {
+      await handle.close();
+    }
+  }
+}
+
+function artifactVersion(size: number, mtimeMs: number): string {
+  return `${size}:${mtimeMs}`;
 }
 
 async function syncDirectory(directory: string): Promise<void> {

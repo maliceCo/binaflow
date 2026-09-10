@@ -1,4 +1,5 @@
 import type { ArtifactReference } from '../core/run.js';
+import type { DocumentPage } from './preparation.js';
 import type { ApplicationArtifactStore, ApplicationRunStore } from './ports.js';
 import type { RunInspection } from './run-operations.js';
 
@@ -17,6 +18,12 @@ export interface ArtifactContentView {
 export interface ReadArtifactOptions {
   mode?: 'preview' | 'full';
   maxBytes?: number;
+}
+
+export interface ReadArtifactPageOptions {
+  cursor?: string;
+  maxBytes?: number;
+  maxLines?: number;
 }
 
 interface ArtifactOperationsContext {
@@ -55,6 +62,96 @@ export async function readArtifact(
       formatted: false,
       error: `Artifact cannot be read: ${error instanceof Error ? error.message : String(error)}`,
     };
+  }
+}
+
+export async function readArtifactPage(
+  context: ArtifactOperationsContext,
+  runId: string,
+  artifactKey: string,
+  options: ReadArtifactPageOptions = {},
+): Promise<DocumentPage> {
+  if (!context.artifacts.readPage) throw new Error('Bounded artifact pages are not supported');
+  const maxBytes = options.maxBytes ?? 65_536;
+  const maxLines = options.maxLines ?? 200;
+  if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 65_536) {
+    throw new Error('Artifact page byte limit must be between 1 and 65536');
+  }
+  if (!Number.isInteger(maxLines) || maxLines < 1 || maxLines > 200) {
+    throw new Error('Artifact page line limit must be between 1 and 200');
+  }
+  const artifact = (await context.store.getArtifacts(runId)).find(
+    (candidate) =>
+      candidate.id === artifactKey || `${candidate.stepId}.${candidate.name}` === artifactKey,
+  );
+  if (!artifact) throw new Error(`Unknown artifact for run ${runId}: ${artifactKey}`);
+  const cursor = options.cursor ? decodeArtifactPageCursor(options.cursor, artifact.id) : undefined;
+  const page = await context.artifacts.readPage(artifact, {
+    offset: cursor?.offset ?? 0,
+    maxBytes,
+    maxLines,
+  });
+  if (cursor && cursor.version !== page.version) {
+    throw new Error('Artifact changed since the page cursor was created');
+  }
+  return {
+    documentId: artifact.id,
+    version: page.version,
+    content: page.content,
+    startOffset: cursor?.offset ?? 0,
+    endOffset: page.endOffset,
+    ...((cursor?.offset ?? 0) > 0
+      ? {
+          previousCursor: encodeArtifactPageCursor(
+            artifact.id,
+            page.version,
+            Math.max(0, (cursor?.offset ?? 0) - maxBytes),
+          ),
+        }
+      : {}),
+    ...(page.hasMore
+      ? { nextCursor: encodeArtifactPageCursor(artifact.id, page.version, page.endOffset) }
+      : {}),
+    startsMidLine: page.startsMidLine,
+    endsMidLine: page.endsMidLine,
+    format: artifact.kind === 'json' ? 'json' : 'text',
+    limitations: [],
+  };
+}
+
+function encodeArtifactPageCursor(artifactId: string, version: string, offset: number): string {
+  return Buffer.from(
+    JSON.stringify({ source: 'artifact', artifactId, version, offset }),
+    'utf8',
+  ).toString('base64url');
+}
+
+function decodeArtifactPageCursor(
+  encoded: string,
+  artifactId: string,
+): {
+  version: string;
+  offset: number;
+} {
+  try {
+    const value = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+    if (
+      value.source !== 'artifact' ||
+      value.artifactId !== artifactId ||
+      typeof value.version !== 'string' ||
+      !Number.isSafeInteger(value.offset) ||
+      (value.offset as number) < 0
+    ) {
+      throw new Error('cursor does not match the artifact');
+    }
+    return { version: value.version, offset: value.offset as number };
+  } catch (error) {
+    throw new Error(
+      `Invalid artifact page cursor: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

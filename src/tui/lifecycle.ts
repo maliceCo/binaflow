@@ -7,6 +7,7 @@ export type CancellationRequest = 'inactive' | 'graceful' | 'forced';
 export interface AttachedExecutionLifecycle<Context extends ClosableContext> {
   readonly context: Context | undefined;
   readonly ownsContext: boolean;
+  readonly operationActive?: boolean;
   readonly forceSignal: NodeJS.Signals | undefined;
   beginOperation(): AbortController;
   trackOperation(operation: Promise<void>): void;
@@ -98,6 +99,9 @@ export function createAttachedExecutionLifecycle<Context extends ClosableContext
     },
     get ownsContext() {
       return ownsContext;
+    },
+    get operationActive() {
+      return operationActive;
     },
     get forceSignal() {
       return forceSignal;
