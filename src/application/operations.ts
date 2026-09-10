@@ -12,8 +12,10 @@ export {
   clarificationQuestions,
   loadResearchApprovalPreviews,
   readArtifact,
+  readArtifactPage,
   type ArtifactContentView,
   type ReadArtifactOptions,
+  type ReadArtifactPageOptions,
 } from './artifact-operations.js';
 export {
   buildRunRecoveryExplanation,

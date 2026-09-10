@@ -1,7 +1,9 @@
 import type { ArtifactContentView } from '../../application/operations.js';
+import type { DocumentPage } from '../../application/preparation.js';
 import type { RunView } from '../../application/run-view.js';
 import { formatBytes } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, SelectionList, TextViewport } from '../components.js';
+import { DocumentView } from '../document-view.js';
 
 export function ArtifactsScreen({
   colors,
@@ -9,6 +11,7 @@ export function ArtifactsScreen({
   selected,
   offset,
   content,
+  page,
   contentOffset,
   visibleRows,
 }: {
@@ -17,6 +20,7 @@ export function ArtifactsScreen({
   selected: number;
   offset: number;
   content?: ArtifactContentView | undefined;
+  page?: DocumentPage | undefined;
   contentOffset: number;
   visibleRows: number;
 }) {
@@ -25,7 +29,7 @@ export function ArtifactsScreen({
     <ScreenFrame
       title="Artifacts"
       subtitle="Select an artifact to load a bounded preview."
-      footer={empty ? 'q back' : 'j/k move | Enter preview | q back'}
+      footer={empty ? 'q back' : 'j/k move | Enter preview | PageUp/PageDown page | q back'}
       colors={colors}
       border={false}
     >
@@ -50,7 +54,9 @@ export function ArtifactsScreen({
             />
           </PaneSection>
           <PaneSection title="Preview" colors={colors}>
-            {content ? (
+            {page ? (
+              <DocumentView page={page} visibleRows={visibleRows} />
+            ) : content ? (
               <TextViewport
                 lines={
                   content.error

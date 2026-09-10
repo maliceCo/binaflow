@@ -1,4 +1,5 @@
-import { useApp, useInput } from 'ink';
+import { useApp, useInput, usePaste } from 'ink';
+import { randomUUID } from 'node:crypto';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   configurationExists,
@@ -19,6 +20,7 @@ import type { RunView } from '../application/run-view.js';
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationContext } from '../application/runtime.js';
 import type { ApplicationService } from '../application/service.js';
+import type { PreparationSelection } from '../application/preparation.js';
 import type { AgentModel } from '../core/agent.js';
 import type { ApplicationContextInput } from './shell.js';
 import { explainUserError } from '../presentation/format.js';
@@ -53,7 +55,13 @@ import {
   WelcomeScreen,
 } from './layout.js';
 import type { AttachedExecutionLifecycle } from './lifecycle.js';
-import { createInitialTuiState, type FolderEntry, type TuiEvent, type TuiState } from './model.js';
+import {
+  createInitialTuiState,
+  preparationSelectionForModel,
+  type FolderEntry,
+  type TuiEvent,
+  type TuiState,
+} from './model.js';
 import { reduce } from './reduce.js';
 import { handleShellInput } from './shell-input.js';
 import { renderShellDetail } from './shell-view.js';
@@ -97,7 +105,11 @@ export function InkShellController({
   const folderRequest = useRef(0);
   const inspectionRequest = useRef(0);
   const artifactRequest = useRef(0);
+  const artifactPageCache = useRef(
+    new Map<string, import('../application/preparation.js').DocumentPage>(),
+  );
   const qaHistoryRequest = useRef(0);
+  const qaRoundRequest = useRef(0);
   const qaDefectRequest = useRef(0);
   const reviewRequest = useRef(0);
   const activeRunId = useRef<string | undefined>(undefined);
@@ -521,6 +533,39 @@ export function InkShellController({
     return { view: viewResult.value, inspection, clarifications };
   };
 
+  const loadTaskOutcome = async (application: ApplicationService, runId: string): Promise<void> => {
+    if (!application.getTaskOutcome) return;
+    const request = application.getTaskOutcome(runId);
+    lifecycle.trackRequest(request);
+    try {
+      const outcome = await request;
+      if (active.current && stateRef.current.activeRunId === runId)
+        dispatch({ type: 'task-outcome-set', outcome });
+    } catch {
+      // Outcome projection is supplemental to the authoritative run view.
+    }
+  };
+
+  const loadQaRound = async (runId: string, roundId: string): Promise<void> => {
+    const requestId = ++qaRoundRequest.current;
+    const request = (async () => {
+      const application = await ensureContext();
+      if (!application.getTaskQaRound) throw new Error('QA reports are unavailable for this run.');
+      const round = await application.getTaskQaRound(runId, roundId);
+      if (
+        active.current &&
+        requestId === qaRoundRequest.current &&
+        stateRef.current.detail === 'qa-report' &&
+        stateRef.current.activeRunId === runId &&
+        stateRef.current.qaRoundId === roundId
+      ) {
+        dispatch({ type: 'qa-round-set', round });
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
   const loadInspection = async (runId: string): Promise<void> => {
     const requestId = ++inspectionRequest.current;
     const request = (async () => {
@@ -550,6 +595,7 @@ export function InkShellController({
         )
           return;
         dispatch({ type: 'run-view-set', view, clarifications });
+        await loadTaskOutcome(application, runId);
         if (view.pendingAction) dispatch({ type: 'approval-set', previews });
         else if (stateRef.current.detail === 'approval') dispatch({ type: 'leave-waiting' });
       } catch (reason) {
@@ -588,19 +634,331 @@ export function InkShellController({
     await request;
   };
 
+  const openPreparation = async (): Promise<void> => {
+    const current = stateRef.current;
+    const workflowId = current.preparationWorkflowId;
+    if (
+      workflowId !== 'plan-build' &&
+      workflowId !== 'plan-build-qa' &&
+      workflowId !== 'plan-build-qa-interactive'
+    ) {
+      dispatch({
+        type: 'error-set',
+        message: 'Preparation is available for plan-build workflows.',
+      });
+      return;
+    }
+    const application = await ensureContext();
+    if (!application.createPreparation)
+      throw new Error('Preparation is unavailable in this context.');
+    const preparation = await application.createPreparation({ workspace: current.cwd, workflowId });
+    if (active.current) {
+      dispatch({ type: 'preparation-set', preparation });
+      if (application.discoverPreparationModels) {
+        const models = await application.discoverPreparationModels();
+        if (active.current) dispatch({ type: 'preparation-models-set', models });
+      }
+      if (application.getPreparationOverview) {
+        const overview = await application.getPreparationOverview(preparation.draft.id);
+        if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+      }
+      if (application.listPreparations) {
+        const drafts = await application.listPreparations(current.cwd);
+        if (active.current) dispatch({ type: 'preparations-loaded', drafts });
+      }
+    }
+  };
+
+  const reopenPreparation = async (draftId: string): Promise<void> => {
+    const application = await ensureContext();
+    if (!application.getPreparation) throw new Error('Preparation is unavailable in this context.');
+    const preparation = await application.getPreparation(draftId);
+    if (active.current) {
+      dispatch({ type: 'preparation-set', preparation });
+      if (application.getPreparationOverview) {
+        const overview = await application.getPreparationOverview(draftId);
+        if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+      }
+    }
+  };
+
+  const sendPreparationMessage = (content: string): void => {
+    const draftId = stateRef.current.preparation?.draft.id;
+    if (!draftId) return;
+    let controller: AbortController;
+    try {
+      controller = lifecycle.beginOperation();
+    } catch (reason) {
+      dispatch({
+        type: 'error-set',
+        message: reason instanceof Error ? reason.message : String(reason),
+      });
+      return;
+    }
+    setLaunching(true);
+    lifecycle.trackOperation(
+      (async () => {
+        try {
+          const application = await ensureContext();
+          if (application.replyPreparationTurn) {
+            await application.replyPreparationTurn({
+              draftId,
+              expectedRevision: stateRef.current.preparation?.draft.revision ?? 0,
+              requestId: randomUUID(),
+              content,
+              signal: controller.signal,
+              onPersisted: (overview) => {
+                if (active.current && stateRef.current.preparation?.draft.id === draftId)
+                  dispatch({ type: 'preparation-overview-set', overview });
+              },
+            });
+            if (application.getPreparation) {
+              const preparation = await application.getPreparation(draftId);
+              if (active.current && stateRef.current.preparation?.draft.id === draftId) {
+                dispatch({ type: 'preparation-set', preparation });
+                if (application.getPreparationOverview) {
+                  const overview = await application.getPreparationOverview(draftId);
+                  if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+                }
+              }
+            }
+          } else {
+            if (!application.replyPreparation)
+              throw new Error('Preparation is unavailable in this context.');
+            const result = await application.replyPreparation({
+              draftId,
+              content,
+              signal: controller.signal,
+            });
+            if (active.current && stateRef.current.preparation?.draft.id === draftId)
+              dispatch({ type: 'preparation-replied', result });
+          }
+        } catch (reason) {
+          if (active.current)
+            dispatch({
+              type: 'error-set',
+              message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+            });
+        } finally {
+          setLaunching(false);
+        }
+      })(),
+    );
+  };
+
+  const runPreparationProposalOperation = (
+    kind:
+      | 'generate'
+      | 'review'
+      | 'acknowledge'
+      | 'accept-synthesis'
+      | 'save-synthesis'
+      | 'settings'
+      | 'retry',
+  ): void => {
+    const current = stateRef.current;
+    const preparation = current.preparation;
+    if (!preparation) return;
+    let controller: AbortController;
+    try {
+      controller = lifecycle.beginOperation();
+    } catch (reason) {
+      dispatch({
+        type: 'error-set',
+        message: reason instanceof Error ? reason.message : String(reason),
+      });
+      return;
+    }
+    setLaunching(true);
+    lifecycle.trackOperation(
+      (async () => {
+        try {
+          const application = await ensureContext();
+          if (kind === 'generate' && application.generatePreparationProposal) {
+            await application.generatePreparationProposal({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              requestId: randomUUID(),
+              signal: controller.signal,
+              onPersisted: (overview) => {
+                if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+              },
+            });
+          } else if (
+            kind === 'review' &&
+            application.reviewPreparationProposal &&
+            preparation.proposal
+          ) {
+            await application.reviewPreparationProposal({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              proposalId: preparation.proposal.id,
+              requestId: randomUUID(),
+              signal: controller.signal,
+              onPersisted: (overview) => {
+                if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+              },
+            });
+          } else if (
+            kind === 'acknowledge' &&
+            application.acknowledgePreparationReview &&
+            current.preparationOverview?.review
+          ) {
+            await application.acknowledgePreparationReview({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              reviewId: current.preparationOverview.review.id,
+            });
+          } else if (kind === 'accept-synthesis' && application.updatePreparationSynthesis) {
+            const suggestion = current.preparationOverview?.suggestion;
+            if (!suggestion) throw new Error('No synthesis suggestion is awaiting confirmation.');
+            await application.updatePreparationSynthesis({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              synthesis: suggestion.synthesis,
+              coveredThroughSequence: suggestion.coveredThroughSequence,
+              suggestionId: suggestion.id,
+            });
+          } else if (kind === 'save-synthesis' && application.updatePreparationSynthesis) {
+            const synthesis = current.preparationSynthesisDraft;
+            if (!synthesis) throw new Error('No synthesis is ready to save.');
+            await application.updatePreparationSynthesis({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              synthesis,
+              coveredThroughSequence: preparation.messages.at(-1)?.sequence ?? 0,
+            });
+          } else if (kind === 'settings' && application.updatePreparationSettings) {
+            const role = current.preparationSettingRole;
+            const selectedModel = current.preparationModels?.[current.preparationSelected];
+            const patch: {
+              producer?: PreparationSelection | null;
+              reviewer?: PreparationSelection | null;
+              reviewMode?: 'human' | 'optional-auto' | 'required-auto';
+            } = {};
+            if (role === 'reviewMode') {
+              patch.reviewMode = ['human', 'optional-auto', 'required-auto'][
+                current.preparationSelected
+              ] as 'human' | 'optional-auto' | 'required-auto';
+            } else if (role && selectedModel) {
+              patch[role] = preparationSelectionForModel(selectedModel);
+            } else {
+              throw new Error('Preparation setting selection is unavailable.');
+            }
+            await application.updatePreparationSettings({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              patch,
+            });
+          } else if (kind === 'retry' && application.retryPreparationReply) {
+            const userMessageId = current.preparationOverview?.operation?.userMessageId;
+            if (!userMessageId) throw new Error('No recoverable preparation response was found.');
+            await application.retryPreparationReply({
+              draftId: preparation.draft.id,
+              expectedRevision: preparation.draft.revision,
+              userMessageId,
+              requestId: randomUUID(),
+              signal: controller.signal,
+              onPersisted: (overview) => {
+                if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+              },
+            });
+          } else {
+            throw new Error('This preparation operation is unavailable in the current context.');
+          }
+          if (application.getPreparation) {
+            const nextPreparation = await application.getPreparation(preparation.draft.id);
+            if (active.current) dispatch({ type: 'preparation-set', preparation: nextPreparation });
+          }
+          if (application.getPreparationOverview && active.current) {
+            const overview = await application.getPreparationOverview(preparation.draft.id);
+            if (active.current) dispatch({ type: 'preparation-overview-set', overview });
+          }
+          if (kind === 'settings' && active.current) {
+            dispatch({ type: 'preparation-settings-advance' });
+          }
+        } catch (reason) {
+          if (active.current)
+            dispatch({
+              type: 'error-set',
+              message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+            });
+        } finally {
+          setLaunching(false);
+        }
+      })(),
+    );
+  };
+
+  const approvePreparation = (): void => {
+    const current = stateRef.current;
+    const preparation = current.preparation;
+    if (!preparation?.proposal || current.preparationFocus !== 'actions') return;
+    const workflow = discoverWorkflows().find(
+      (candidate) => candidate.id === preparation.draft.workflowId,
+    );
+    if (!workflow) {
+      dispatch({ type: 'error-set', message: 'Preparation workflow is unavailable.' });
+      return;
+    }
+    startAttachedExecution(
+      workflow,
+      async (application, signal, onRunStarted) => {
+        if (!application.approveAndExecutePreparation)
+          throw new Error('Preparation approval is unavailable.');
+        return application.approveAndExecutePreparation({
+          draftId: preparation.draft.id,
+          revision: preparation.draft.revision,
+          proposalId: preparation.proposal!.id,
+          signal,
+          onRunStarted,
+        });
+      },
+      (reason) =>
+        `Preparation execution failed: ${reason instanceof Error ? reason.message : String(reason)}`,
+    );
+  };
+
   const sendReviewMessage = async (content: string): Promise<void> => {
     const current = stateRef.current;
     const runId = current.activeRunId;
     const threadId = current.reviewThreadId;
     const application = lifecycle.context?.application;
-    if (!runId || !threadId || !application?.postReviewMessage) return;
-    const request = application.postReviewMessage({ runId, threadId, content });
-    lifecycle.trackRequest(request);
-    const review = await request;
-    if (active.current) dispatch({ type: 'review-message-sent', review });
+    if (!runId || !threadId || (!application?.replyReview && !application?.postReviewMessage))
+      return;
+    let controller: AbortController;
+    try {
+      controller = lifecycle.beginOperation();
+    } catch (reason) {
+      dispatch({
+        type: 'error-set',
+        message: reason instanceof Error ? reason.message : String(reason),
+      });
+      return;
+    }
+    setLaunching(true);
+    lifecycle.trackOperation(
+      (async () => {
+        try {
+          const request = application.replyReview
+            ? application.replyReview({ runId, threadId, content, signal: controller.signal })
+            : application.postReviewMessage!({ runId, threadId, content });
+          const review = await request;
+          if (active.current) dispatch({ type: 'review-message-sent', review });
+        } catch (reason) {
+          if (active.current)
+            dispatch({
+              type: 'error-set',
+              message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+            });
+        } finally {
+          setLaunching(false);
+        }
+      })(),
+    );
   };
 
-  const loadArtifact = async (): Promise<void> => {
+  const loadArtifact = async (cursor?: string): Promise<void> => {
     const current = stateRef.current;
     const artifact = current.runView?.artifacts[current.artifactSelected];
     const context = lifecycle.context;
@@ -608,9 +966,37 @@ export function InkShellController({
     const requestId = ++artifactRequest.current;
     const runId = current.runView.id;
     const artifactKey = `${artifact.stepId}.${artifact.name}`;
+    const cacheKey = `${artifact.id}:${cursor ?? ''}`;
+    const cached = artifactPageCache.current.get(cacheKey);
+    if (cached) {
+      dispatch({ type: 'artifact-page-set', page: cached });
+      return;
+    }
     const application = context.application;
     const request = (async () => {
       try {
+        if (application.readArtifactPage) {
+          const page = await application.readArtifactPage(
+            runId,
+            artifactKey,
+            cursor ? { cursor } : {},
+          );
+          artifactPageCache.current.set(cacheKey, page);
+          while (artifactPageCache.current.size > 3) {
+            const oldest = artifactPageCache.current.keys().next().value;
+            if (oldest === undefined) break;
+            artifactPageCache.current.delete(oldest);
+          }
+          if (
+            active.current &&
+            requestId === artifactRequest.current &&
+            stateRef.current.runView?.id === runId &&
+            stateRef.current.artifactSelected === current.artifactSelected
+          ) {
+            dispatch({ type: 'artifact-page-set', page });
+          }
+          return;
+        }
         const content = await application.readArtifact(runId, artifactKey);
         if (
           active.current &&
@@ -657,6 +1043,7 @@ export function InkShellController({
       return;
     }
     dispatch({ type: 'run-view-set', view, clarifications });
+    if (context?.application) await loadTaskOutcome(context.application, run.id);
     if (view.pendingAction) {
       let previews: Awaited<ReturnType<ApplicationService['loadResearchApprovalPreviews']>> = [];
       const application = context?.application;
@@ -843,6 +1230,44 @@ export function InkShellController({
           break;
         case 'open-review':
           if (next.detail === 'review' && next.activeRunId) await loadReview(next.activeRunId);
+          break;
+        case 'open-qa-report':
+        case 'qa-round-select':
+          if (next.detail === 'qa-report' && next.activeRunId && next.qaRoundId)
+            await loadQaRound(next.activeRunId, next.qaRoundId);
+          break;
+        case 'open-preparation':
+          if (next.detail === 'preparation') await openPreparation();
+          break;
+        case 'preparation-message-submit':
+          if (next !== previous) sendPreparationMessage(event.content);
+          break;
+        case 'preparation-generate-proposal':
+          if (next !== previous) runPreparationProposalOperation('generate');
+          break;
+        case 'preparation-accept-synthesis':
+          if (next !== previous) runPreparationProposalOperation('accept-synthesis');
+          break;
+        case 'preparation-retry':
+          if (next !== previous) runPreparationProposalOperation('retry');
+          break;
+        case 'preparation-synthesis-save':
+          if (next !== previous) runPreparationProposalOperation('save-synthesis');
+          break;
+        case 'preparation-setting-select':
+          if (next !== previous) runPreparationProposalOperation('settings');
+          break;
+        case 'preparation-review-proposal':
+          if (next !== previous) runPreparationProposalOperation('review');
+          break;
+        case 'preparation-ack-review':
+          if (next !== previous) runPreparationProposalOperation('acknowledge');
+          break;
+        case 'preparation-approve':
+          if (next !== previous) approvePreparation();
+          break;
+        case 'preparation-open-draft':
+          if (next !== previous) await reopenPreparation(event.draftId);
           break;
         case 'review-message-submit':
           if (next !== previous) await sendReviewMessage(event.content);
@@ -1069,6 +1494,7 @@ export function InkShellController({
       belowMinimumSize,
       launching,
       hasLiveExecution: liveRef.current !== undefined,
+      operationActive: lifecycle.operationActive === true,
       size,
       dispatch,
       requestCancellation,
@@ -1081,9 +1507,21 @@ export function InkShellController({
         const visibleRows = Math.max(1, size.rows - 13);
         setLiveOffset((offset) => scrollText(offset, direction, Math.max(1, lines), visibleRows));
       },
-      loadArtifact: () => void loadArtifact(),
+      loadArtifact: (cursor) => void loadArtifact(cursor),
     });
   });
+
+  usePaste(
+    (text) => {
+      const current = stateRef.current;
+      if (current.detail !== 'preparation' || current.preparationFocus !== 'editor') return;
+      dispatch({ type: 'input-change', value: `${current.inputValue}${text}` });
+    },
+    {
+      isActive:
+        stateRef.current.detail === 'preparation' && stateRef.current.preparationFocus === 'editor',
+    },
+  );
 
   if (belowMinimumSize) return <MinimumSizeFallback />;
 

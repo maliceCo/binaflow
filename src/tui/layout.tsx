@@ -16,6 +16,7 @@ import { workflowInputFields } from './launch.js';
 import { visibleFolderEntries, type FolderEntry, type TuiState } from './model.js';
 import { workflowItems } from './screens/workflows.js';
 import { BRAND_LOGO } from './brand.js';
+import { createTuiTheme, isNarrowTui } from './theme.js';
 
 const WELCOME_ACTIONS = [
   'Use this folder',
@@ -44,6 +45,7 @@ export function StudioLayout({
   live,
   liveDetail,
   size,
+  operationActive = false,
   right,
 }: {
   colors: boolean;
@@ -51,23 +53,34 @@ export function StudioLayout({
   live?: LiveState;
   liveDetail: boolean;
   size: { columns: number; rows: number };
+  operationActive?: boolean;
   right: ReactNode;
 }) {
+  const theme = createTuiTheme(colors);
+  const narrow = isNarrowTui(size.columns);
   const ready = state.diagnosis?.ready === true;
   const workflowLabels = workflowItems(state.workflows ?? [], state.diagnosis);
   const runLabels = (state.runs ?? []).map((run) => {
     const status = humanRunStatus(run.status);
     return `${run.id} ${run.workflowId} ${status}  ${truncateDisplay(run.objective, 24)}`;
   });
-  const paneRows = Math.max(2, size.rows - 14);
+  const paneRows = Math.max(2, size.rows - (narrow ? 16 : 14));
   const workflowsRows = Math.max(1, Math.floor((paneRows - 4) / 2));
   const runsRows = Math.max(1, paneRows - workflowsRows - 4);
+  const showNavigation = !narrow || state.focus !== 'detail';
+  const showDetail = !narrow || state.focus === 'detail';
   return (
     <AppFrame>
       <Box flexDirection="row" justifyContent="space-between">
         <Box>
           <SafeText bold>{'Binaflow  '}</SafeText>
-          <SafeText {...(colors ? { color: ready ? 'green' : 'yellow' } : {})}>
+          <SafeText
+            {...(ready && theme.success
+              ? { color: theme.success }
+              : !ready && theme.warning
+                ? { color: theme.warning }
+                : {})}
+          >
             {ready ? 'Ready' : 'Needs attention'}
           </SafeText>
         </Box>
@@ -81,50 +94,76 @@ export function StudioLayout({
           </SafeText>
         </Box>
       </Box>
-      <Box flexDirection="row" flexGrow={1}>
-        <Panel colors={colors} width={Math.max(24, Math.floor(size.columns * 0.4))}>
-          <PaneSection
-            title={state.focus === 'workflows' ? '> Workflows' : '  Workflows'}
+      {narrow ? (
+        <SafeText dimColor>{`Focused view: ${state.focus}. Tab switches views.`}</SafeText>
+      ) : null}
+      <Box flexDirection={narrow ? 'column' : 'row'} flexGrow={1}>
+        {showNavigation ? (
+          <Panel
             colors={colors}
-            first
+            focused={narrow && state.focus !== 'detail'}
+            width={narrow ? '100%' : Math.max(24, Math.floor(size.columns * 0.4))}
+            theme={theme}
           >
-            {workflowLabels.length > 0 ? (
-              <SelectionList
-                items={workflowLabels}
-                selected={state.workflowSelected}
-                offset={state.workflowOffset}
-                visibleRows={workflowsRows}
-              />
-            ) : (
-              <SafeText dimColor>Loading workflows...</SafeText>
-            )}
-          </PaneSection>
-          <SafeText dimColor>---</SafeText>
-          <PaneSection title={state.focus === 'runs' ? '> Runs' : '  Runs'} colors={colors}>
-            {runLabels.length > 0 ? (
-              <SelectionList
-                items={runLabels}
-                selected={state.runSelected}
-                offset={state.runOffset}
-                visibleRows={runsRows}
-              />
-            ) : (
-              <SafeText dimColor>No runs yet.</SafeText>
-            )}
-          </PaneSection>
-        </Panel>
-        <Panel
-          colors={colors}
-          focused={state.focus === 'detail'}
-          flexGrow={1}
-          width={`${Math.max(10, size.columns - Math.max(24, Math.floor(size.columns * 0.4)))}`}
-        >
-          {right}
-        </Panel>
+            <PaneSection
+              title={state.focus === 'workflows' ? '> Workflows' : '  Workflows'}
+              colors={colors}
+              first
+            >
+              {workflowLabels.length > 0 ? (
+                <SelectionList
+                  items={workflowLabels}
+                  selected={state.workflowSelected}
+                  offset={state.workflowOffset}
+                  visibleRows={workflowsRows}
+                />
+              ) : (
+                <SafeText dimColor>Loading workflows...</SafeText>
+              )}
+            </PaneSection>
+            <SafeText dimColor>---</SafeText>
+            <PaneSection title={state.focus === 'runs' ? '> Runs' : '  Runs'} colors={colors}>
+              {runLabels.length > 0 ? (
+                <SelectionList
+                  items={runLabels}
+                  selected={state.runSelected}
+                  offset={state.runOffset}
+                  visibleRows={runsRows}
+                />
+              ) : (
+                <SafeText dimColor>No runs yet.</SafeText>
+              )}
+            </PaneSection>
+          </Panel>
+        ) : null}
+        {showDetail ? (
+          <Panel
+            colors={colors}
+            focused={state.focus === 'detail'}
+            flexGrow={1}
+            width={
+              narrow
+                ? '100%'
+                : `${Math.max(10, size.columns - Math.max(24, Math.floor(size.columns * 0.4)))}`
+            }
+            theme={theme}
+          >
+            {right}
+          </Panel>
+        ) : null}
       </Box>
       <StatusBar>
-        {state.error ? <SafeText color="red">{state.error}</SafeText> : null}
-        {state.status ? <SafeText color="cyan">{state.status}</SafeText> : null}
+        {operationActive ? (
+          <SafeText color="yellow">
+            {`${state.status ?? 'Operation active.'} Esc: navigate, Ctrl-C: cancel.`}
+          </SafeText>
+        ) : null}
+        {state.error ? (
+          <SafeText {...(theme.error ? { color: theme.error } : {})}>{state.error}</SafeText>
+        ) : null}
+        {state.status ? (
+          <SafeText {...(theme.accent ? { color: theme.accent } : {})}>{state.status}</SafeText>
+        ) : null}
         {live && liveDetail ? <SafeText dimColor>Activity detail</SafeText> : null}
         <Footer colors={colors} hints={footerHints(state)} />
       </StatusBar>
@@ -174,8 +213,22 @@ function footerHints(state: TuiState): Array<[string, string]> {
     ];
   if (state.detail === 'review-thread' || state.detail === 'qa-review')
     return [
-      ['Enter', 'send message'],
+      ['Tab', 'editor/actions'],
+      ['Enter', state.reviewFocus === 'editor' ? 'send message' : 'select action'],
       ['Esc', 'back'],
+    ];
+  if (state.detail === 'preparation')
+    return [
+      ['Tab', 'editor/actions'],
+      ['Enter', state.preparationFocus === 'editor' ? 'send message' : 'select action'],
+      ['Esc', 'back'],
+    ];
+  if (state.detail === 'qa-report')
+    return [
+      ['Tab', 'focus rounds/findings/detail'],
+      ['j/k', 'move/scroll'],
+      ['f', 'filter severity'],
+      ['q', 'back'],
     ];
   if (state.detail === 'bugs')
     return [
@@ -194,11 +247,13 @@ function footerHints(state: TuiState): Array<[string, string]> {
     return [
       ['j/k', 'move'],
       ['Enter', 'select'],
+      ['r', 'QA report'],
       ['q', 'back'],
     ];
   }
   return [
     ['n', 'new run'],
+    ['p', 'prepare conversationally'],
     ['w', 'folder'],
     ['d', 'status'],
     ['c', 'agents'],

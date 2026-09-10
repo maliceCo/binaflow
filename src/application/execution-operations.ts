@@ -21,6 +21,7 @@ import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
 import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
 import { planBuildQaInteractiveWorkflow } from '../workflows/plan-build-qa-interactive.js';
 import type { ApplicationInternals } from './context.js';
+import type { PreparationExecutionSeed } from './preparation.js';
 import { findWaitingApprovalStep, isResearchIterationExhausted } from './run-operations.js';
 import { validateWorkflowProfiles } from './workflow-operations.js';
 
@@ -31,6 +32,24 @@ export interface RunWorkflowRequest {
   runId?: string;
   signal?: AbortSignal;
   onRunStarted?: ExecuteWorkflowRequest['onRunStarted'];
+}
+
+export async function createRunFromPreparation(
+  context: Pick<ApplicationInternals, 'store'>,
+  seed: PreparationExecutionSeed,
+): Promise<{ run: WorkflowRun; claim: ExecutionClaim }> {
+  if (!context.store.createRunFromPreparation) {
+    throw new Error('Atomic preparation handoff is not supported by this run store');
+  }
+  return context.store.createRunFromPreparation(seed);
+}
+
+export async function executeClaimedWorkflowForPreparation(
+  context: ApplicationInternals,
+  workflow: WorkflowDefinition,
+  request: ExecuteWorkflowRequest,
+): Promise<WorkflowRun> {
+  return executeClaimedWorkflow(context, workflow, request);
 }
 
 export async function runWorkflow(

@@ -9,7 +9,54 @@ permissions:
   contents: write
 
 jobs:
+  windows-bundle:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tag
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
+        with:
+          version: 11.18.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.23.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows x64 bundle
+        run: pnpm run build:windows-bundle
+
+      - name: Smoke test Windows x64 bundle
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $root = Join-Path $PWD "smoke"
+          Expand-Archive "release/binaflow-windows-x64-$version.zip" -DestinationPath $root
+          & "$root/binaflow/bin/binaflow.cmd" --version
+          & "$root/binaflow/bin/binaflow.cmd" --help | Out-Null
+          Push-Location "$root/binaflow/app"
+          & "$root/binaflow/runtime/bin/node.exe" -e "import('better-sqlite3').then(() => process.exit(0))"
+          Pop-Location
+
+      - name: Upload Windows x64 bundle
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: binaflow-windows-bundle
+          path: |
+            release/binaflow-windows-x64-*.zip
+            release/binaflow-windows-x64-*.zip.sha256
+          if-no-files-found: error
+
   release:
+    needs: windows-bundle
     runs-on: ubuntu-24.04
     steps:
       - name: Check out tag
@@ -61,6 +108,12 @@ jobs:
             "$smoke/binaflow/runtime/bin/node" -e "import('better-sqlite3').then(() => process.exit(0))"
           )
 
+      - name: Download Windows x64 bundle
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: binaflow-windows-bundle
+          path: release
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,7 +121,8 @@ jobs:
           set -eu
           version="$(node -p "require('./package.json').version")"
           archive="release/binaflow-linux-x64-${version}.tar.gz"
-          args=("$GITHUB_REF_NAME" "$archive" "${archive}.sha256" --repo "$GITHUB_REPOSITORY" --title "Binaflow ${version}" --generate-notes)
+          windows_archive="release/binaflow-windows-x64-${version}.zip"
+          args=("$GITHUB_REF_NAME" "$archive" "${archive}.sha256" "$windows_archive" "${windows_archive}.sha256" --repo "$GITHUB_REPOSITORY" --title "Binaflow ${version}" --generate-notes)
           case "$version" in
             *-*) args+=(--prerelease) ;;
           esac

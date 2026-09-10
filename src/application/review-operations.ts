@@ -11,6 +11,7 @@ import { validateInteractiveTarget } from '../workflows/plan-build-qa-interactiv
 import { resolveWorkflow } from '../workflows/catalog.js';
 import type { WorkflowRun } from '../core/run.js';
 import type { ApplicationInternals } from './context.js';
+import { validateAgentProfile } from '../config.js';
 
 export interface ReviewThreadDetails {
   thread: ReviewThread;
@@ -28,6 +29,13 @@ export interface ReviewMessageRequest {
   runId: string;
   threadId: string;
   content: string;
+}
+
+export interface ReviewConversationRequest {
+  runId: string;
+  threadId: string;
+  content: string;
+  signal?: AbortSignal;
 }
 
 export interface ReviewDecisionRequest {
@@ -120,6 +128,85 @@ export async function postReviewMessage(
     updatedAt: now,
   });
   return getReview(context, request.runId);
+}
+
+export async function replyReview(
+  context: ReviewContext,
+  request: ReviewConversationRequest,
+): Promise<ReviewView> {
+  const reviewStore = requireReviewStore(context);
+  const coordinator = context.interactivePlanBuildQaCoordinator;
+  if (!coordinator) throw new Error('Interactive review coordinator is not configured');
+  const thread = await requireThread(context, request.runId, request.threadId);
+  if (thread.state !== 'waiting')
+    throw new Error(`Review thread ${thread.id} is no longer waiting`);
+  const content = request.content.trim();
+  if (!content) throw new Error('Review message must be non-empty');
+  const responder = reviewResponder(context);
+  const claimed = await context.store.claimRunForExecution(request.runId, ['waiting']);
+  if (!claimed) throw new Error(`Run ${request.runId} is no longer waiting for review`);
+  const messages = await reviewStore.getReviewMessages(thread.id);
+  const now = new Date().toISOString();
+  const userMessage: ReviewMessage = {
+    id: randomUUID(),
+    threadId: thread.id,
+    sequence: (messages[messages.length - 1]?.sequence ?? 0) + 1,
+    role: 'user',
+    content,
+    generationStatus: 'sent',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const pending: ReviewMessage = {
+    id: randomUUID(),
+    threadId: thread.id,
+    sequence: userMessage.sequence + 1,
+    role: 'assistant',
+    content: 'Generating review response',
+    generationStatus: 'pending',
+    profileSnapshot: snapshotProfile(responder),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await reviewStore.saveReviewMessage(userMessage);
+  await reviewStore.saveReviewMessage(pending);
+  try {
+    const input = await loadInput(context, claimed.run.id);
+    const answer = await coordinator.explain(
+      claimed.run,
+      thread,
+      {
+        objective: claimed.run.objective,
+        input,
+        profiles: { ...context.config.profiles, analyst: responder },
+        runId: claimed.run.id,
+        resume: true,
+        executionClaim: claimed.claim,
+        ...(request.signal ? { signal: request.signal } : {}),
+      },
+      content,
+    );
+    await reviewStore.saveReviewMessage({
+      ...pending,
+      content: answer.content ?? 'No explanation was returned.',
+      generationStatus: 'sent',
+      ...(answer.profileSnapshot ? { profileSnapshot: answer.profileSnapshot } : {}),
+      updatedAt: new Date().toISOString(),
+    });
+    await context.store.releaseExecution(request.runId);
+    return getReview(context, request.runId);
+  } catch (error) {
+    await reviewStore
+      .saveReviewMessage({
+        ...pending,
+        generationStatus: request.signal?.aborted ? 'interrupted' : 'failed',
+        updatedAt: new Date().toISOString(),
+      })
+      .catch(() => undefined);
+    await context.store.releaseExecution(request.runId).catch(() => undefined);
+    await context.store.markRunInterrupted(request.runId).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function explainReview(
@@ -435,4 +522,34 @@ function decisionEffect(
 function requireReviewStore(context: ReviewContext) {
   if (!context.reviewStore) throw new Error('Interactive review persistence is not configured');
   return context.reviewStore;
+}
+
+function reviewResponder(context: ReviewContext) {
+  const responder = context.config.profiles.qa ?? context.config.profiles.analyst;
+  if (!responder) throw new Error('A QA or analyst profile is required for review conversation');
+  const name = context.config.profiles.qa ? 'qa' : 'analyst';
+  const validation = validateAgentProfile(name, responder);
+  if (
+    validation.errors.length > 0 ||
+    responder.workspaceMode !== 'read-only' ||
+    responder.tools.some((tool) => tool !== 'ls' && tool !== 'find' && tool !== 'read')
+  ) {
+    throw new Error('The review responder requires a read-only profile');
+  }
+  return responder;
+}
+
+function snapshotProfile(profile: import('../core/agent-profile.js').AgentProfile) {
+  return {
+    driver: profile.driver,
+    ...(profile.provider ? { provider: profile.provider } : {}),
+    model: profile.model,
+    ...(profile.thinking ? { thinking: profile.thinking } : {}),
+    tools: [...profile.tools],
+    workspaceMode: profile.workspaceMode,
+    ...(profile.projectTrust ? { projectTrust: profile.projectTrust } : {}),
+    timeoutMs: profile.timeoutMs,
+    retryLimit: profile.retryLimit,
+    ...(profile.skills ? { skills: structuredClone(profile.skills) } : {}),
+  };
 }

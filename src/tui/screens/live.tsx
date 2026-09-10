@@ -2,7 +2,7 @@ import { Box } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, TextViewport } from '../components.js';
-import type { LiveState, LiveStep } from '../execution.js';
+import { liveActivityLabel, type LiveState, type LiveStep } from '../execution.js';
 
 function stepMarker(status: LiveStep['status']): string {
   switch (status) {
@@ -65,20 +65,26 @@ export function LiveScreen({
   visibleRows: number;
 }) {
   const activity = live.activity.map((item) => `[${item.stepId}] ${item.type}: ${item.message}`);
-  const displayed = detail ? activity : activity.slice(-8);
+  const displayed = detail ? activity : activity.slice(-1);
   const phases = live.view?.phases;
   const status = live.view?.status ?? live.run.status;
   const tokens = live.view?.metrics.usage?.totalTokens ?? live.tokens;
   const cost = live.view?.metrics.costUsd ?? live.costUsd;
   const duration = live.view?.metrics.durationMs;
+  const activeStep = (phases ?? []).find((step) => step.status === 'running');
+  const activeStart = activeStep?.startedAt ?? live.startedAt;
+  const activityLabel = liveActivityLabel(live);
+  const humanStatus = live.cancellationRequested
+    ? 'Cancellation requested. Waiting for cleanup.'
+    : status === 'waiting'
+      ? 'Waiting for human input.'
+      : humanRunStatus(status);
   return (
     <ScreenFrame
-      title="Workflow running"
-      subtitle="Attached execution"
+      title="Attached execution"
+      subtitle={activityLabel}
       status={
-        live.cancellationRequested
-          ? 'Cancellation requested. Waiting for the active agent to stop.'
-          : undefined
+        live.cancellationRequested ? 'Cancellation requested. Waiting for cleanup.' : undefined
       }
       footer="q cancel | Ctrl-C cancel | d toggle activity detail | j/k scroll"
       colors={colors}
@@ -87,9 +93,9 @@ export function LiveScreen({
       <PaneSection title="Run" colors={colors} first>
         <SafeText>{`${live.view?.id ?? live.run.id}  ${live.view?.workflow.id ?? live.workflow.id}`}</SafeText>
         <SafeText>
-          Status: {humanRunStatus(status)} Elapsed:{' '}
+          Status: {humanStatus} Active:{' '}
           {duration === undefined
-            ? formatDurationMs(Math.max(0, Date.now() - Date.parse(live.startedAt)))
+            ? formatDurationMs(Math.max(0, Date.now() - Date.parse(activeStart)))
             : formatDurationMs(duration)}
         </SafeText>
         <SafeText>
@@ -122,9 +128,9 @@ export function LiveScreen({
           />
         ))}
       </PaneSection>
-      <PaneSection title="Activity" colors={colors}>
+      <PaneSection title={detail ? 'Activity detail' : 'Latest activity'} colors={colors}>
         <TextViewport
-          lines={displayed.length > 0 ? displayed : ['Waiting for agent activity...']}
+          lines={displayed.length > 0 ? displayed : ['No activity reported yet.']}
           offset={offset}
           visibleRows={visibleRows}
         />

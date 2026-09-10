@@ -15,11 +15,18 @@ export interface QaHistoryConfig {
   enabled: boolean;
 }
 
+export type PreparationReviewMode = 'human' | 'optional-auto' | 'required-auto';
+
+export interface PreparationConfig {
+  reviewMode: PreparationReviewMode;
+}
+
 export interface BinaflowConfig {
   dataDir: string;
   piCommand: string;
   profiles: Record<string, AgentProfile>;
   qaHistory: QaHistoryConfig;
+  preparation: PreparationConfig;
 }
 
 export async function loadConfig(configPath: string, cwd = process.cwd()): Promise<BinaflowConfig> {
@@ -56,11 +63,13 @@ export function parseConfigValue(parsed: unknown, absoluteConfigPath: string): B
   const dataDir = parsed.dataDir ?? './data';
   const piCommand = typeof parsed.piCommand === 'string' ? parsed.piCommand : 'pi';
   const qaHistory = parseQaHistory(parsed.qaHistory);
+  const preparation = parsePreparationConfig(parsed.preparation);
   return {
     dataDir: resolve(dirname(absoluteConfigPath), dataDir),
     piCommand,
     profiles,
     qaHistory,
+    preparation,
   };
 }
 
@@ -252,6 +261,20 @@ function parseQaHistory(value: unknown): QaHistoryConfig {
     throw new Error('Binaflow config qaHistory.enabled must be a boolean');
   }
   return { enabled: value.enabled };
+}
+
+function parsePreparationConfig(value: unknown): PreparationConfig {
+  if (value === undefined) return { reviewMode: 'human' };
+  if (!isRecord(value) || !isPreparationReviewMode(value.reviewMode)) {
+    throw new Error(
+      'Binaflow config preparation.reviewMode must be human, optional-auto, or required-auto',
+    );
+  }
+  return { reviewMode: value.reviewMode };
+}
+
+function isPreparationReviewMode(value: unknown): value is PreparationReviewMode {
+  return value === 'human' || value === 'optional-auto' || value === 'required-auto';
 }
 
 export function validatePiCommand(value: unknown): string[] {

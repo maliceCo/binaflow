@@ -1,4 +1,5 @@
 import type { RunView } from '../../application/run-view.js';
+import type { TaskOutcome } from '../../application/task-outcome.js';
 import type { StepStatus } from '../../core/run.js';
 import { formatDurationMs, humanRunStatus } from '../../presentation/format.js';
 import { PaneSection, ScreenFrame, SafeText, SelectionList } from '../components.js';
@@ -29,6 +30,7 @@ export function ResultScreen({
   offset,
   visibleRows,
   error,
+  outcome,
 }: {
   colors: boolean;
   view: RunView;
@@ -36,6 +38,7 @@ export function ResultScreen({
   offset: number;
   visibleRows: number;
   error?: string;
+  outcome?: TaskOutcome;
 }) {
   const duration = view.metrics.durationMs;
   const tokens = view.metrics.usage?.totalTokens;
@@ -50,52 +53,97 @@ export function ResultScreen({
       colors={colors}
       border={false}
     >
-      <PaneSection title="Summary" colors={colors} first>
-        <SafeText>Status: {humanRunStatus(view.status)}</SafeText>
+      <PaneSection title="Outcome" colors={colors} first>
+        <SafeText>Objective: {view.objective}</SafeText>
+        <SafeText>Run status: {humanRunStatus(view.status)}</SafeText>
+        {view.todoResult ? (
+          <>
+            <SafeText>Result: {view.todoResult.status}</SafeText>
+            <SafeText>
+              Summary:{' '}
+              {view.todoResult.implementation?.summary ??
+                view.todoResult.assessment?.summary ??
+                'No implementation summary is available.'}
+            </SafeText>
+            {view.todoResult.implementation?.resolvedItems.slice(0, 5).map((item) => (
+              <SafeText key={`resolved-${item.id}`}>
+                {' '}
+                [x] {item.title}: {item.resolution}
+              </SafeText>
+            ))}
+            {(view.todoResult.implementation?.resolvedItems.length ?? 0) > 5 ? (
+              <SafeText> More resolved items are available in FINAL-REPORT.md.</SafeText>
+            ) : null}
+            {view.todoResult.implementation?.pendingItems.slice(0, 5).map((item) => (
+              <SafeText key={`pending-${item.id}`}>
+                {' '}
+                [!] {item.title}: {item.reason}
+              </SafeText>
+            ))}
+            {view.todoResult.assessment?.blockers.map((blocker) => (
+              <SafeText key={blocker}> [!] Blocker: {blocker}</SafeText>
+            ))}
+            <SafeText>
+              QA: {view.todoResult.qa.status}; found={view.todoResult.qa.found}; corrected=
+              {view.todoResult.qa.corrected}; pending={view.todoResult.qa.pending.length}
+            </SafeText>
+          </>
+        ) : (
+          <SafeText dimColor>
+            No structured implementation summary is available. Review the builder output below.
+          </SafeText>
+        )}
+        {view.followUp?.kind === 'clarification' ? (
+          <SafeText>
+            Pending: clarification is required before this work can be considered complete.
+          </SafeText>
+        ) : null}
+      </PaneSection>
+      <PaneSection title="Execution metadata" colors={colors}>
         <SafeText>Workflow: {view.workflow.id}</SafeText>
         <SafeText>Duration: {duration === undefined ? '-' : formatDurationMs(duration)}</SafeText>
         <SafeText>Usage: {tokens === undefined ? '-' : `${tokens} tokens`}</SafeText>
         <SafeText>Cost: {cost === undefined ? '-' : `$${cost.toFixed(4)}`}</SafeText>
         {view.qa ? (
           <SafeText>
-            QA: iteration {view.qa.iteration}/{view.qa.limit} blocking findings=
+            QA reported: iteration {view.qa.iteration}/{view.qa.limit} blocking findings=
             {view.qa.blockingFindings} action={view.qa.recoveryAction}
           </SafeText>
         ) : null}
       </PaneSection>
-      {view.todoResult ? (
-        <PaneSection title="Outcome" colors={colors}>
-          <SafeText>Result: {view.todoResult.status}</SafeText>
-          <SafeText>
-            Summary:{' '}
-            {view.todoResult.implementation?.summary ??
-              view.todoResult.assessment?.summary ??
-              'No implementation summary is available.'}
+      <PaneSection title="Builder declarations and evidence" colors={colors}>
+        {outcome?.builderDeclarations.length ? (
+          outcome.builderDeclarations.flatMap((declaration) => [
+            <SafeText key={declaration.artifact.id}>
+              {declaration.structured
+                ? `${declaration.phase}: ${declaration.structured.summary}`
+                : `${declaration.phase}: ${declaration.preview ?? 'Declaration is unavailable.'}`}
+            </SafeText>,
+            ...(declaration.structured?.changedFiles
+              .slice(0, 5)
+              .map((file) => (
+                <SafeText key={`${declaration.artifact.id}-${file}`}>
+                  Reported change: {file}
+                </SafeText>
+              )) ?? []),
+            ...(declaration.structured?.verifications.slice(0, 5).map((verification) => (
+              <SafeText key={`${declaration.artifact.id}-${verification.command}`}>
+                Verification: {verification.command} ({verification.status})
+              </SafeText>
+            )) ?? []),
+          ])
+        ) : (
+          <SafeText dimColor>No builder declaration was projected.</SafeText>
+        )}
+        {outcome?.qaRoundIds.length ? (
+          <SafeText>QA rounds: {outcome.qaRoundIds.join(', ')}</SafeText>
+        ) : null}
+        {outcome?.limitations.map((limitation) => (
+          <SafeText key={limitation} dimColor>
+            Limitation: {limitation}
           </SafeText>
-          {view.todoResult.implementation?.resolvedItems.slice(0, 5).map((item) => (
-            <SafeText key={`resolved-${item.id}`}>
-              {' '}
-              [x] {item.title}: {item.resolution}
-            </SafeText>
-          ))}
-          {(view.todoResult.implementation?.resolvedItems.length ?? 0) > 5 ? (
-            <SafeText> More resolved items are available in FINAL-REPORT.md.</SafeText>
-          ) : null}
-          {view.todoResult.implementation?.pendingItems.slice(0, 5).map((item) => (
-            <SafeText key={`pending-${item.id}`}>
-              {' '}
-              [!] {item.title}: {item.reason}
-            </SafeText>
-          ))}
-          {view.todoResult.assessment?.blockers.map((blocker) => (
-            <SafeText key={blocker}> [!] Blocker: {blocker}</SafeText>
-          ))}
-          <SafeText>
-            QA: {view.todoResult.qa.status}; found={view.todoResult.qa.found}; corrected=
-            {view.todoResult.qa.corrected}; pending={view.todoResult.qa.pending.length}
-          </SafeText>
-        </PaneSection>
-      ) : null}
+        ))}
+      </PaneSection>
       <PaneSection title="Checklist" colors={colors}>
         {view.phases.map((phase) => (
           <SafeText key={phase.id}>

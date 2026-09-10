@@ -99,6 +99,11 @@ export async function openApplicationContext(
     todoBuildQaCoordinator,
     interactivePlanBuildQaCoordinator,
     reviewStore: store,
+    preparationStore: store,
+    preparationArtifacts: artifacts,
+    preparationDriver: driver,
+    readPreparationReviewMode: async () =>
+      (await loadConfig(configPath, cwd)).preparation.reviewMode,
     ...(config.qaHistory.enabled ? { qaHistory: store } : {}),
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
@@ -127,6 +132,7 @@ export async function openApplicationStorage(
     artifacts,
     ...(qaHistory.enabled ? { qaHistory: store } : {}),
     reviewStore: store,
+    preparationStore: store,
     modelDiscovery: { discoverModels: async () => [] },
   });
   return { application: queries, close: () => store.close() };
