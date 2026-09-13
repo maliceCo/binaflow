@@ -107,7 +107,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
         }
         return active.cancelPromise;
       }
-      return cancelPersistedRun(runId);
+      return admitQuery(() => cancelPersistedRun(runId));
     } catch (error) {
       return Promise.reject(error);
     }
@@ -140,13 +140,13 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       const existing = await options.findRun(active.runId);
       if (existing) {
+        assertExecutionActive(active);
         await validateReplay(existing, request);
+        assertExecutionActive(active);
         receipt.resolve({ runId: active.runId });
         return;
       }
-      if (closing || active.controller.signal.aborted) {
-        throw new Error('Execution host is closed or the start was cancelled');
-      }
+      assertExecutionActive(active);
 
       const operationRequest: RunWorkflowRequest = {
         workflowId: request.workflowId,
@@ -236,6 +236,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     }
     await Promise.all([...admittedQueries]);
     await options.close();
+    if (internalFailure) throw internalFailure;
   }
 
   function admitQuery<T>(operation: () => Promise<T>): Promise<T> {
@@ -259,6 +260,12 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
 
   function assertOpen(): void {
     if (closing) throw new Error('Execution host is closed');
+  }
+
+  function assertExecutionActive(active: ActiveExecution): void {
+    if (closing || active.controller.signal.aborted) {
+      throw new Error('Execution host is closed or the start was cancelled');
+    }
   }
 
   function assertCanStart(): void {

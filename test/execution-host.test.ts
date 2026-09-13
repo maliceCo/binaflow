@@ -311,6 +311,73 @@ describe('execution host lifecycle', () => {
     await host.close();
   });
 
+  it('cancels a replay that is still validating persisted input', async () => {
+    const readStarted = deferred<void>();
+    const readResult = deferred<Awaited<ReturnType<ApplicationService['readArtifact']>>>();
+    const readArtifact = vi.fn<ApplicationService['readArtifact']>(async () => {
+      readStarted.resolve();
+      return readResult.promise;
+    });
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn(), readArtifact),
+      findRun: async () => run,
+      close: vi.fn(),
+    });
+
+    const start = host.client.start(request);
+    await readStarted.promise;
+    const cancellation = host.client.cancel(run.id);
+    readResult.resolve({
+      artifact: {} as never,
+      content: JSON.stringify({ objective: request.objective }),
+      truncated: false,
+      formatted: false,
+    });
+
+    await expect(start).rejects.toThrow(/closed|cancelled/i);
+    await expect(cancellation).resolves.toBeUndefined();
+  });
+
+  it('waits for a persisted-run cancellation check before closing the context', async () => {
+    const persistedRun = deferred<WorkflowRun | undefined>();
+    const findRun = vi.fn(() => persistedRun.promise);
+    const closeContext = vi.fn();
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn()),
+      findRun,
+      close: closeContext,
+    });
+
+    const cancellation = expect(host.client.cancel('host-other-run')).rejects.toThrow(/owned/i);
+    const closing = host.close();
+    expect(closeContext).not.toHaveBeenCalled();
+
+    persistedRun.resolve({ ...run, id: 'host-other-run', status: 'running' });
+    await cancellation;
+    await closing;
+    expect(closeContext).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces an operation failure that occurs after the start receipt', async () => {
+    const operation = deferred<WorkflowRun>();
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>((input) => {
+      void input.onRunStarted?.(run);
+      return operation.promise;
+    });
+    const closeContext = vi.fn();
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow),
+      findRun: async () => undefined,
+      close: closeContext,
+    });
+
+    await expect(host.client.start(request)).resolves.toEqual({ runId: run.id });
+    operation.reject(new Error('sqlite write failed'));
+
+    await expect(host.close()).rejects.toThrow('sqlite write failed');
+    expect(closeContext).toHaveBeenCalledOnce();
+  });
+
   it('waits for an in-flight start before closing the context', async () => {
     const persistedRun = deferred<WorkflowRun | undefined>();
     const runWorkflow = vi.fn<ApplicationService['runWorkflow']>(() => {
@@ -367,10 +434,13 @@ function applicationWith(
 function deferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
 } {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
