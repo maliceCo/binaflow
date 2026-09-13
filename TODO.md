@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 1.1 y 1.2 completadas. Tarea 2.1 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 2.1 completada. Tarea 2.2 disponible.
 
 ## Contexto y limites
 
@@ -178,7 +178,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
 
 ### Fase 2: Implementacion funcional
 
-- [ ] **Tarea 2.1: Crear el propietario y su cierre seguro**
+- [x] **Tarea 2.1: Crear el propietario y su cierre seguro**
   - **Archivo:** nuevo `src/application/execution-host.ts`; nuevo `test/execution-host.test.ts`.
   - **Funciones:** tipos ExecutionHost/ExecutionHostClient; createExecutionHost; start, cancel, close y helpers privados de seguimiento de operacion necesarios para el contrato C.
   - **Descripcion:** implementar el propietario por composicion; usar clase solo para errores con codigo estable si se necesita. Comenzar con servicio falso controlable. El recibo de start espera onRunStarted, la operacion completa permanece observada y el cierre espera todo el trabajo admitido. Controlar carreras antes/despues de persistir y errores posteriores a devolver recibo. Los detalles de replay persistido se completan en 2.2 antes de conectar la fabrica a produccion.
@@ -289,8 +289,15 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
   `test/architecture-boundaries.test.ts` (9 tests), además de `typecheck`.
 - Tarea 1.2 quedó aislada en el commit `6bc391b` con mensaje
   `refactor: share application runtime composition privately`.
+- Tarea 2.1: se creó `src/application/execution-host.ts` con propiedad única de
+  la operación, recibo separado de finalización, cancelación idempotente y
+  cierre seguro del contexto. Las pruebas usan promesas diferidas y servicio
+  falso controlable.
+- Verificación Tarea 2.1: `pnpm exec vitest run test/execution-host.test.ts`
+  (4 tests), `pnpm run typecheck`, `pnpm run lint`,
+  `pnpm run format:check` y `git diff --check` pasaron.
 - Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
   con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 2.1.
+- Proxima tarea autorizada: 2.2.
