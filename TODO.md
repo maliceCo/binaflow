@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 3.1 completada. Tarea 3.2 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Hito 1 completado y verificado. El retiro de este TODO queda pendiente de confirmacion expresa.
 
 ## Contexto y limites
 
@@ -222,7 +222,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
   - **Verificacion / TDD:** `pnpm exec vitest run test/execution-host-integration.test.ts test/execution-host.test.ts test/application-runtime.test.ts test/application-claims.test.ts test/engine.test.ts`. Escribir primero cada caso que falle y corregir solo el incumplimiento previsto. No duplicar permutaciones equivalentes.
   - **Commit Msg:** `test: verify hosted execution reconnection and recovery boundaries`
 
-- [ ] **Tarea 3.2: Verificar compatibilidad y registrar el resultado real**
+- [x] **Tarea 3.2: Verificar compatibilidad y registrar el resultado real**
   - **Archivo:** `docs/web-workflow-vision.md` (solo estado del hito 1 y limites comprobados); `TODO.md` (checks, comandos, resultados y pendientes).
   - **Descripcion:** ejecutar las cinco verificaciones obligatorias. Registrar diferencias frente al baseline de 1.1; no modificar archivos ajenos para hacerlas pasar. Explicar que se ha probado el backend con clientes simulados, no navegadores reales, autenticacion ni despliegue remoto. Conservar la copia TUI intacta.
   - **Verificacion:** `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`, `pnpm run build`; `git diff --check`; revisar `git status --short` y diff de cada commit propio. Formatear solo archivos propios, no `pnpm run format` global. Ningun bundle, release, instalacion ni prueba Pi pagada.
@@ -317,8 +317,14 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
   test/application-runtime.test.ts test/application-claims.test.ts
   test/engine.test.ts` (41 tests), `pnpm run typecheck`, `pnpm run lint`,
   `pnpm run format:check` y `git diff --check` pasaron.
-- Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
-  con mensaje `docs: record execution host prerequisites`.
+- Tarea 3.2: se registró en la visión que el Hito 1 cubre únicamente backend
+  local simulado; no navegadores reales, autenticación ni despliegue remoto.
+- Verificación final Tarea 3.2: `pnpm run format:check`, `pnpm run lint`,
+  `pnpm run typecheck`, `pnpm run test` (337 pasaron, 1 omitido de 338),
+  `pnpm run build` y `git diff --check` pasaron.
+- Commits del Hito 1 revisados: `09e9978`, `69581fd`, `17b94c5`, `be5538a`,
+  `49fda48`, `5958d5f` y `214e875`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 3.2.
+- No quedan tareas tecnicas en este TODO. Su eliminacion requiere confirmacion
+  expresa del propietario; no se retira automaticamente.

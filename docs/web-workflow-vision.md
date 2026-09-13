@@ -1,8 +1,10 @@
 # Binaflow web: objetivo e hitos
 
-Estado: vision acordada y ruta propuesta; no es una especificacion de implementacion
-ni indica que las capacidades ya existan. Documento de continuidad para recuperar
-el proposito cuando falte contexto de la conversacion.
+Estado: el Hito 1 esta implementado y verificado localmente; los hitos restantes
+siguen siendo una ruta propuesta, no una especificacion de implementacion. La
+verificacion cubre el backend con SQLite, artifacts y un agente simulado; no
+cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
+continuidad para recuperar el proposito cuando falte contexto de la conversacion.
 
 ## Objetivo
 
@@ -72,11 +74,15 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 ## Punto de partida
 
-La base actual ofrece preparacion conversacional, pasos persistidos y revisiones
-interactivas. Faltan el ciclo de vida del servidor, control por fase, integracion
-Git, revision de codigo y completar las decisiones selectivas de QA.
+La base actual ofrece preparacion conversacional, pasos persistidos, revisiones
+interactivas y un anfitrion de ejecucion independiente de sus clientes. El Hito 1
+verifica cambio de cliente, consultas persistidas, replay, cancelacion explicita
+y resume explicito con un agente simulado. Siguen fuera de alcance el ciclo de
+vida tras una caida abrupta, control por fase, integracion Git, revision de codigo
+y las decisiones selectivas de QA.
 
-Siguiente paso: concretar el **hito 1**, no implementar de golpe todo el flujo.
+Siguiente paso: definir y autorizar el contrato del **hito 2**, sin asumir que el
+hito 1 cubre web, autenticacion o despliegue remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).
