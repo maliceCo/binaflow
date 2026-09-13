@@ -9,6 +9,7 @@ import { PiDriver } from '../drivers/pi-rpc.js';
 import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { ApplicationRunStore } from './ports.js';
+import type { WorkflowRun } from '../core/run.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
@@ -57,14 +58,31 @@ export async function openApplicationContext(
     typeof configPathOrOptions === 'string'
       ? { configPath: configPathOrOptions, cwd: cwdArg }
       : configPathOrOptions;
-  const cwd = options.cwd ?? process.cwd();
-  const configPath = options.configPath ?? '.binaflow/config.json';
+  const resources = await openApplicationResources(
+    options.configPath ?? '.binaflow/config.json',
+    options.cwd ?? process.cwd(),
+    options.onEvent,
+  );
+  return { application: resources.application, close: resources.close };
+}
+
+interface ApplicationResources {
+  readonly application: ApplicationService;
+  readonly findRun: (runId: string) => Promise<WorkflowRun | undefined>;
+  close(): void;
+}
+
+async function openApplicationResources(
+  configPath: string,
+  cwd: string,
+  onEvent?: (event: NormalizedEvent) => void | Promise<void>,
+): Promise<ApplicationResources> {
   const config = await loadConfig(configPath, cwd);
   await mkdir(config.dataDir, { recursive: true });
   const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
   const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
   const eventListeners = new Set<(event: NormalizedEvent) => void | Promise<void>>();
-  if (options.onEvent) eventListeners.add(options.onEvent);
+  if (onEvent) eventListeners.add(onEvent);
   const eventSink = createRuntimeEventSink(store, async (event) => {
     for (const listener of eventListeners) await listener(event);
   });
@@ -113,7 +131,11 @@ export async function openApplicationContext(
       };
     },
   });
-  return { application, close: () => store.close() };
+  return {
+    application,
+    findRun: (runId) => store.getRun(runId),
+    close: () => store.close(),
+  };
 }
 
 /** Storage-only open for read commands that do not execute workflows. */

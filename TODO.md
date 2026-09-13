@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 1.1 completada. Tarea 1.2 verificada pero bloqueada antes del commit por el worktree mezclado.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 1.1 y 1.2 completadas. Tarea 2.1 disponible.
 
 ## Contexto y limites
 
@@ -168,7 +168,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
   - **Verificacion:** `git status --short`; `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`, `pnpm run build`. Registrar cada resultado real. Fallos previos bloqueantes se reportan sin repararlos por inferencia.
   - **Commit Msg:** `docs: record execution host prerequisites` (solo al aislar cambios propios y recibir autorizacion; nunca crear un commit vacio).
 
-- [ ] **Tarea 1.2: Compartir la composicion sin cambiar el contexto adjunto**
+- [x] **Tarea 1.2: Compartir la composicion sin cambiar el contexto adjunto**
   - **Archivo:** `src/application/runtime.ts`; `test/application-runtime.test.ts` solo para una regresion observable si la existente no protege el cambio.
   - **Funciones:** `openApplicationContext`; nuevo helper privado `openApplicationResources`.
   - **Descripcion:** extraer la construccion existente a ese helper privado, conservando argumentos, carga de configuracion, recursos, coordinadores, eventSink y orden. El helper retorna application, close y findRun como clausura interna sobre store.getRun. El wrapper publico devuelve solamente application y close como hoy. Esto permite un segundo consumidor sin duplicar todo runtime ni exponer el store.
@@ -287,10 +287,10 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
   `src/application/runtime.ts`, conservando el wrapper público y el sink. La
   regresión requerida pasó: `test/application-runtime.test.ts` y
   `test/architecture-boundaries.test.ts` (9 tests), además de `typecheck`.
-- Tarea 1.2 no se marca ni se inicia la siguiente: el commit aislado requerido
-  no es seguro porque el worktree aún mezcla cambios previos con los propios.
-  No se creó commit. Se requiere decisión del propietario para aislar/stagear
-  únicamente los hunks propios antes de continuar.
+- Tarea 1.2 quedó aislada en el commit `6bc391b` con mensaje
+  `refactor: share application runtime composition privately`.
+- Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
+  con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea tras aprobacion e aislamiento: 1.1.
+- Proxima tarea autorizada: 2.1.
