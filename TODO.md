@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 2.1, 2.2 y 2.3 completadas. Tarea 2.4 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 2.4 completada. Tarea 3.1 disponible.
 
 ## Contexto y limites
 
@@ -202,7 +202,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
   - **Verificacion / TDD:** una consulta del cliente A queda pendiente mientras la operacion avanza; el cliente B consulta independientemente. Rechazar una lectura no aborta el controller. close espera la lectura admitida y rechaza lecturas nuevas. `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: expose persisted execution progress through client queries`
 
-- [ ] **Tarea 2.4: Componer el anfitrion sin alterar CLI ni TUI**
+- [x] **Tarea 2.4: Componer el anfitrion sin alterar CLI ni TUI**
   - **Archivo:** `src/application/runtime.ts`; `test/application-runtime.test.ts`.
   - **Funciones:** nuevo `openExecutionHost`; helper privado openApplicationResources de 1.2.
   - **Descripcion:** openExecutionHost acepta cwd/configPath y compone recursos sin onEvent. Entrega application, findRun y close privados a createExecutionHost y devuelve su resultado. No expone contexto adicional. Si crear el host falla despues de abrir recursos, cerrarlos antes de propagar error. Mantener los dos entry points existentes sin cambios publicos.
@@ -302,8 +302,15 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
 - Verificación Tarea 2.3: `pnpm exec vitest run test/execution-host.test.ts`
   (14 tests), `pnpm run typecheck`, `pnpm run lint`,
   `pnpm run format:check` y `git diff --check` pasaron.
+- Tarea 2.4: se añadió `openExecutionHost` sobre la composición privada
+  existente; crea un cliente sin recursos internos ni observers y limpia los
+  recursos si la creación falla.
+- Verificación Tarea 2.4: `pnpm exec vitest run test/application-runtime.test.ts
+  test/execution-host.test.ts test/architecture-boundaries.test.ts` (24 tests),
+  `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` y
+  `git diff --check` pasaron.
 - Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
   con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 2.4.
+- Proxima tarea autorizada: 3.1.

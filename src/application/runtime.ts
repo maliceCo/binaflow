@@ -10,6 +10,7 @@ import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { ApplicationRunStore } from './ports.js';
 import type { WorkflowRun } from '../core/run.js';
+import { createExecutionHost, type ExecutionHost } from './execution-host.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
@@ -48,6 +49,23 @@ export interface OpenApplicationOptions {
 
 export function isApplicationEntrypoint(moduleUrl: string, argv1: string | undefined): boolean {
   return argv1 !== undefined && fileURLToPath(moduleUrl) === realpathSync(argv1);
+}
+
+export async function openExecutionHost(
+  configPath = '.binaflow/config.json',
+  cwd = process.cwd(),
+): Promise<ExecutionHost> {
+  const resources = await openApplicationResources(configPath, cwd);
+  try {
+    return createExecutionHost({
+      application: resources.application,
+      findRun: resources.findRun,
+      close: resources.close,
+    });
+  } catch (error) {
+    await resources.close();
+    throw error;
+  }
 }
 
 export async function openApplicationContext(

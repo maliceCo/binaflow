@@ -8,6 +8,7 @@ import {
   MAX_BUFFERED_TEXT_BYTES,
   MAX_BUFFERED_TEXT_EVENTS,
   openApplicationStorage,
+  openExecutionHost,
 } from '../src/application/runtime.js';
 import { createApplicationQueries, type ApplicationQueries } from '../src/application/service.js';
 import type { RunStore } from '../src/storage/run-store.js';
@@ -82,6 +83,25 @@ describe('application capability composition', () => {
     expect(queries).not.toHaveProperty('runWorkflow');
     expect(queries).not.toHaveProperty('resumeWorkflow');
     expect(queries).toHaveProperty('inspectRun');
+  });
+
+  it('opens a client-independent host without exposing application resources', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-host-'));
+    try {
+      mkdirSync(join(directory, '.binaflow'));
+      writeFileSync(
+        join(directory, '.binaflow', 'config.json'),
+        JSON.stringify({ dataDir: './data', profiles: {} }),
+      );
+      const host = await openExecutionHost('.binaflow/config.json', directory);
+
+      expect(host.client).not.toHaveProperty('application');
+      expect(host.client).not.toHaveProperty('subscribeEvents');
+      expect(host.client).not.toHaveProperty('close');
+      await host.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('closes storage resources on the context rather than the query service', async () => {
