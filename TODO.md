@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 2.4 completada. Tarea 3.1 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 3.1 completada. Tarea 3.2 disponible.
 
 ## Contexto y limites
 
@@ -212,7 +212,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
 
 ### Fase 3: Verificacion integrada y cierre documental
 
-- [ ] **Tarea 3.1: Probar cambio de cliente con persistencia real**
+- [x] **Tarea 3.1: Probar cambio de cliente con persistencia real**
   - **Archivo:** nuevo `test/execution-host-integration.test.ts`; ajustes solo en `src/application/execution-host.ts` y `src/application/runtime.ts` si las pruebas descubren incumplimientos de los contratos definidos aqui.
   - **Funciones:** fixtures locales de servicio real, driver falso controlable y clientes que llaman al objeto client; no utilidades compartidas de pruebas ni cambios a fixtures TUI.
   - **Descripcion:** componer SqliteRunStore, FileArtifactStore, WorkflowEngine, ApplicationService y createRuntimeEventSink existentes con un AgentDriver falso, usando plan-build y sus schemas reales. Consultar test/engine.test.ts como referencia sin exportar/reutilizar sus internals. No ejecutar Pi real. Reusar un fixture local por test y cerrar recursos en finally/afterEach.
@@ -309,8 +309,16 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
   test/execution-host.test.ts test/architecture-boundaries.test.ts` (24 tests),
   `pnpm run typecheck`, `pnpm run lint`, `pnpm run format:check` y
   `git diff --check` pasaron.
+- Tarea 3.1: se verificó con SQLite, artifacts, motor real, servicio de
+  aplicación y driver falso el cambio de cliente, replay tras recrear host,
+  conflicto de objetivo, cancelación y resume explícito sin repetir el plan.
+- Verificación Tarea 3.1: `pnpm exec vitest run
+  test/execution-host-integration.test.ts test/execution-host.test.ts
+  test/application-runtime.test.ts test/application-claims.test.ts
+  test/engine.test.ts` (41 tests), `pnpm run typecheck`, `pnpm run lint`,
+  `pnpm run format:check` y `git diff --check` pasaron.
 - Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
   con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 3.1.
+- Proxima tarea autorizada: 3.2.
