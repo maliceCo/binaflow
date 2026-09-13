@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 2.1 y 2.2 completadas. Tarea 2.3 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 2.1, 2.2 y 2.3 completadas. Tarea 2.4 disponible.
 
 ## Contexto y limites
 
@@ -194,7 +194,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
   - **Verificacion / TDD:** pruebas simultaneas del mismo request con una sola llamada runWorkflow; mismo ID/distinto contenido y distinto ID ocupado sin efectos; replay tras recrear host con el mismo almacenamiento, sin nuevas llamadas al agente; input ausente/corrupto no ejecuta. `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: deduplicate hosted starts using persisted run identity`
 
-- [ ] **Tarea 2.3: Consultar progreso sin suscripciones de clientes**
+- [x] **Tarea 2.3: Consultar progreso sin suscripciones de clientes**
   - **Archivo:** `src/application/execution-host.ts`; `test/execution-host.test.ts`.
   - **Funciones:** client.listRuns, client.getRunView, client.listRunEvents; seguimiento privado de consultas admitidas.
   - **Descripcion:** delegar en ApplicationService y conservar DTOs/paginacion. Seguir contrato D: ninguna lectura ejecuta agentes ni registra observers. close impide consultas nuevas y espera las que ya comenzo; el fallo de una consulta se devuelve sin abortar el workflow.
@@ -296,11 +296,14 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
 - Tarea 2.2: se añadieron validación de solicitudes, ranura de inicio,
   deduplicación en vuelo y replay validado mediante `run.input` acotado, sin
   nuevas tablas ni llamadas duplicadas al agente.
-- Verificación Tarea 2.2: `pnpm exec vitest run test/execution-host.test.ts`
-  (10 tests), `pnpm run typecheck`, `pnpm run lint`,
+- Tarea 2.3: las consultas del cliente delegan en la aplicación y quedan
+  admitidas en seguimiento privado; `close()` espera las consultas pendientes
+  y rechaza las nuevas sin cancelar la operación.
+- Verificación Tarea 2.3: `pnpm exec vitest run test/execution-host.test.ts`
+  (14 tests), `pnpm run typecheck`, `pnpm run lint`,
   `pnpm run format:check` y `git diff --check` pasaron.
 - Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
   con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 2.3.
+- Proxima tarea autorizada: 2.4.

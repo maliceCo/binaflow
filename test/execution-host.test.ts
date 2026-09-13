@@ -213,6 +213,104 @@ describe('execution host lifecycle', () => {
     await host.close();
   });
 
+  it('keeps client queries independent while the workflow is active', async () => {
+    const operation = deferred<WorkflowRun>();
+    const firstQuery = deferred<{ runs: WorkflowRun[] }>();
+    const listRuns = vi
+      .fn<ApplicationService['listRuns']>()
+      .mockReturnValueOnce(firstQuery.promise)
+      .mockResolvedValue({ runs: [] });
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>((input) => {
+      void input.onRunStarted?.(run);
+      return operation.promise;
+    });
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow, undefined, { listRuns }),
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    await host.client.start(request);
+    const clientA = host.client.listRuns();
+    operation.resolve(run);
+    const clientB = host.client.listRuns();
+
+    await expect(clientB).resolves.toEqual({ runs: [] });
+    let firstFinished = false;
+    void clientA.then(() => {
+      firstFinished = true;
+    });
+    await Promise.resolve();
+    expect(firstFinished).toBe(false);
+
+    firstQuery.resolve({ runs: [] });
+    await clientA;
+    await host.close();
+  });
+
+  it('waits for admitted queries and rejects new queries after closing', async () => {
+    const query = deferred<{ runs: WorkflowRun[] }>();
+    const listRuns = vi.fn<ApplicationService['listRuns']>(() => query.promise);
+    const closeContext = vi.fn();
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn(), undefined, { listRuns }),
+      findRun: async () => undefined,
+      close: closeContext,
+    });
+
+    const pendingQuery = host.client.listRuns();
+    const closing = host.close();
+    expect(closeContext).not.toHaveBeenCalled();
+    await expect(host.client.listRuns()).rejects.toThrow(/closed/i);
+
+    query.resolve({ runs: [] });
+    await pendingQuery;
+    await closing;
+    expect(closeContext).toHaveBeenCalledOnce();
+  });
+
+  it('does not cancel the workflow when a client query fails', async () => {
+    const operation = deferred<WorkflowRun>();
+    let operationSignal: AbortSignal | undefined;
+    const listRuns = vi.fn<ApplicationService['listRuns']>(async () => {
+      throw new Error('query failed');
+    });
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>((input) => {
+      operationSignal = input.signal;
+      void input.onRunStarted?.(run);
+      return operation.promise;
+    });
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow, undefined, { listRuns }),
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    await host.client.start(request);
+    await expect(host.client.listRuns()).rejects.toThrow('query failed');
+    expect(operationSignal?.aborted).toBe(false);
+
+    operation.resolve(run);
+    await host.close();
+  });
+
+  it('delegates independent client queries without exposing host resources', async () => {
+    const listRuns = vi.fn<ApplicationService['listRuns']>(async () => ({ runs: [] }));
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn(), undefined, { listRuns }),
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    await expect(host.client.listRuns({ limit: 5 })).resolves.toEqual({ runs: [] });
+    await expect(host.client.listRuns({ limit: 10 })).resolves.toEqual({ runs: [] });
+    expect(listRuns).toHaveBeenNthCalledWith(1, { limit: 5 });
+    expect(listRuns).toHaveBeenNthCalledWith(2, { limit: 10 });
+    expect(host.client).not.toHaveProperty('application');
+    expect(host.client).not.toHaveProperty('close');
+    await host.close();
+  });
+
   it('waits for an in-flight start before closing the context', async () => {
     const persistedRun = deferred<WorkflowRun | undefined>();
     const runWorkflow = vi.fn<ApplicationService['runWorkflow']>(() => {
@@ -240,6 +338,7 @@ describe('execution host lifecycle', () => {
 function applicationWith(
   runWorkflow: ApplicationService['runWorkflow'],
   readArtifact?: ApplicationService['readArtifact'],
+  queries: Partial<Pick<ApplicationService, 'listRuns' | 'getRunView' | 'listRunEvents'>> = {},
 ): Pick<
   ApplicationService,
   'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents' | 'readArtifact'
@@ -251,13 +350,17 @@ function applicationWith(
       (async () => {
         throw new Error('not used in this test');
       }),
-    listRuns: async () => ({ runs: [] }),
-    getRunView: async () => {
-      throw new Error('not used in this test');
-    },
-    listRunEvents: async () => {
-      throw new Error('not used in this test');
-    },
+    listRuns: queries.listRuns ?? (async () => ({ runs: [] })),
+    getRunView:
+      queries.getRunView ??
+      (async () => {
+        throw new Error('not used in this test');
+      }),
+    listRunEvents:
+      queries.listRunEvents ??
+      (async () => {
+        throw new Error('not used in this test');
+      }),
   };
 }
 

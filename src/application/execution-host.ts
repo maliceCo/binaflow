@@ -59,6 +59,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   let closePromise: Promise<void> | undefined;
   let closing = false;
   let internalFailure: unknown;
+  const admittedQueries = new Set<Promise<void>>();
 
   const start = (request: ExecutionStartRequest): Promise<ExecutionStartResult> => {
     try {
@@ -122,30 +123,10 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   const client: ExecutionHostClient = {
     start,
     cancel,
-    listRuns: (query) => {
-      try {
-        assertOpen();
-        return options.application.listRuns(query);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
-    getRunView: (runId) => {
-      try {
-        assertOpen();
-        return options.application.getRunView(runId);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
-    listRunEvents: (runId, query) => {
-      try {
-        assertOpen();
-        return options.application.listRunEvents(runId, query);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
+    listRuns: (query) => admitQuery(() => options.application.listRuns(query)),
+    getRunView: (runId) => admitQuery(() => options.application.getRunView(runId)),
+    listRunEvents: (runId, query) =>
+      admitQuery(() => options.application.listRunEvents(runId, query)),
   };
 
   return { client, close };
@@ -253,7 +234,27 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       active.controller.abort();
       await active.completion;
     }
+    await Promise.all([...admittedQueries]);
     await options.close();
+  }
+
+  function admitQuery<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      assertOpen();
+      const promise = operation();
+      const tracked = promise.then(
+        () => {
+          admittedQueries.delete(tracked);
+        },
+        () => {
+          admittedQueries.delete(tracked);
+        },
+      );
+      admittedQueries.add(tracked);
+      return promise;
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   function assertOpen(): void {
