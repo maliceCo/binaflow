@@ -38,7 +38,7 @@ export interface ExecutionHost {
 export interface CreateExecutionHostOptions {
   application: Pick<
     ApplicationService,
-    'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents'
+    'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents' | 'readArtifact'
   >;
   findRun(runId: string): Promise<WorkflowRun | undefined>;
   close(): void | Promise<void>;
@@ -46,6 +46,8 @@ export interface CreateExecutionHostOptions {
 
 interface ActiveExecution {
   readonly runId: string;
+  readonly request: CapturedStartRequest;
+  readonly receiptPromise: Promise<ExecutionStartResult>;
   readonly controller: AbortController;
   readonly completion: Promise<void>;
   readonly resolveCompletion: () => void;
@@ -62,8 +64,13 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const captured = captureStartRequest(request);
-      if (activeExecution) {
-        throw new Error(`Execution host is already running ${activeExecution.runId}`);
+      const current = activeExecution;
+      if (current) {
+        if (sameStartRequest(current.request, captured)) return current.receiptPromise;
+        if (current.request.requestId === captured.requestId) {
+          throw new Error(`Hosted start ${current.runId} conflicts with the active request`);
+        }
+        throw new Error(`Execution host is already running ${current.runId}`);
       }
 
       const controller = new AbortController();
@@ -71,6 +78,8 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       const completion = deferred<void>();
       const active: ActiveExecution = {
         runId: `host-${captured.requestId}`,
+        request: captured,
+        receiptPromise: receipt.promise,
         controller,
         completion: completion.promise,
         resolveCompletion: completion.resolve,
@@ -150,7 +159,9 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       const existing = await options.findRun(active.runId);
       if (existing) {
-        throw new Error(`Run ${active.runId} already exists`);
+        await validateReplay(existing, request);
+        receipt.resolve({ runId: active.runId });
+        return;
       }
       if (closing || active.controller.signal.aborted) {
         throw new Error('Execution host is closed or the start was cancelled');
@@ -202,6 +213,40 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     throw new Error(`Run ${runId} is not owned by this execution host`);
   }
 
+  async function validateReplay(run: WorkflowRun, request: CapturedStartRequest): Promise<void> {
+    if (run.workflowId !== request.workflowId) {
+      throw new Error(`Persisted run ${run.id} conflicts with workflow ${request.workflowId}`);
+    }
+    if (run.objective !== request.objective) {
+      throw new Error(`Persisted run ${run.id} conflicts with the requested objective`);
+    }
+
+    let inputView;
+    try {
+      inputView = await options.application.readArtifact(run.id, 'run.input', {
+        mode: 'preview',
+        maxBytes: MAX_HOSTED_INPUT_BYTES,
+      });
+    } catch (error) {
+      throw new Error(`Persisted run ${run.id} input is invalid`, { cause: error });
+    }
+    if (inputView.error || inputView.truncated || inputView.content === undefined) {
+      throw new Error(
+        `Persisted run ${run.id} input is invalid: ${inputView.error ?? 'unreadable'}`,
+      );
+    }
+
+    let input: unknown;
+    try {
+      input = JSON.parse(inputView.content);
+    } catch (error) {
+      throw new Error(`Persisted run ${run.id} input is invalid`, { cause: error });
+    }
+    if (!isHostedInput(input, request.objective)) {
+      throw new Error(`Persisted run ${run.id} input conflicts with the requested objective`);
+    }
+  }
+
   async function finishClose(): Promise<void> {
     const active = activeExecution;
     if (active) {
@@ -228,10 +273,15 @@ interface CapturedStartRequest {
   readonly objective: string;
 }
 
+const MAX_HOSTED_INPUT_BYTES = 64_000;
+
 function captureStartRequest(request: ExecutionStartRequest): CapturedStartRequest {
   if (!request || typeof request !== 'object') {
     throw new Error('Execution start request must be an object');
   }
+  const allowedFields = new Set(['requestId', 'workflowId', 'objective']);
+  const unexpectedField = Object.keys(request).find((field) => !allowedFields.has(field));
+  if (unexpectedField) throw new Error(`Unexpected execution start field: ${unexpectedField}`);
   if (!isUuidV4(request.requestId)) {
     throw new Error('requestId must be a canonical lowercase UUID v4');
   }
@@ -241,11 +291,31 @@ function captureStartRequest(request: ExecutionStartRequest): CapturedStartReque
   if (typeof request.objective !== 'string' || request.objective.length === 0) {
     throw new Error('Execution objective must be non-empty');
   }
+  const objective = request.objective;
+  if (Buffer.byteLength(JSON.stringify({ objective }), 'utf8') > MAX_HOSTED_INPUT_BYTES) {
+    throw new Error(`Hosted execution input exceeds ${MAX_HOSTED_INPUT_BYTES} bytes`);
+  }
   return {
     requestId: request.requestId,
     workflowId: request.workflowId,
-    objective: request.objective,
+    objective,
   };
+}
+
+function sameStartRequest(first: CapturedStartRequest, second: CapturedStartRequest): boolean {
+  return (
+    first.requestId === second.requestId &&
+    first.workflowId === second.workflowId &&
+    first.objective === second.objective
+  );
+}
+
+function isHostedInput(value: unknown, objective: string): value is { objective: string } {
+  return isRecord(value) && Object.keys(value).length === 1 && value.objective === objective;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isUuidV4(value: unknown): value is string {

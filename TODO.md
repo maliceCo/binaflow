@@ -16,7 +16,7 @@ se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
 tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 2.1 completada. Tarea 2.2 disponible.
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tareas 2.1 y 2.2 completadas. Tarea 2.3 disponible.
 
 ## Contexto y limites
 
@@ -186,7 +186,7 @@ CLI/TUI mantienen su politica de errores de streams/renderizado.
   - **Verificacion / TDD:** en `test/execution-host.test.ts`, usar promesas diferidas liberadas explicitamente. Probar recibo vs finalizacion, inicio que falla, cancelacion repetida y cierre en medio de arranque/operacion. Comprobar que close del contexto ocurre despues de resolver limpieza y exactamente una vez. RED -> GREEN con `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: own workflow execution independently of clients`
 
-- [ ] **Tarea 2.2: Deduplicar inicios contra el estado persistido**
+- [x] **Tarea 2.2: Deduplicar inicios contra el estado persistido**
   - **Archivo:** `src/application/execution-host.ts`; `test/execution-host.test.ts`.
   - **Funciones:** start; helpers privados de validacion de request y comprobacion de run.input.
   - **Descripcion:** aplicar todo el contrato B. Usar el ID estable y lectura del run/input existentes, sin nuevo store, tabla o hash persistido. Reservar la ranura antes de awaits; comparar copias del request, no objetos que el consumidor pueda mutar. Respetar la distincion entre replay, busy, conflicto e input corrupto. La promesa devuelta a un cliente no libera la operacion.
@@ -293,11 +293,14 @@ continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo
   la operación, recibo separado de finalización, cancelación idempotente y
   cierre seguro del contexto. Las pruebas usan promesas diferidas y servicio
   falso controlable.
-- Verificación Tarea 2.1: `pnpm exec vitest run test/execution-host.test.ts`
-  (4 tests), `pnpm run typecheck`, `pnpm run lint`,
+- Tarea 2.2: se añadieron validación de solicitudes, ranura de inicio,
+  deduplicación en vuelo y replay validado mediante `run.input` acotado, sin
+  nuevas tablas ni llamadas duplicadas al agente.
+- Verificación Tarea 2.2: `pnpm exec vitest run test/execution-host.test.ts`
+  (10 tests), `pnpm run typecheck`, `pnpm run lint`,
   `pnpm run format:check` y `git diff --check` pasaron.
 - Los cambios previos y de baseline quedaron registrados en el commit `09e9978`
   con mensaje `docs: record execution host prerequisites`.
 - Copia del plan anterior: SHA-256
   `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
-- Proxima tarea autorizada: 2.2.
+- Proxima tarea autorizada: 2.3.

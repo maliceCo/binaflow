@@ -10,7 +10,15 @@ const request = {
   objective: 'Implement the hosted workflow',
 };
 
-const run = { id: `host-${request.requestId}`, status: 'running' } as WorkflowRun;
+const run = {
+  id: `host-${request.requestId}`,
+  workflowId: 'plan-build',
+  workflowVersion: 1,
+  objective: request.objective,
+  status: 'running',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+} satisfies WorkflowRun;
 
 describe('execution host lifecycle', () => {
   it('returns the start receipt before the workflow completes', async () => {
@@ -83,6 +91,128 @@ describe('execution host lifecycle', () => {
     await expect(secondCancel).resolves.toBeUndefined();
   });
 
+  it('reuses the in-flight receipt for the same request and rejects a different request as busy', async () => {
+    const operation = deferred<WorkflowRun>();
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>((input) => {
+      void input.onRunStarted?.(run);
+      return operation.promise;
+    });
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow),
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    const first = host.client.start(request);
+    const repeated = host.client.start({ ...request });
+    const different = expect(
+      host.client.start({
+        ...request,
+        requestId: '123e4567-e89b-42d3-a456-426614174001',
+      }),
+    ).rejects.toThrow(/already.*running|busy/i);
+    const conflict = expect(
+      host.client.start({ ...request, objective: 'A different objective' }),
+    ).rejects.toThrow(/already.*running|conflict/i);
+
+    expect(repeated).toBe(first);
+    await different;
+    await conflict;
+    await expect(first).resolves.toEqual({ runId: run.id });
+    expect(runWorkflow).toHaveBeenCalledOnce();
+
+    operation.resolve(run);
+    await host.close();
+  });
+
+  it('replays an existing run after validating its persisted input', async () => {
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>();
+    const readArtifact = vi.fn<ApplicationService['readArtifact']>(async () => ({
+      artifact: {} as never,
+      content: JSON.stringify({ objective: request.objective }),
+      truncated: false,
+      formatted: false,
+    }));
+    const existingRun = { ...run, status: 'completed' } as WorkflowRun;
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow, readArtifact),
+      findRun: async () => existingRun,
+      close: vi.fn(),
+    });
+
+    await expect(host.client.start(request)).resolves.toEqual({ runId: run.id });
+    expect(runWorkflow).not.toHaveBeenCalled();
+    expect(readArtifact).toHaveBeenCalledWith(run.id, 'run.input', {
+      mode: 'preview',
+      maxBytes: 64_000,
+    });
+    await host.close();
+  });
+
+  it.each([
+    [
+      'corrupt',
+      async () => ({
+        artifact: {} as never,
+        content: '{not-json',
+        truncated: false,
+        formatted: false,
+      }),
+    ],
+    [
+      'missing',
+      async () => {
+        throw new Error('missing input artifact');
+      },
+    ],
+  ])('rejects a replay with %s input without executing it', async (_kind, readArtifactImpl) => {
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>();
+    const readArtifact = vi.fn<ApplicationService['readArtifact']>(readArtifactImpl);
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow, readArtifact),
+      findRun: async () => run,
+      close: vi.fn(),
+    });
+
+    await expect(host.client.start(request)).rejects.toThrow(/input.*invalid|corrupt/i);
+    expect(runWorkflow).not.toHaveBeenCalled();
+    await host.close();
+  });
+
+  it('rejects an input larger than the hosted limit before executing it', async () => {
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>();
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow),
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    await expect(host.client.start({ ...request, objective: 'x'.repeat(64_000) })).rejects.toThrow(
+      /64,?000|64.000|size|large/i,
+    );
+    expect(runWorkflow).not.toHaveBeenCalled();
+    await host.close();
+  });
+
+  it('rejects an input with an unexpected field before consulting persistence', async () => {
+    const runWorkflow = vi.fn<ApplicationService['runWorkflow']>();
+    const findRun = vi.fn(async () => undefined);
+    const host = createExecutionHost({
+      application: applicationWith(runWorkflow),
+      findRun,
+      close: vi.fn(),
+    });
+
+    await expect(
+      host.client.start({ ...request, unexpected: true } as typeof request & {
+        unexpected: boolean;
+      }),
+    ).rejects.toThrow(/unexpected|field|request/i);
+    expect(findRun).not.toHaveBeenCalled();
+    expect(runWorkflow).not.toHaveBeenCalled();
+    await host.close();
+  });
+
   it('waits for an in-flight start before closing the context', async () => {
     const persistedRun = deferred<WorkflowRun | undefined>();
     const runWorkflow = vi.fn<ApplicationService['runWorkflow']>(() => {
@@ -109,9 +239,18 @@ describe('execution host lifecycle', () => {
 
 function applicationWith(
   runWorkflow: ApplicationService['runWorkflow'],
-): Pick<ApplicationService, 'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents'> {
+  readArtifact?: ApplicationService['readArtifact'],
+): Pick<
+  ApplicationService,
+  'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents' | 'readArtifact'
+> {
   return {
     runWorkflow,
+    readArtifact:
+      readArtifact ??
+      (async () => {
+        throw new Error('not used in this test');
+      }),
     listRuns: async () => ({ runs: [] }),
     getRunView: async () => {
       throw new Error('not used in this test');
