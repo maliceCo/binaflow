@@ -1,259 +1,296 @@
-# PLAN DE EJECUCION PARA LUNA: TUI Centrada En Tareas
+# PLAN DE EJECUCION: Hito 1 - Ejecucion independiente de la interfaz
 
-> **LUNA:** Este archivo es el handover de ejecucion, no una orden de lanzar Binaflow contra si mismo. Leer `AGENTS.md` y `docs/tui-experience.md` completos. El propietario autorizo corregir este plan y aprobo P1-P6. No volver a preguntar esas decisiones ni inventar otras. 1.1 y 1.2 estan cerradas; las tareas de implementacion 2.1-2.6, 3.0-3.4, 4.1-4.3, 5.1-5.3 y 6.1 estan completadas. Quedan validaciones aplazadas, no una nueva tarea de producto autorizada. No lanzar modelos reales, construir bundles ni hacer commits durante esta revision documental.
+> **ATENCION SUB-AGENTE:** Sigue este plan estrictamente en orden. No saltes tareas ni agregues funcionalidades. Ante un obstaculo, detente e informa. Este documento prepara la delegacion: su creacion no autoriza ejecutar codigo, migraciones, modelos reales ni commits. La implementacion necesita aprobacion explicita del propietario.
 
-## Vision Y Fuente De Verdad
+## Lectura rapida para aprobar
 
-Binaflow debe sentirse como un espacio para preparar y completar tareas, no como una consola de paneles desconectados. Conversacion para pensar, sintesis para conservar acuerdos, propuesta para revisar, accion humana para autorizar y resultado para entender evidencia y limites.
+**Objetivo:** un proceso anfitrion mantiene un workflow activo aunque un cliente
+se desconecte. Otro cliente consulta el mismo trabajo sin reiniciarlo.
 
-- Tareas nuevas TUI: `plan-build`, `plan-build-qa`, `todo-build-qa`.
-- Mantener `plan-build-qa-interactive` WIP y `research-plan-build` resolubles en CLI, historial y recuperacion; ocultarlos solo del selector principal.
-- Preparacion conversacional principal en workflows de planificacion; alternativa directa visible segun politica aprobada P1. TODO conserva documento y validacion, sin replanning.
-- Modelo productor por borrador, sintesis corregible y revision humana siempre. Revision automatica opcional/obligatoria no ejecuta ni sustituye QA de implementacion.
-- Una experiencia de tarea con etapas de presentacion; no nuevo motor, daemon, paralelo, detached, workflow dinamico, driver, plugin ni sistema generico de aprobaciones.
-- CLI/protocolo-v1, persisted runs, permisos, ownership y handoff transaccional son fronteras obligatorias.
+1. Separar la composicion de recursos sin cambiar CLI/TUI.
+2. Crear un propietario de ejecucion con inicio repetible y cancelacion explicita.
+3. Recuperar estado y eventos por consultas, sin callbacks de clientes en el motor.
+4. Verificar el recorrido con dos clientes simulados, SQLite y un agente falso.
 
-`docs/tui-experience.md` contiene decisiones aprobadas y contratos tecnicos. P1-P6 estan aprobadas: P2-P6 en bloque y P1 tras explicar el lanzamiento directo bajo revision obligatoria. No queda pendiente la aprobacion de esas decisiones de producto. El archivo `docs/plans/archive/conversation-approval-ux-completed.md` es historico: conservarlo sin modificaciones y no usar sus checks como evidencia de este scope.
+**No incluye:** web, HTTP, autenticacion, WebSockets, instalacion como servicio,
+Git, ejecucion por fases del TODO, nuevos workflows ni recuperacion automatica
+tras caida del proceso. Esos temas pertenecen a los hitos posteriores.
 
-## Estado Y Politica De Verificacion
+**Estado:** ejecucion autorizada por el propietario en esta sesion; Tarea 1.1 completada. Tarea 1.2 verificada pero bloqueada antes del commit por el worktree mezclado.
 
-- Revision documental y handover realizados; las Tareas 2.1 a 2.6, 3.0-3.4, 4.1-4.3, 5.1-5.3 y 6.1 estan implementadas y documentadas. Permanecen validaciones empiricas aplazadas.
-- El propietario aprobo las recomendaciones iniciales de UX y P1-P6. Contratos de 1.1 cerrados en el anexo normativo de `docs/tui-experience.md`; no repetir cuestionario ni redisenar DTOs.
-- `docs/tui-components.md` registra evaluacion documental de versiones/APIs instaladas y candidatos. Seleccion: Ink existente, editor controlado sin libreria nueva, viewport propio, string-width 8.2.2 y marked 18.0.11. Ambas dependencias directas fueron aprobadas por el propietario para 3.2 y 3.4 respectivamente; 1.2 cerrada, ningun paquete instalado ni spike ejecutado.
-- Por instruccion del propietario, tests aplazados: no ejecutar suites, crear tests ni reconstruirlos en esta entrega. No borrar, deshabilitar ni arreglar pruebas existentes. Conservar los escenarios pendientes al final para la fase futura.
-- Esto aplaza verificacion conductual; no autoriza declarar tests verdes ni producto completamente verificado. Las expectativas generales de `AGENTS.md` no se consideran satisfechas mientras los tests esten aplazados.
-- Documentos y archivos propios: `pnpm exec prettier --check` ejecutado correctamente.
-- Checks de codigo: `pnpm run lint`, `pnpm run typecheck` y `pnpm run build` ejecutados correctamente. `pnpm run format:check` global fallo por 138 archivos del baseline/modificaciones previas; no se formatearon masivamente. No ejecutar scripts de bundle ni `test:e2e` por inferencia.
-- Si `typecheck` falla por fixtures existentes afectados, informar el contrato/archivo exacto; no editar tests, excluirlos del tsconfig o debilitar tipos sin autorizacion. Mantener extensiones opcionales de fachadas inyectadas cuando preserve compatibilidad real.
-- Baseline observado antes de esta revision: formato global fallo en 151 archivos; lint/typecheck/build pasaron; suite anterior a la pausa paso con 318 tests y 1 omitido. Son resultados historicos, no validacion de futuros cambios. No repetir tests para actualizar baseline mientras siga vigente la pausa.
+## Contexto y limites
 
-## Reglas Para Ejecutar Sin Inventar
+- Vision: `docs/web-workflow-vision.md`. Flujo futuro: `docs/binaflow_web_flow.drawio`.
+- Copia integra del TODO anterior: `docs/tui-validation-pending.md`. Contiene
+  verificaciones pendientes de TUI; no se considera trabajo cerrado ni scope de
+  este hito. No editarla, borrarla o ejecutar sus tareas por inferencia.
+- Destino inicial: un usuario, un workspace configurado y un anfitrion. La primera
+  entrada hospedada admite solo `plan-build`; sus versiones y schemas existentes
+  no se modifican. CLI/TUI conservan los demas workflows.
+- La implementacion vive en aplicacion. `src/core`, drivers, transporte JSONL,
+  CLI y TUI no se modifican. Se conservan protocolos y semantica adjunta actuales.
+- No dependencias, migraciones, tablas, timers de polling internos, colas de
+  trabajos, plugins ni nuevos tipos de eventos. El futuro cliente decidira
+  cuando consultar; el anfitrion no programa un bucle de red.
 
-1. Seguir orden de tareas. Un check acredita solo su aceptacion indicada; registrar por separado tests/validacion humana pendientes. No saltar prerequisitos ni marcar checks porque el codigo compila.
-2. Antes de cambiar codigo, registrar `git status --short` y verificaciones no aplazadas. Hay mucho trabajo previo, incluidos archivos nuevos sin seguimiento. No revertirlo, formatearlo masivamente ni incluirlo en commits propios. En un archivo nuevo ajeno, staging de todo el archivo tambien incorporaria trabajo ajeno: pedir aislamiento/aprobacion si no se puede separar.
-3. Tras autorizacion de implementacion, commits atomicos por tarea con staging explicito cuando los cambios sean separables; nunca `git add .`. Mensajes al pie de cada tarea no autorizan commits en la revision documental actual.
-4. Archivos listados son de modificacion; se pueden leer otros para comprobar consumidores. Si hace falta modificar otro archivo/contrato no listado, detener e informar antes, sin crear helpers especulativos.
-5. Todo estado de preparacion pertenece a aplicacion/storage, no al motor. TUI usa fachada/helpers, nunca SQL, archivos de artifacts o detalles Pi.
-6. Claims/CAS y gates se validan en aplicacion/storage, no solo mediante botones deshabilitados. El owner de operacion existe desde la primera integracion, no se incorpora al final.
-7. No usar una lectura ilimitada seguida de `slice` como paginacion. No contar elementos de una pagina para asignar secuencias persistidas.
-8. No refactor preventivo ni cambios esteticos fuera de scope. Dependencias nuevas solo con version/licencia/APIs aprobadas en 1.2.
-9. Registrar comando, resultado real y limitacion por tarea. No modificar baseline ajeno para lograr checks verdes. Si no se puede verificar con la politica actual, declarar pendiente/bloqueo.
-10. No eliminar este plan mientras exista cierre tecnico pendiente, evaluacion de componentes o verificaciones aplazadas. Su retiro requiere cierre verificado o autorizacion expresa del propietario; no usar un skill de autodestruccion para perder pendientes.
+## Contrato cerrado para este hito
 
-## Fase 1: Contrato Cerrado Antes De Delegar Codigo
+### A. Superficie y propiedad de recursos
 
-- [x] **Tarea 1.1: Congelar contratos conforme a las decisiones aprobadas**
-  - **Modificar:** `docs/tui-experience.md`, `TODO.md`.
-  - **Consultar:** `src/application/preparation.ts`, `src/application/preparation-operations.ts`, `src/application/ports.ts`, `src/application/service.ts`; `src/storage/migrations/010-preparation.ts`, `src/storage/migrations/index.ts`; `src/core/agent.ts`; `src/tui/model.ts`, `src/tui/shell-input.ts`, `src/tui/lifecycle.ts`; schemas de los tres workflows activos.
-  - **Resultado:** P1-P6 aprobadas y contratos cerrados en el anexo normativo de experience: DTOs, schemas de respuesta/informe, revision/CAS, idempotencia, cobertura, permisos/politica, handoff, cursores y QA. Comprobados contra contratos y SQL actuales por inspeccion. Este check es documental, no acredita implementacion ni pruebas; sin commit en esta sesion de documentacion.
-  - **Contratos que deben quedar cerrados:** revision CAS separada de contenido; idempotencia y retry por ID; callback de mensaje persistido; sugerencia/confirmacion de sintesis y generacion explicita de propuesta; informe/lectura/gate; politica efectiva capturada; cursores/payload/cache; capacidades de razonamiento; editor durable o efimero.
-  - **Aceptacion:** P1-P6 sin pendientes, recorridos revisados por el propietario y ninguna firma con opciones de producto sin resolver. La fuente de verdad incluye la matriz de invalidacion y alcance exacto de revision obligatoria. `getTaskOutcome` ya elegido como proyeccion TUI separada; no dejar ese condicional a Luna.
-  - **Verificacion:** aprobacion humana P1-P6 registrada; formato documental correcto. No ejecutar esta tarea de nuevo salvo desviacion concreta.
-  - **Commit Msg:** `docs: specify task-centered TUI interaction contracts`
+Crear `src/application/execution-host.ts`, con tipos y fabrica
+`createExecutionHost`. La fabrica recibe una aplicacion ya compuesta, una consulta
+interna `findRun(runId)` y el cierre del contexto que le pertenece. No recibe ni
+importa SqliteRunStore, PiDriver, Ink o filesystem.
 
-- [x] **Tarea 1.2: Elegir componentes y comprobar fuentes de capacidades**
-  - **Modificar:** `docs/tui-components.md`, `TODO.md`; `docs/tui-experience.md` solo si la evidencia exige ajustar un contrato con aprobacion. El documento de componentes ya fue creado y evaluado.
-  - **Consultar:** `package.json`, `pnpm-lock.yaml`, docs instaladas Ink/Ink UI, `src/tui/bootstrap.tsx`, `src/tui/viewport.ts`, `src/tui/text.ts`, `src/presentation/text.ts`, `src/core/agent.ts`, `src/drivers/pi-discovery.ts`, `src/drivers/pi-rpc.ts`.
-  - **Accion:** evaluar editor multilinea, foco exclusivo, pegado con controles, resize, pantalla alternativa, Markdown y cortes de pagina. Registrar APIs exactas, version, licencia, mantenimiento, peers Ink 7/React 19, Linux/Windows, sanitizacion y dependencias. Distinguir documentado de probado.
-  - **Capacidades:** catalogo actual no tiene niveles de razonamiento. Identificar fuente concreta sin llamadas pagadas y normalizacion en adapter; si no existe evidencia, usar capacidad desconocida segun P6. No inferir por nombre ni copiar la lista global de `PI_THINKING_LEVELS` a cada modelo.
-  - **Aceptacion:** elegir solucion minima por componente y mapear APIs a 3.2-3.4. No asumir que `useFocus` desactiva todos los `useInput`. Un spike/dependencia exige archivos/version/tarea y autorizacion antes de crear codigo o instalar. Si no se autoriza probar terminal ahora, registrar no probado, nunca afirmar compatibilidad.
-  - **Resultado tecnico:** Ink 7.1.1 / Ink UI 2.0.0 / React 19.2.8 comprobados. API usePaste separa pegado bracketed de teclas; editor controlado + Intl.Segmenter/string-width; viewport local; marked.lexer -> renderer Ink seguro. Capacidad de razonamiento desconocida, no nuevo port/driver hipotetico. Sin pruebas de terminal ni instalacion.
-  - **Aprobacion registrada:** el propietario respondio afirmativamente a autorizar `string-width@8.2.2` como dependencia directa en 3.2 (ya existia transitiva) y `marked@18.0.11` en 3.4. Gate cerrado; las dependencias fueron instaladas en sus tareas correspondientes y no se solicito otra decision de producto.
-  - **Verificacion:** `pnpm list ink @inkjs/ui react --depth 0` y formato de docs ejecutados; metadata/docs/fuentes versionadas en components. El check acredita seleccion y aprobacion documental, no pruebas de terminal ni implementacion.
-  - **Commit Msg:** `docs: select supported TUI interaction components`
+La fabrica devuelve `{ client, close }`. El propietario del proceso retiene
+`close`; un cliente solo recibe `client`. No exponer la aplicacion cruda, el
+AbortController ni la promesa de operacion a los clientes.
 
-## Fase 2: Soporte De Aplicacion Y Persistencia
+| Operacion del cliente | Contrato |
+| --- | --- |
+| `start({ requestId, workflowId, objective })` | Devuelve `{ runId }` despues de persistir el run y su input; no espera la terminacion del workflow. `workflowId` debe ser `plan-build`. |
+| `listRuns(query?)` | Delega en la consulta paginada existente; permite reencontrar trabajo sin conservar el runId en el navegador. |
+| `getRunView(runId)` | Delega en la proyeccion existente; observar nunca inicia ni reanuda agentes. |
+| `listRunEvents(runId, query?)` | Delega en la pagina de eventos existente; usa IDs persistidos y `afterId`, no indices del cliente. |
+| `cancel(runId)` | Solo aborta la operacion activa que posee este anfitrion y espera su limpieza. Repetir durante cancelacion espera el mismo resultado. |
 
-Implementar los DTOs definitivos del anexo de experience en `src/application/preparation.ts` y ports consumidores; no redisenarlos durante tareas posteriores. Mantener entry points legacy; consumidores nuevos usan overview/paginas. No motor de conversacion generico.
+No hay `attach`, `detach` ni `subscribe`: los clientes hacen consultas
+independientes. Desconectar equivale a dejar de consultar. No se acepta un
+AbortSignal del cliente en `start` ni se vincula un request de lectura a la
+cancelacion del agente.
 
-- [x] **Tarea 2.1: Migrar preparacion y persistir contratos completos**
-  - **Modificar:** `src/application/preparation.ts`, `src/application/ports.ts`, nuevo `src/application/preparation-review.ts` (DTO/schema del informe, sin llamadas a modelos), `src/application/preparation-operations.ts` (solo adaptacion compatible de campos/llamadas existentes); `src/storage/sqlite-run-store.ts`, nueva `src/storage/migrations/011-preparation-experience.ts`, `src/storage/migrations/index.ts`.
-  - **Funciones:** DTOs, queries overview/list/documento acotado, CAS de ajustes/sintesis, begin/finish turn/review, confirmacion de lectura, claim/recovery y `createRunFromPreparation`.
-  - **Accion:** implementar estrategia de migracion descrita en experience. Confirmar 011 libre. Ampliar CHECK de workflow en drafts y proposals para `plan-build-qa`; preservar las cinco tablas actuales, IDs, FK, outputs, snapshots, owners y aprobaciones. No editar 010 ni intentar desactivar FK dentro de `BEGIN IMMEDIATE`. Registrar v11 solo tras copia y `foreign_key_check` sin errores.
-  - **Persistencia:** separar `revision` CAS y `contentVersion`; conservar historial inmutable y puntero a propuesta vigente. Persistir ajustes, sintesis/sugerencias, requestIds, intentos, politica efectiva, informes y lectura por ID. Persistir coverage/confirmed de P4; P5 excluye texto no enviado. Preservar sqlite_sequence de aprobaciones al reconstruir tablas AUTOINCREMENT; nunca credenciales ni foco en SQLite.
-  - **Atomicidad:** cada mutacion valida activo/CAS/claim/pertenencia. Dos llamadas de la misma instancia tampoco reemplazan claims vivos. Asignar secuencias en storage, no por longitud de mensajes cargados. El handoff transaccional comprueba evidencia vigente/lectura, guarda consumo/aprobacion/run/pasos/artifacts/owner juntos. No llamadas driver ni filesystem dentro de transaccion.
-  - **Compatibilidad:** defaults de configuracion antiguos; productor desconocido no inventado. Conservar serializacion historica y propuesta legacy solo si antes era vigente. Queries nuevas no cargan transcripcion/outputs completos. DTOs de listados acotan metadatos ademas del numero de items.
-  - **Aceptacion:** SQL/DTOs satisfacen casos de v10 y base nueva, rollback, FK, concurrencia, modelo sin invalidacion de contenido y evidencia de otra propuesta rechazada. Registrar estos casos como inspeccion estatica; pruebas de migracion/concurrencia siguen pendientes, no afirmar seguridad empirica.
-  - **Verificacion actual:** `pnpm exec prettier --check` de archivos propios, `pnpm run lint`, `pnpm run typecheck` y `pnpm run build` ejecutados correctamente; inspeccion estatica del esquema y transacciones. Pruebas de migracion/concurrencia siguen aplazadas. No ejecutar migraciones manuales sobre datos del usuario ni introducir un script-test encubierto.
-  - **Commit Msg:** `feat: persist preparation settings and review provenance`
+Usar `Pick` de las interfaces existentes para las dependencias necesarias, no un
+segundo ApplicationService completo. La consulta `findRun` es el
+`getRun` existente del puerto de almacenamiento, encapsulado por la composicion;
+no se publica a presentacion. No agregar metodos obligatorios a las fachadas que
+ya usan CLI/TUI y sus fixtures.
 
-- [x] **Tarea 2.2: Resolver modelos y configuracion sin cambiar perfiles ni CLI**
-  - **Modificar:** `src/application/preparation-operations.ts`, `src/application/preparation.ts`, `src/application/service.ts`, `src/application/context.ts`, `src/application/runtime.ts`, `src/application/config-operations.ts`; `src/config.ts`. Leer, no modificar, `src/core/agent.ts` y `src/drivers/pi-discovery.ts`.
-  - **Funciones:** `createPreparation`, `plannerProfile`, `snapshotProfile`, `updatePreparationSettings`; nueva query `discoverPreparationModels`; `generateUpdatedPreparationConfiguration` y escritura atomica existente segun P2.
-  - **Accion:** `discoverPreparationModels` mapea `discoverModels` existente y omite thinkingLevels: 1.2 no encontro fuente verificada. No ampliar core/driver para capacidades hipoteticas ni filtrar metadata nueva a CLI. La fachada deriva productor/revisor de planner (P3), valida selecciones y preserva herramientas/trust/timeout/retry. Componer callback readPreparationReviewMode en runtime para el snapshot fresco definido en el anexo.
-  - **Configuracion:** `preparation.reviewMode` y modelo revisor por borrador conforme P2/P3. Nueva operacion estrecha relee/mezcla solo la politica, preserva claves/perfiles y usa escritura atomica existente. Detectar cambios desde preview y pedir reconfirmacion; no prometer CAS contra un editor externo simultaneo. Propagar config en `ApplicationConfig`, opciones de service y runtime. No leer config desde componentes ni afirmar atomicidad archivo-SQLite.
-  - **Aceptacion:** cambiar modelo solo sin operacion incompatible, persiste y no invalida contenido. Nueva llamada usa snapshot real, no fallback. Default/unknown visibles segun P6. Si capacidades o credenciales fallan, error recuperable sin prueba pagada automatica.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de flujo config -> adapter -> fachada ejecutados correctamente; contratos con driver falso y persistencia empirica siguen pendientes.
-  - **Commit Msg:** `feat: support per-preparation model selection`
+### B. Inicio repetible sin una nueva tabla
 
-- [x] **Tarea 2.3: Sintesis confirmada, contexto y turnos recuperables**
-  - **Modificar:** `src/application/preparation-operations.ts`, `src/application/preparation.ts`, `src/application/service.ts`; `src/storage/sqlite-run-store.ts` y `src/application/ports.ts` solo para completar contratos begin/finish/queries previstos en 2.1.
-  - **Funciones:** `buildPreparationPrompt`, `parsePreparationAgentResponse`, nuevo `replyPreparationTurn`, `retryPreparationReply`, `updatePreparationSynthesis`, `generatePreparationProposal`, recuperacion explicita `recoverPreparation` y callback `onPersisted`; `replyPreparation` queda wrapper compatible, sin duplicar logica.
-  - **Accion:** actualizar respuesta estructurada para sugerencia de sintesis conforme P4, sin convertirla en acuerdos humanos automaticamente. Generar propuesta es accion explicita sobre sintesis confirmada; no requiere insertar un mensaje artificial ni regenerar al navegar. Incluir schemas reales y mensaje actual completo dentro de 32.000 unidades UTF-16 del prompt final.
-  - **Recuperacion:** requestId deduplica envio; retry usa userMessageId persistido y registra intento, no otro mensaje. Guardar mensaje/estado pendiente antes del driver y notificar por callback ligado al borrador. El editor distingue persistencia del envio de exito del modelo. Todo fallo posterior al claim, incluido previo al driver, sigue cleanup y conserva estado recuperable.
-  - **Aceptacion:** no omitir mensaje actual ni acuerdos antiguos por recorte. Sugerencia pendiente/coverage insuficiente no produce propuesta ejecutable. Propuestas previas visibles como historicas. El result nuevo es acotado: no construir conversacion completa y descartarla despues en la TUI. CAS stale no publica respuesta incompatible. Reapertura y callbacks tardios no disparan modelos, roban foco ni duplican turnos.
-  - **Verificacion actual:** formato propio, lint/typecheck/build, inspeccion de cada salida de error y presupuesto ejecutados correctamente; pruebas de historia larga, idempotencia y cancelacion siguen aplazadas.
-  - **Commit Msg:** `feat: preserve preparation agreements across bounded turns`
+- `requestId` es un UUID v4 canonico en minusculas, creado una sola vez por el
+  cliente para un inicio deliberado. Validarlo; no generarlo de nuevo al reintentar.
+- Derivar `runId = host-${requestId}`. El dominio actual admite IDs de texto y
+  SqliteRunStore ya exige unicidad. Esta convencion solo afecta a nuevos runs
+  hospedados, nunca a IDs existentes.
+- Capturar los valores del request antes del primer await. Validar tipos en runtime,
+  rechazar campos no previstos, objetivo vacio y workflow distinto a `plan-build`.
+  Conservar el objetivo exacto; no recortarlo ni normalizar sus espacios.
+- El input enviado a `runWorkflow` es exactamente `{ objective }`. Limitar su JSON
+  serializado a 64.000 bytes UTF-8, compatible con la lectura acotada del artefacto.
+  Este limite pertenece a esta entrada nueva; no cambiar limites de CLI/TUI.
+- Antes del primer await, reservar una unica ranura local para la solicitud en
+  curso. Misma solicitud y contenido reutilizan la promesa de inicio. Mismo ID
+  con otro contenido falla; un ID diferente recibe error de ocupado, sin cola.
+- Consultar `findRun(runId)` antes de iniciar. Si existe, comprobar workflow,
+  objetivo e input persistido `run.input` mediante `readArtifact` en modo preview,
+  maxBytes 64.000. Rechazar error, truncamiento, JSON invalido o contenido diferente.
+  No comparar versiones/modelos actuales para regenerar una ejecucion historica.
+- Un replay valido devuelve el mismo runId, incluso si el run ya termino, fallo,
+  esta esperando o fue interrumpido. **Repetir start nunca equivale a resume.**
+- Si no existe, llamar una sola vez a `application.runWorkflow` con ese runId y
+  un AbortController propiedad del anfitrion. El callback interno `onRunStarted`
+  resuelve el recibo; ya sucede despues de persistir run y artefacto de entrada.
+  Nunca llamar callbacks de clientes desde ese callback.
+- Si falla antes de crear el run, rechazar el inicio y liberar la ranura. Se puede
+  reintentar el mismo ID: el runtime actual persiste antes de llamar al agente.
+  No prometer persistencia de solicitudes rechazadas ni limpieza de artefactos
+  huerfanos anteriores a createRun; no agregar un recolector en este hito.
+- Si existe un run pero no su input valido, detener y reportar; nunca eliminarlo
+  ni llamar otra vez al agente para reparar la deduplicacion.
 
-- [x] **Tarea 2.4: Revision y autorizacion exactas**
-  - **Modificar:** `src/application/preparation-review.ts` (schema/DTO ya creados en 2.1); `src/application/preparation.ts`, `src/application/preparation-operations.ts`, `src/application/service.ts`, `src/application/ports.ts`; `src/storage/sqlite-run-store.ts` solo para contratos de revision/handoff de 2.1.
-  - **Funciones:** JSON Schema versionado del informe, `reviewPreparationProposal`, `acknowledgePreparationReview`, elegibilidad de `approveAndExecutePreparation`.
-  - **Accion:** un informe por solicitud explicita; vincular proposalId/contentVersion/politica/snapshot. Persistir hallazgos severos y lectura por informe exacto. Aplicar P1-P3 en facade y commit, no solo en UI. Cambiar revisor/cancelar/reintentar no borra bloqueo de contenido.
-  - **Aceptacion:** `required-auto` no aprueba sin informe valido; critical/high no se evaden cambiando modo/modelo; medium/low requieren lectura confirmada. Informe fallido/obsoleto no cumple gate. Solicitar ajustes no crea loop ni ejecuta. No adjudicacion ni aprobacion generica del motor.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de matriz de elegibilidad y condiciones del commit ejecutados correctamente. Pruebas de autorizacion siguen aplazadas.
-  - **Commit Msg:** `feat: add explicit preparation review policies`
+La unicidad por run y los claims existentes siguen siendo la ultima proteccion.
+La ranura es por instancia del anfitrion: **no es un bloqueo global del workspace**
+contra otro CLI o proceso. No lanzar dos anfitriones contra el mismo workspace.
+El bloqueo por repositorio se abordara con Git en el hito 3.
 
-- [x] **Tarea 2.5: Handoff a workflows activos sin replanning**
-  - **Modificar:** `src/application/preparation.ts`, `src/application/preparation-operations.ts`, `src/application/execution-operations.ts`, `src/application/plan-build-qa-coordinator.ts`; `src/storage/sqlite-run-store.ts` solo handoff previsto.
-  - **Consultar:** schemas/IDs de `src/workflows/plan-build.ts`, `plan-build-qa.ts`, `plan-build-qa-interactive.ts` y coordinacion actual de resume.
-  - **Accion:** validar `plan` para plan-build; `scope` y `plan` para plan-build-qa usando sus schemas. Importar pasos completos con outputs/artifact refs y snapshot real productor, no fingir analyst/planner configurados. 011 ya debe admitir el workflow; no remendar 010 aqui.
-  - **Aceptacion:** preflight de versiones, revision, politica efectiva, workspace, perfiles/permisos. Aprobacion identifica propuesta exacta y consume una vez. Despues del commit no llamar analyst/planner ni borrar artifacts por fallo al iniciar build. Resume usa pasos completos y conserva limites QA/fix existentes. Legacy interactivo/research siguen recuperables.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de orden/limites transaccionales ejecutados correctamente. Pruebas de crash antes/despues de commit siguen aplazadas.
-  - **Commit Msg:** `feat: hand off approved preparation to bounded QA workflows`
+### C. Ciclo de vida, errores y cancelacion
 
-- [x] **Tarea 2.6: Proveer lectura paginada antes del viewport**
-  - **Modificar:** `src/application/artifact-operations.ts`, `src/application/run-operations.ts`, `src/application/ports.ts`, `src/application/service.ts`, `src/application/preparation-operations.ts`, `src/application/preparation.ts`, `src/presentation/format.ts`; `src/artifacts/artifact-store.ts`, `src/artifacts/file-artifact-store.ts`; `src/storage/sqlite-run-store.ts` solo lectura acotada y proyeccion de listados.
-  - **Funciones:** `readArtifactPage`, `readPreparationDocumentPage`, `formatPreparationOutput`, `listTaskRunsPage` y queries de paginas de borradores/mensajes/propuestas; lectura bidireccional por cursor en adapter.
-  - **Accion:** implementar `DocumentPage` del contrato. Artifact cursor valida identidad/version, pertenencia al run y ruta segura/symlink usando seguridad actual. Lectura UTF-8 acotada y cierre de handle en fallo/cancelacion. Texto SQLite por fragmentos, no traer outputs o transcripcion completa para cortarlos en TUI.
-  - **Aceptacion:** 200 lineas/64 KiB con continuidad de lineas largas y caracteres multibyte, sin perdida/duplicacion. Cursores de otro documento se rechazan. No `readArtifact(full)` para simular paginacion. Metadatos 50/payload P6; CLI `readArtifact` conserva modos/campos/comportamiento actuales.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de limites/offsets/seguridad ejecutados correctamente. Fixtures de UTF-8, pagina larga y paths maliciosos siguen aplazados.
-  - **Commit Msg:** `feat: add bounded task document queries`
+- Separar promesa de inicio de promesa de operacion completa. Observar todas sus
+  resoluciones/rechazos desde su creacion; no dejar promesas rechazadas sueltas.
+- Mantener la ranura, controller y contexto hasta que termine la operacion, no
+  solo hasta recibir `onRunStarted` ni hasta que el cliente deje de consultar.
+- Un resultado normal `failed`, `cancelled` o `waiting` se consulta como tal.
+  No convertirlo en exito ni reanudarlo automaticamente.
+- Una excepcion inesperada posterior al inicio debe quedar observada. Usar la
+  recuperacion que ya hace `runWorkflow`, sin mutar estados directamente desde
+  el host. Impedir nuevos inicios si el anfitrion queda en fallo interno; lecturas
+  y cierre siguen disponibles. No ocultar errores de SQLite como fallos de cliente.
+- `cancel` no cancela otro run para satisfacer una solicitud: para un run ajeno,
+  inexistente o activo en otro propietario, devolver error explicito. Para el
+  mismo run ya terminal, no-op. Comprobar estado persistido cuando no haya ranura.
+- En este hito no se agrega force-kill. AbortSignal y PiDriver mantienen su
+  limpieza actual. No modificar el doble Ctrl+C de CLI/TUI.
+- `close()` es idempotente: rechazar nuevas llamadas, abortar la operacion propia,
+  esperar operacion y consultas ya admitidas, y cerrar el contexto exactamente una
+  vez. Un error no permite cerrar SQLite mientras quedan escrituras activas.
+  Propagar los errores de limpieza, sin esperar al cliente ni al retorno de HTTP.
+- La finalizacion normal de un run deja el host disponible para otro. Si close
+  compite con un inicio en preflight, no lanzar el agente despues de comenzar el
+  cierre. Si una operacion no termina su limpieza, no forzar el cierre de SQLite.
 
-## Fase 3: Presentacion Y Ownership Antes De Integrar Flujos
+Cerrar el navegador no cambia estados. Cerrar ordenadamente el anfitrion solicita
+cancelacion conforme al comportamiento actual; **no inventar pause/resume para
+runs cancelled**. Una caida abrupta se recupera explicitamente con los mecanismos
+existentes tras verificar que el propietario anterior termino. No simular
+continuidad del proceso ni exactamente-una-vez de herramientas externas.
 
-Dependencias aprobadas en 1.2: `string-width@8.2.2` en 3.2 y `marked@18.0.11` en 3.4. Durante la implementacion, modificar `package.json` y `pnpm-lock.yaml` solo en esas tareas mediante `pnpm add --save-exact <paquete@version>`; inspeccionar diff para evitar upgrades ajenos. No otra dependencia ni framework de navegacion.
+### D. Observacion desacoplada y compatibilidad
 
-- [x] **Tarea 3.0: Asegurar ownership antes de cambiar navegacion**
-  - **Modificar:** `src/tui/shell-controller.tsx`, `src/tui/shell-input.ts`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/lifecycle.ts`, `src/tui/execution.ts`, `src/tui/shell-view.tsx`, `src/tui/layout.tsx`.
-  - **Accion:** indicador global de operacion con Volver a operacion/Cancelar y confirmacion de salida, usando layout existente. Reutilizar unico lifecycle, no owner por pantalla ni refactor visual en esta tarea.
-  - **Reglas:** navegacion/lectura y editor local permitidos durante operacion; bloquear cambio de proyecto/config/contexto y otra operacion mutante. Ctrl+C, signals, stream/render failure y salida confirmada siguen shutdown ordenado. No desuscribir persistencia activa por abrir documento.
-  - **Aceptacion:** resize/volver no cancelan ni pierden controller/contexto. Primer cancel graceful, segundo respeta cleanup antes de force; SQLite no cierra prematuramente. Nuevos callbacks de generacion/revision usaran este owner, no un segundo sistema.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de ownership ejecutados correctamente. Terminal/cancelacion reales siguen aplazados.
-  - **Commit Msg:** `feat: preserve operation ownership during task navigation`
+El camino hospedado se compone **sin `onEvent` y sin `subscribeEvents` de cliente**.
+Solo consulta eventos duraderos. Por eso un cliente lento o ausente no entra en
+la cadena de callbacks que espera `createRuntimeEventSink`.
 
-- [x] **Tarea 3.1: Layout responsivo sin cambiar semantica**
-  - **Modificar:** nuevo `src/tui/theme.ts`; `src/tui/components.tsx`, `src/tui/layout.tsx`, `src/tui/bootstrap.tsx`, `src/tui/shell.tsx`, `src/tui/shell-view.tsx`.
-  - **Accion:** marco proyecto/tarea/etapa, foco y acciones visibles, NO_COLOR, terminal estrecho con una vista. Integrar visualmente indicador de 3.0 sin crear otro lifecycle.
-  - **Aceptacion:** resize conserva editor/tarea y no monta otro owner. Si el terminal es demasiado pequeno, solo mostrar acciones seguras visibles; no enrutar teclas ocultas ni permitir aprobaciones invisibles. Colores complementan etiquetas y foco textual, no los sustituyen.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de layout ejecutados correctamente. Validacion de terminales/resize sigue aplazada.
-  - **Commit Msg:** `feat: add responsive task-centered TUI layout`
+No cambiar la semantica global del sink ni ignorar sus errores: el test actual
+`persists buffered text even when the observer fails` debe conservarse y pasar.
+CLI/TUI mantienen su politica de errores de streams/renderizado.
 
-- [x] **Tarea 3.2: Editor multilinea con entrada exclusiva**
-  - **Modificar:** nuevo `src/tui/message-editor.tsx`; `src/tui/text.ts`, `src/tui/shell-input.ts`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/screens/preparation.tsx`, `src/tui/shell-controller.tsx`; `package.json` y `pnpm-lock.yaml` solo para string-width 8.2.2 aprobado.
-  - **Accion:** editor controlado sin useInput propio; shell enruta useInput/usePaste, helpers usan Intl.Segmenter y string-width. No nuevo focus manager; seguir APIs/limites de components y tabla de experience. Enviar es accion explicita, Enter en editor inserta linea. Controlar pegado como texto, nunca acciones por Tab/Esc incrustados. Conservar drafts locales por proyecto/draftId segun P5.
-  - **Aceptacion:** un evento tiene un destino. Acciones siempre visibles; editor no comparte teclado activo con shell/lista. requestId/version de editor distinguen envio persistido, respuesta y ediciones posteriores. Duplicados de solicitud y vacios bloqueados; repetir deliberadamente el mismo texto sigue permitido.
-  - **Evitar:** depender del orden de `useInput`, timeout para foco, dos focus managers o flags de autorizacion derivados de texto.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion del enrutamiento ejecutados correctamente. Prueba terminal de pegado/controles sigue aplazada.
-  - **Commit Msg:** `feat: add focus-safe multiline preparation input`
+- Conservar los limites de pagina existentes, sus IDs y filtros por run.
+- El cliente conserva el ultimo ID recibido y vuelve a consultar `afterId`.
+  No hacer `getEvents()` completo seguido de slice ni generar otro contador.
+- Snapshot y pagina no son una lectura atomica conjunta. Son consultas sucesivas;
+  no prometer sincronizacion perfecta. Una nueva consulta converge al estado
+  persistido. El historial sirve para mostrar progreso, no para ejecutar pasos.
+- El texto aun bufferizado por el sink no aparece hasta su flush existente.
+  No prometer streaming caracter a caracter ni eventos no persistidos.
+- Registrar consultas admitidas para que close espere su finalizacion. Una
+  lectura concurrente puede fallar sin abortar al agente; se devuelve su error
+  al cliente. No crear cachés ni almacenar transcripciones por cliente.
 
-- [x] **Tarea 3.3: Viewport con ancla, cache acotada y retorno**
-  - **Modificar:** `src/tui/viewport.ts`, `src/tui/text.ts`, nuevo `src/tui/document-view.tsx`; `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`, `src/tui/shell-controller.tsx`, `src/tui/shell-view.tsx`.
-  - **Accion:** consumir paginas de 2.6 por fachada. Implementar ancla de fuente, movimiento/acciones visibles, busqueda local, seguimiento al final y cache/retorno P6. Guardar cursores/posiciones sin conservar payload ilimitado de documentos anteriores.
-  - **Aceptacion:** llegada de contenido/resize no roba posicion; seleccionar por ID; cargar anterior no cambia seleccion; busqueda declara alcance. Fuente grande no se lee completa y contenido desalojado se recarga por cursor. Respuestas tardias se ignoran para la vista equivocada sin perder persistencia.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de limites y referencias ejecutados correctamente. Navegacion larga con terminal falso sigue aplazada.
-  - **Commit Msg:** `feat: add anchored reading navigation for task content`
+## Lista de tareas
 
-- [x] **Tarea 3.4: Markdown seguro y fuentes parciales legibles**
-  - **Modificar:** nuevo `src/tui/markdown.tsx`; `src/tui/document-view.tsx`, `src/tui/text.ts`, `src/presentation/text.ts` solo si hace falta sanitizacion compatible; `package.json` y `pnpm-lock.yaml` solo para marked 18.0.11 aprobado.
-  - **Accion:** Marked local con gfm, usar lexer (no HTML ni marked-terminal) y renderer de spans Ink segun components para encabezados, enfasis, listas, citas, enlaces y codigo; tablas adaptadas a anchura. Sanitizacion antes de estilos, conservar espacios. Cortes dentro de bloques usan contexto aprobado o fallback Fuente parcial visible, no sintaxis inventada.
-  - **Aceptacion:** controles/OSC/HTML/enlaces no ejecutan ni manipulan terminal; NO_COLOR conserva jerarquia. Codigo ancho indica overflow y permite leer fuente sin perdida. No regex como parser completo ni HTML remoto/resaltado no aprobado.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de sanitizacion y fallback ejecutados correctamente. Fixtures Markdown malicioso/incompleto siguen aplazados.
-  - **Commit Msg:** `feat: render safe readable Markdown in the TUI`
+### Fase 1: Prerrequisitos y preparacion (sin nueva funcionalidad)
 
-## Fase 4: Recorridos De Tarea Sobre Contratos Existentes
+- [x] **Tarea 1.1: Proteger el baseline y habilitar la ejecucion del plan**
+  - **Archivo:** `TODO.md` (solo registro de autorizacion y verificaciones).
+  - **Descripcion:** leer AGENTS.md, este plan y la vision. Registrar `git status --short`; hay modificaciones previas en runtime, application, storage, tests y docs. Obtener aprobacion de implementacion y una base aislada/autorizada antes de commits. No incorporar trabajo ajeno, restaurar archivos ni crear worktrees automaticamente.
+  - **Politica de pruebas:** este hito requiere TDD y regresion. La copia TUI documenta una pausa anterior; no usarla para omitir pruebas y declarar este hito terminado. Si el propietario mantiene una pausa global, detenerse y pedir que autorice las verificaciones antes de implementar. No reabrir la validacion humana de la TUI.
+  - **Evitar:** git add ., commits del baseline ajeno, formateo global, instalar paquetes, lanzar Binaflow contra si mismo o modelos reales.
+  - **Verificacion:** `git status --short`; `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`, `pnpm run build`. Registrar cada resultado real. Fallos previos bloqueantes se reportan sin repararlos por inferencia.
+  - **Commit Msg:** `docs: record execution host prerequisites` (solo al aislar cambios propios y recibir autorizacion; nunca crear un commit vacio).
 
-- [x] **Tarea 4.1: Selector enfocado, entrada directa y configuracion de revision**
-  - **Modificar:** `src/tui/launch.ts`, `src/tui/layout.tsx`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/screens/workflows.tsx`, `src/tui/screens/launch.tsx`, `src/tui/screens/todo-select.tsx`, `src/tui/screens/setup.tsx`, `src/tui/shell-input.ts`, `src/tui/shell-controller.tsx`, `src/tui/shell-view.tsx`.
-  - **Accion:** Nueva tarea/Continuar/Configuracion, selector de tres workflows, alternativa directa visible conforme P1, configuracion global de revision P2 por operacion de 2.2. TODO muestra ruta/documento/permisos y distingue validacion local de paso agente.
-  - **Aceptacion:** CLI/catalogo resoluble no cambian; historial no se filtra por selector reducido. Continuar lista borradores/runs paginados; WIP recuperable. Configuracion global nunca se guarda al cambiar modelo de un borrador. Legacy config se preserva y cambios de contexto bloqueados durante operacion.
-  - **Verificacion actual:** formato propio, lint/typecheck/build e inspeccion de selector vs resolucion ejecutados correctamente. Recorridos directos/TODO/legacy siguen aplazados.
-  - **Commit Msg:** `feat: expose focused task creation and legacy recovery`
+- [ ] **Tarea 1.2: Compartir la composicion sin cambiar el contexto adjunto**
+  - **Archivo:** `src/application/runtime.ts`; `test/application-runtime.test.ts` solo para una regresion observable si la existente no protege el cambio.
+  - **Funciones:** `openApplicationContext`; nuevo helper privado `openApplicationResources`.
+  - **Descripcion:** extraer la construccion existente a ese helper privado, conservando argumentos, carga de configuracion, recursos, coordinadores, eventSink y orden. El helper retorna application, close y findRun como clausura interna sobre store.getRun. El wrapper publico devuelve solamente application y close como hoy. Esto permite un segundo consumidor sin duplicar todo runtime ni exponer el store.
+  - **Evitar:** cambiar ApplicationService, OpenApplicationOptions, openApplicationStorage, createRuntimeEventSink, tratamiento de errores de observers o semantica de cierre del contexto adjunto. No agregar hooks para inyectar drivers de pruebas en la API de produccion.
+  - **Verificacion:** `pnpm exec vitest run test/application-runtime.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`. Deben pasar antes y despues, con el comportamiento de observer fallido intacto.
+  - **Commit Msg:** `refactor: share application runtime composition privately`
 
-- [x] **Tarea 4.2: Conversacion, sintesis, propuesta y revision integradas**
-  - **Modificar:** `src/tui/screens/preparation.tsx`, nuevo `src/tui/screens/proposal.tsx`; `src/tui/shell-view.tsx`, `src/tui/shell-controller.tsx`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`, `src/tui/layout.tsx`.
-  - **Funciones:** abrir/reabrir, enviar/reintentar por ID, editar/confirmar sintesis, `generatePreparationProposal`, selectores productor/revisor, revision/lectura/aprobacion.
-  - **Accion:** orientacion inicial local sin llamada pagada. Historial/sintesis/propuesta separados, usando editor y viewport. Propuesta muestra objetivo, alcance, tareas y verificaciones legibles, no solo contador de outputs ni JSON crudo. Mostrar modelo real productor y agentes que continuan.
-  - **Aceptacion:** propuesta obsoleta visible no ejecutable; toda aprobacion identifica ID/version/permisos y exige foco. Sugerencia de sintesis no es plan ni acuerdo confirmado. Revisor no se ejecuta por navegacion. Mensaje persistido se muestra durante generacion por callback; fallo permite retry sin duplicado. Cambiar modelo no invalida propuesta por CAS ni pierde editor.
-  - **Lifecycle:** cada operacion usa owner de 3.0 desde antes de abrir contexto hasta persistencia final. No sustituir el contexto mientras reply/review/build lo utiliza. Callback tardio no muta otra tarea.
-   - **Verificacion actual:** formato propio de los archivos tocados, lint/typecheck/build e inspeccion de recorrido completo y gates. `format:check` global sigue bloqueado por archivos preexistentes; terminal/driver falsos pendientes.
-  - **Commit Msg:** `feat: integrate conversational task preparation and plan review`
+### Fase 2: Implementacion funcional
 
-- [x] **Tarea 4.3: Actividad comprensible y cierre de integracion adjunta**
-  - **Modificar:** `src/tui/screens/live.tsx`, `src/tui/layout.tsx`, `src/tui/shell-controller.tsx`, `src/tui/execution.ts`, `src/tui/lifecycle.ts` solo ajustes concretos de integracion.
-  - **Accion:** estados de actividad reales para preparando respuesta, revisando, esperando decision, ejecutando y cancelando. Resumen primero, actividad detallada bajo demanda; tokens/costos solo si existen datos normalizados.
-  - **Aceptacion:** no inferir estado por silencio, ni ETA/porcentajes/streaming ficticios. Revisar ownership ya integrado en 3.0/4.2; esta tarea no es permiso para haber dejado lifecycle roto antes. Sin timers/subscriptions duplicados al navegar.
-   - **Verificacion actual:** formato propio de los archivos tocados, lint/typecheck/build e inspeccion de orden de shutdown. `format:check` global y validacion empirica de lifecycle siguen pendientes.
-  - **Commit Msg:** `feat: explain attached execution activity without synthetic progress`
+- [ ] **Tarea 2.1: Crear el propietario y su cierre seguro**
+  - **Archivo:** nuevo `src/application/execution-host.ts`; nuevo `test/execution-host.test.ts`.
+  - **Funciones:** tipos ExecutionHost/ExecutionHostClient; createExecutionHost; start, cancel, close y helpers privados de seguimiento de operacion necesarios para el contrato C.
+  - **Descripcion:** implementar el propietario por composicion; usar clase solo para errores con codigo estable si se necesita. Comenzar con servicio falso controlable. El recibo de start espera onRunStarted, la operacion completa permanece observada y el cierre espera todo el trabajo admitido. Controlar carreras antes/despues de persistir y errores posteriores a devolver recibo. Los detalles de replay persistido se completan en 2.2 antes de conectar la fabrica a produccion.
+  - **Evitar:** polling interno, gestores de procesos nuevos, un owner por cliente, duplicar el lifecycle TUI, exponer controller/promesa, silenciar errores o usar setTimeout para ordenar pruebas.
+  - **Verificacion / TDD:** en `test/execution-host.test.ts`, usar promesas diferidas liberadas explicitamente. Probar recibo vs finalizacion, inicio que falla, cancelacion repetida y cierre en medio de arranque/operacion. Comprobar que close del contexto ocurre despues de resolver limpieza y exactamente una vez. RED -> GREEN con `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: own workflow execution independently of clients`
 
-## Fase 5: Resultados Y QA Consultables
+- [ ] **Tarea 2.2: Deduplicar inicios contra el estado persistido**
+  - **Archivo:** `src/application/execution-host.ts`; `test/execution-host.test.ts`.
+  - **Funciones:** start; helpers privados de validacion de request y comprobacion de run.input.
+  - **Descripcion:** aplicar todo el contrato B. Usar el ID estable y lectura del run/input existentes, sin nuevo store, tabla o hash persistido. Reservar la ranura antes de awaits; comparar copias del request, no objetos que el consumidor pueda mutar. Respetar la distincion entre replay, busy, conflicto e input corrupto. La promesa devuelta a un cliente no libera la operacion.
+  - **Evitar:** consultar y luego iniciar sin ranura, deduplicar por objetivo solamente, confiar solo en memoria, transformar un start repetido en resume, comparar con previews truncados o aceptar el mismo ID con otro workflow/objetivo.
+  - **Verificacion / TDD:** pruebas simultaneas del mismo request con una sola llamada runWorkflow; mismo ID/distinto contenido y distinto ID ocupado sin efectos; replay tras recrear host con el mismo almacenamiento, sin nuevas llamadas al agente; input ausente/corrupto no ejecuta. `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: deduplicate hosted starts using persisted run identity`
 
-- [x] **Tarea 5.1: Proyeccion TUI de resultados y evidencia**
-  - **Modificar:** nuevo `src/application/task-outcome.ts`; `src/application/artifact-operations.ts`, `src/application/service.ts`, `src/presentation/format.ts`.
-  - **Consultar:** `src/application/run-view.ts`, coordinadores y renderers de `plan-build-qa`/`todo-build-qa`, CLI show/protocolo.
-  - **Accion:** implementar `getTaskOutcome` y `getTaskQaRound` separados de `RunView`, con DTOs/limites del anexo. Leer resultados/reportes por limites de 2.6; devolver referencias y limitaciones cuando no se puedan interpretar. Ronda = IDs reales qa/qa-N del coordinador, no attempt. Relacion de hallazgos siempre con run/ronda/ID.
-  - **Aceptacion:** separar estado del proceso, declaraciones builder, evidencia de comandos y QA de solo lectura. No inventar ubicacion ausente en schema ni resolucion por desaparicion en texto. `plan-build` conserva resultado libre como declaracion. Sin QA global opt-in, LLM de resumen ni nuevas rondas. JSON/JSONL CLI conservan envelopes/campos/orden/streams/exit codes.
-   - **Verificacion actual:** formato propio de los archivos tocados, lint/typecheck/build e inspeccion de fuentes/procedencia. Tests de multiples rondas/legacy/evidencia ausente pendientes.
-  - **Commit Msg:** `feat: project task outcomes and QA evidence explicitly`
+- [ ] **Tarea 2.3: Consultar progreso sin suscripciones de clientes**
+  - **Archivo:** `src/application/execution-host.ts`; `test/execution-host.test.ts`.
+  - **Funciones:** client.listRuns, client.getRunView, client.listRunEvents; seguimiento privado de consultas admitidas.
+  - **Descripcion:** delegar en ApplicationService y conservar DTOs/paginacion. Seguir contrato D: ninguna lectura ejecuta agentes ni registra observers. close impide consultas nuevas y espera las que ya comenzo; el fallo de una consulta se devuelve sin abortar el workflow.
+  - **Evitar:** callbacks desde el motor a clientes, event bus, colas, APIs attach/detach decorativas, duplicar paginas en memoria, sincronizar snapshot y eventos por timestamps o aumentar limites existentes.
+  - **Verificacion / TDD:** una consulta del cliente A queda pendiente mientras la operacion avanza; el cliente B consulta independientemente. Rechazar una lectura no aborta el controller. close espera la lectura admitida y rechaza lecturas nuevas. `pnpm exec vitest run test/execution-host.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: expose persisted execution progress through client queries`
 
-- [x] **Tarea 5.2: Resultado legible y documentos navegables**
-  - **Modificar:** `src/tui/screens/result.tsx`, `src/tui/screens/artifacts.tsx`, `src/tui/shell-view.tsx`, `src/tui/shell-controller.tsx`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`.
-  - **Accion:** desenlace, cambios reportados, verificaciones, pendientes y acciones antes de logs. Abrir plan/resultado/informe con viewport comun y volver al origen. Ver cambios muestra referencias disponibles, no promete diff si no existe artifact.
-  - **Aceptacion:** `completed` no asegura calidad; failed/cancelled/interrupted/waiting explicables. Reporte grande/faltante/corrupto permite consultar fuente y muestra limitacion, no exito inventado. TUI no lee filesystem/git ni parsea evidencia de negocio por su cuenta.
-   - **Verificacion actual:** formato propio de los archivos tocados, lint/typecheck/build e inspeccion de estados/documentos. Tests de recorridos largos/errores de lectura pendientes.
-  - **Commit Msg:** `feat: present readable outcomes and supporting documents`
+- [ ] **Tarea 2.4: Componer el anfitrion sin alterar CLI ni TUI**
+  - **Archivo:** `src/application/runtime.ts`; `test/application-runtime.test.ts`.
+  - **Funciones:** nuevo `openExecutionHost`; helper privado openApplicationResources de 1.2.
+  - **Descripcion:** openExecutionHost acepta cwd/configPath y compone recursos sin onEvent. Entrega application, findRun y close privados a createExecutionHost y devuelve su resultado. No expone contexto adicional. Si crear el host falla despues de abrir recursos, cerrarlos antes de propagar error. Mantener los dos entry points existentes sin cambios publicos.
+  - **Evitar:** servidor HTTP, comando CLI nuevo, proceso residente instalado, callbacks de red, modos globales de aislamiento de observers, nueva opcion de driver publico para tests o una ruta de cierre paralela al host.
+  - **Verificacion / TDD:** con config valida en directorio temporal, abrir/cerrar un host sin iniciar Pi; comprobar que client no expone close, application ni subscribeEvents. Conservar pruebas del contexto adjunto y sink. `pnpm exec vitest run test/application-runtime.test.ts test/execution-host.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: compose a client-independent execution host`
 
-- [x] **Tarea 5.3: QA por ronda y hallazgo sin adelantar WIP**
-  - **Modificar:** nuevo `src/tui/screens/qa-report.tsx`; `src/tui/shell-view.tsx`, `src/tui/shell-controller.tsx`, `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`.
-  - **Accion:** resumen por severidad, filtros, lista/detalle y selector de ronda; seleccionar por identidad compuesta, no indice mutable. Evidencia y sugerencias legibles en viewport, indicando informacion ausente.
-  - **Aceptacion:** volver conserva filtro/seleccion/ancla. Contador corresponde a ronda elegida. Cero hallazgos no es garantia. No aceptar riesgos, conversar por bug, modificar disposiciones, ejecutar fixes, activar qaHistory ni generar rondas. No reemplazar pantallas interactivas legacy.
-  - **Verificacion actual:** `pnpm exec prettier --check` de archivos propios, `pnpm run lint`, `pnpm run typecheck` y `pnpm run build` ejecutados correctamente; inspeccion de solo lectura, procedencia, selección por IDs, filtros y retorno ejecutada. QA largo, filtros/retorno con terminal falso y fixtures de informes ausentes/corruptos siguen aplazados por la política vigente.
-  - **Commit Msg:** `feat: add navigable read-only QA reports`
+### Fase 3: Verificacion integrada y cierre documental
 
-## Fase 6: Handover Honesto, Sin Dar Tests Aplazados Por Hechos
+- [ ] **Tarea 3.1: Probar cambio de cliente con persistencia real**
+  - **Archivo:** nuevo `test/execution-host-integration.test.ts`; ajustes solo en `src/application/execution-host.ts` y `src/application/runtime.ts` si las pruebas descubren incumplimientos de los contratos definidos aqui.
+  - **Funciones:** fixtures locales de servicio real, driver falso controlable y clientes que llaman al objeto client; no utilidades compartidas de pruebas ni cambios a fixtures TUI.
+  - **Descripcion:** componer SqliteRunStore, FileArtifactStore, WorkflowEngine, ApplicationService y createRuntimeEventSink existentes con un AgentDriver falso, usando plan-build y sus schemas reales. Consultar test/engine.test.ts como referencia sin exportar/reutilizar sus internals. No ejecutar Pi real. Reusar un fixture local por test y cerrar recursos en finally/afterEach.
+  - **Escenario principal:** A inicia un request; se persiste y termina plan; builder queda pausado en una promesa de test. A deja de consultar; B usa listRuns/getRunView y pagina eventos por afterId. Liberar builder; B observa completed con artefactos persistidos. Cada paso se ejecuto una sola vez.
+  - **Escenarios de seguridad:** repetir ese start tras cerrar y recrear el host devuelve el mismo ID sin driver; otro objetivo con ese ID falla sin mutar. Cancelar durante builder conserva plan completado y espera cleanup. Fallar persistencia del sink se propaga y no se disfraza de cliente desconectado. Usar barreras/promesas, no pausas de milisegundos arbitrarias.
+  - **Recuperacion:** observar un run interrupted no inicia agentes. Reusar el camino existente para una prueba de resume explicito que conserva el plan completado; no agregar resume al cliente de este hito. No marcar interrupted un run que tiene owner vivo para facilitar el fixture.
+  - **Verificacion / TDD:** `pnpm exec vitest run test/execution-host-integration.test.ts test/execution-host.test.ts test/application-runtime.test.ts test/application-claims.test.ts test/engine.test.ts`. Escribir primero cada caso que falle y corregir solo el incumplimiento previsto. No duplicar permutaciones equivalentes.
+  - **Commit Msg:** `test: verify hosted execution reconnection and recovery boundaries`
 
-- [x] **Tarea 6.1: Documentar entrega y validacion pendiente**
-  - **Modificar:** `README.md`, `docs/tui-experience.md`, `docs/tui-components.md`, `TODO.md`. No modificar archivo historico ni tests.
-  - **Accion:** documentar entradas, alcance de politica global/directo/CLI, modelos/unknown, sintesis/limites, aprobacion, teclado/foco/pegado, paginas/busqueda, QA y lifecycle adjunto. Explicar como arrancar compilacion local sin bundles.
-  - **Verificacion actual:** `pnpm run format:check` fallo por 138 archivos del baseline/modificaciones previas; el formato propio de `README.md`, `docs/tui-experience.md`, `docs/tui-components.md`, `TODO.md` y los archivos TUI tocados paso. `pnpm run lint`, `pnpm run typecheck` y `pnpm run build` pasaron. No se ejecuto `pnpm run test`, E2E, integraciones ni live Pi conforme a la pausa vigente; no se declara el producto completamente verificado.
-  - **Validacion humana:** cuando se autorice y haya terminal, Linux/Windows, estrecho/normal, NO_COLOR, pegado, Markdown ancho/parcial, historia larga, busqueda/retorno, QA por ronda y cancelacion. No afirmar compatibilidad por inspeccion ni afirmar pruebas realizadas en terminales no disponibles.
-  - **Aceptacion:** inventario fiel de implementado, verificado, no probado y bloqueado; decisiones/componentes/versiones exactas; cambios propios separados de baseline ajeno. El plan permanece mientras haya pendientes, salvo indicacion expresa del propietario.
-  - **Commit Msg:** `docs: document task-centered TUI delivery and validation gaps`
+- [ ] **Tarea 3.2: Verificar compatibilidad y registrar el resultado real**
+  - **Archivo:** `docs/web-workflow-vision.md` (solo estado del hito 1 y limites comprobados); `TODO.md` (checks, comandos, resultados y pendientes).
+  - **Descripcion:** ejecutar las cinco verificaciones obligatorias. Registrar diferencias frente al baseline de 1.1; no modificar archivos ajenos para hacerlas pasar. Explicar que se ha probado el backend con clientes simulados, no navegadores reales, autenticacion ni despliegue remoto. Conservar la copia TUI intacta.
+  - **Verificacion:** `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test`, `pnpm run build`; `git diff --check`; revisar `git status --short` y diff de cada commit propio. Formatear solo archivos propios, no `pnpm run format` global. Ningun bundle, release, instalacion ni prueba Pi pagada.
+  - **Aceptacion:** desconexion no cancela ni bloquea; queries recuperan estado y eventos; replay no duplica; cierre/cancelacion esperan limpieza; interfaces adjuntas y protocolo v1 conservados. Si falta evidencia o hay fallos bloqueantes, no marcar completado ni retirar TODO.
+  - **Commit Msg:** `docs: document verified execution host behavior`
 
-## Escenarios De Verificacion Aplazados (No Ejecutar Ahora)
+## Reglas de operacion para el sub-modelo
 
-Conservar para la futura reconstruccion minima de tests, no como tareas activas ni autorizacion para escribir otra suite:
+1. **Un check a la vez:** solo marcar [x] con verificacion exitosa y evidencia. No
+   avanzar si queda una desviacion o requisito de la tarea pendiente. Actualizar
+   el registro de abajo; no sustituir el resultado real por "deberia pasar".
+2. **Commits aislados:** tras autorizacion de implementacion, commit por tarea con
+   su mensaje y staging explicito. No mezclar refactor con feature ni incluir
+   baseline ajeno. Si no es separable, detener y pedir aislamiento; nunca reset,
+   clean, stash, revert ni git add . para obtener un arbol limpio.
+3. **No improvisar:** se permiten solo los helpers privados nombrados por proposito
+   en estas tareas. Otra funcion compartida, archivo, firma publica, dependencia
+   o cambio de contrato requiere actualizar y aprobar el plan antes de continuar.
+4. **No expandir scope:** no corregir la TUI pendiente, generar nuevos workflows,
+   habilitar busqueda web, hacer commits de codigo del workspace del usuario ni
+   introducir infraestructura para los hitos 2-6.
+5. **Retiro del TODO:** solo despues de checks completos, regresion verificada y
+   commits terminados. El skill exige arbol limpio antes de retirarlo: si siguen
+   cambios previos ajenos, informar y pedir decision; nunca borrarlos para cumplir.
+   Antes de la eliminacion destructiva, solicitar confirmacion de cierre. Tras
+   confirmacion, retirar solo este TODO con `git rm -- TODO.md` y commit
+   `docs: retire completed execution host plan`. Mantener vision y copia TUI.
 
-- Migracion v10 -> v11 y base nueva: conservar IDs/outputs/aprobaciones/owners, CHECK nuevo, foreign keys, rollback y dos conexiones.
-- CAS separado de contenido: cambio solo de productor conserva propuesta; mensaje/sintesis la invalida; claim concurrente incluso en misma instancia rechazado.
-- Turnos: requestId repetido no ejecuta dos veces, texto deliberadamente repetido si es valido; retry por ID; fallo antes/despues de persistir y cancellation liberan recursos sin perder mensaje.
-- Sintesis/contexto: cobertura de acuerdos viejos, correccion humana dominante, mensaje actual nunca omitido, limite final serializado y sugerencia pendiente no ejecutable.
-- Revision: obligatorio/optional, lectura exacta, informe obsoleto, bloqueos no evadibles cambiando modelo/modo, politica efectiva y entrada directa.
-- Handoff: aprobacion consciente -> build sin analyst/planner repetidos; crash antes/despues del commit conserva artifacts y consumo unico.
-- Lectura: UTF-8/codigo/linea larga, pagina que corta Markdown/JSON, cache total acotada, busqueda local y retorno tras desalojar pagina; paths/symlinks maliciosos.
-- Terminal/driver falsos: idea incompleta -> modelo -> sintesis -> propuesta -> revision -> ajustes -> nueva aprobacion -> build -> QA -> resultado; otro recorrido TODO/legacy.
-- Foco/lifecycle: pegado con controles no ejecuta; resize/navegacion no roba foco ni cierra SQLite; cancelacion, signals y stream/render failures comparten cleanup.
-- Protocol-v1: envelopes, orden, stdout/stderr y exit codes sin cambios; QA sin evidencia no inventa verificacion.
-
-## Protocolo De Bloqueo
-
-No convertir un bug preexistente, API faltante o decision abierta en trabajo silencioso. Mantener tarea sin check y responder:
+## Protocolo de desviacion
 
 ```text
 ALERTA DE DESVIACION DE PLAN
 Tarea en curso: <ID>
 Bloqueo detectado: <hecho y evidencia>
-Impacto: <archivos/contratos/decisiones>
-Propuesta: <ajuste minimo para aprobacion>
-Verificacion pendiente: <si aplica>
+Impacto: <archivos y verificaciones>
+Propuesta: <cambio minimo solicitado>
 ```
 
-## Handover Actual Para Luna
+Detener la tarea sin check. El orquestador debe corregir el plan antes de autorizar
+continuacion. Un fallo previo de formato/test no es permiso para limpiar el repo.
 
-- Implementacion: Fases 2-5 y Tarea 6.1 implementadas; no queda una tarea de producto posterior autorizada. El plan permanece para conservar las validaciones aplazadas.
-- Aprobadas: recomendaciones originales de interaccion, limites por pagina/sintesis/contexto, revision humana y severidades, navegacion adjunta.
-- Producto aprobado: P1 directo deshabilitado bajo required-auto para nuevas tareas TUI de planificacion; P2 politica global comprobada antes de operar; P3 bloqueo grave persistente y revisor derivado de planner; P4 sintesis confirmada y mensaje maximo 16.000 unidades UTF-16; P5 editor efimero con aviso al salir; P6 cache acotada y Default para razonamiento desconocido. No quedan preguntas P1-P6 pendientes.
-- Contratos 1.1: cerrados por el anexo normativo, check documental completado sin implementar codigo.
-- Componentes 1.2: evaluados y aprobados, incluidos string-width 8.2.2 directo y marked 18.0.11. Fase 1 cerrada; plan listo para iniciar implementacion desde 2.1 sin nuevos cuestionarios ni repetir seleccion.
-- Correcciones tecnicas incorporadas al plan: migracion CHECK/FK, CAS separado de contenido, idempotencia/retry, soporte real de paginas antes del viewport, consulta de capacidades separada de CLI, outcome TUI separado, lifecycle temprano.
-- Tests: aplazados por el propietario; no borrados, no ejecutados en esta revision y no declarados verdes para este scope.
-- Instalaciones: `string-width@8.2.2` y `marked@18.0.11` fueron declaradas e instaladas durante 3.2/3.4 conforme a la autorizacion. No se lanzaron modelos reales ni bundles en esta entrega; no se creo commit.
+## Registro de ejecucion
+
+- Autorizacion de implementacion: concedida por el propietario mediante la solicitud `ejecuta TODO`.
+- Baseline: registrado con `git status --short`; el worktree contiene cambios
+  anteriores y no esta limpio.
+- Verificaciones iniciales: `pnpm run format:check` fallo en 52 archivos y
+  `pnpm run test` fallo en 25 de 319 tests; `lint`, `typecheck`, `build` y el
+  primer `git diff --check` pasaron.
+- Correcciones de baseline: se repararon los recorridos TUI que no alcanzaban
+  `Configuration readiness`, el diagnóstico de migraciones y la vista viva de
+  una ejecución adjunta. Se formatearon los 47 archivos reportados por Prettier
+  con autorización explícita, incluida la copia TUI sin ejecutar sus tareas, y
+  se normalizaron los finales de línea de `pnpm-lock.yaml`.
+- Verificación focalizada: `pnpm exec vitest run test/tui-reduce.test.ts
+  test/tui-ink-shell.test.ts test/tui-setup-safety.test.ts test/migrations.test.ts`
+  pasó (61 tests).
+- Verificaciones finales de Tarea 1.1: `pnpm run format:check`, `pnpm run lint`,
+  `pnpm run typecheck`, `pnpm run test` (318 pasaron, 1 omitido de 319),
+  `pnpm run build` y `git diff --check` pasaron.
+- Tarea 1.2: se extrajo la composición a `openApplicationResources` en
+  `src/application/runtime.ts`, conservando el wrapper público y el sink. La
+  regresión requerida pasó: `test/application-runtime.test.ts` y
+  `test/architecture-boundaries.test.ts` (9 tests), además de `typecheck`.
+- Tarea 1.2 no se marca ni se inicia la siguiente: el commit aislado requerido
+  no es seguro porque el worktree aún mezcla cambios previos con los propios.
+  No se creó commit. Se requiere decisión del propietario para aislar/stagear
+  únicamente los hunks propios antes de continuar.
+- Copia del plan anterior: SHA-256
+  `f9d24ba21be8c638cdd63c5f9405a0243338140460957f17c4368c08fe8b338e`.
+- Proxima tarea tras aprobacion e aislamiento: 1.1.

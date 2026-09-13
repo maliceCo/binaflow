@@ -82,7 +82,7 @@ export function LiveScreen({
   return (
     <ScreenFrame
       title="Attached execution"
-      subtitle={activityLabel}
+      subtitle={status === 'running' ? `Workflow running: ${activityLabel}` : activityLabel}
       status={
         live.cancellationRequested ? 'Cancellation requested. Waiting for cleanup.' : undefined
       }

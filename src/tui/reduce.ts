@@ -310,7 +310,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...clearField(state, 'error'), effect: 'diagnose-cwd' };
     case 'refresh-diagnosis':
       if (state.overlay !== 'none') return state;
-      return { ...state, detail: 'diagnosis', effect: 'diagnose-cwd' };
+      return { ...state, detail: 'diagnosis', focus: 'detail', effect: 'diagnose-cwd' };
     case 'focus-pane':
       return { ...state, focus: event.pane };
     case 'move':
@@ -644,6 +644,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return {
         ...clearField(clearField(state, 'launchInput'), 'error'),
         detail: 'launch',
+        focus: 'detail',
       };
     }
     case 'launch-cancel':
@@ -758,6 +759,7 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
         ...state,
         activeRunId: event.runId,
         detail: 'inspect',
+        focus: 'detail',
         selection: 0,
         offset: 0,
       };

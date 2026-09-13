@@ -41,7 +41,7 @@ export function DiagnosisScreen({
   return (
     <ScreenFrame
       title="Diagnosis"
-      subtitle="Configuration readiness"
+      subtitle={diagnosis ? 'Configuration readiness' : 'Loading configuration...'}
       status={refreshing ? 'refreshing diagnosis...' : (error ?? '')}
       footer="j/k or arrows scroll | r refresh | c edit profiles | q quit"
       colors={colors}

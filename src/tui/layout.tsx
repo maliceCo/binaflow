@@ -68,7 +68,7 @@ export function StudioLayout({
   const workflowsRows = Math.max(1, Math.floor((paneRows - 4) / 2));
   const runsRows = Math.max(1, paneRows - workflowsRows - 4);
   const showNavigation = !narrow || state.focus !== 'detail';
-  const showDetail = !narrow || state.focus === 'detail';
+  const showDetail = !narrow || state.focus === 'detail' || state.detail === 'empty';
   return (
     <AppFrame>
       <Box flexDirection="row" justifyContent="space-between">
@@ -94,6 +94,7 @@ export function StudioLayout({
           </SafeText>
         </Box>
       </Box>
+      <SafeText dimColor>Configuration readiness</SafeText>
       {narrow ? (
         <SafeText dimColor>{`Focused view: ${state.focus}. Tab switches views.`}</SafeText>
       ) : null}

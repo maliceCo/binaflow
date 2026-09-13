@@ -136,7 +136,8 @@ export function InkShellController({
     void request
       .then((view) => {
         const current = liveRef.current;
-        if (active.current && current?.run.id === runId) publishLive({ ...current, view });
+        if (active.current && current?.run.id === runId && view.id === runId)
+          publishLive({ ...current, view });
       })
       .catch(() => undefined);
   };
