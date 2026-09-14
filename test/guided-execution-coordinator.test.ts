@@ -159,6 +159,8 @@ class FakePersistence implements GuidedExecutionStore {
     checkpoint: { runId: string; phaseId: string },
     _claim: GuidedExecutionClaim,
   ): Promise<GuidedExecutionProgress> {
+    void checkpoint;
+    void _claim;
     this.current = { ...this.current, revision: this.current.revision + 1 };
     return this.current;
   }

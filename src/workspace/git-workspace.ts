@@ -298,7 +298,9 @@ function validateRelativePath(path: string): void {
   if (path.split('/').some((segment) => !segment || segment === '.' || segment === '..')) {
     throw new GitWorkspaceError(`invalid relative path: ${path}`);
   }
-  if (/[\*\?\[\]]/.test(path)) throw new GitWorkspaceError(`path globs are not allowed: ${path}`);
+  if (['*', '?', '[', ']'].some((character) => path.includes(character))) {
+    throw new GitWorkspaceError(`path globs are not allowed: ${path}`);
+  }
 }
 
 function isInside(root: string, path: string): boolean {

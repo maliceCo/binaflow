@@ -357,6 +357,9 @@ export class SqliteRunStore
         { status: RunStatus } | undefined;
       if (!run || !eligibleStatuses.includes(run.status)) return undefined;
       this.acquireExecutionOwner(runId);
+      this.database
+        .prepare('UPDATE runs SET status = ?, updated_at = ? WHERE id = ? AND status = ?')
+        .run('running', new Date().toISOString(), runId, run.status);
       const progress = this.requireGuidedProgress(runId);
       const claim = this.createExecutionClaim(runId);
       return { ...claim, revision: progress.revision };

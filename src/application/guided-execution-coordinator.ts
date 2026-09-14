@@ -1,7 +1,5 @@
 import type { AgentProfile } from '../core/agent-profile.js';
-import type { ExecuteWorkflowRequest } from '../core/execute-request.js';
-import type { ArtifactReference, StepRun, WorkflowRun } from '../core/run.js';
-import type { WorkflowArtifactStore } from '../core/ports.js';
+import type { ArtifactReference, WorkflowRun } from '../core/run.js';
 import { StepExecutionFailure } from '../core/workflow-runtime.js';
 import type { AgentStep } from '../core/workflow.js';
 import {
@@ -62,7 +60,11 @@ export class GuidedExecutionCoordinator {
 
         assertGuidedTaskTransition(taskProgress.status, 'running');
         progress = await this.saveProgress(
-          { ...progress, phases: replaceTask(progress, phase.id, task.id, { status: 'running' }) },
+          {
+            ...progress,
+            status: 'running',
+            phases: replaceTask(progress, phase.id, task.id, { status: 'running' }),
+          },
           request.claim,
         );
         const attempt = taskProgress.attempt;
@@ -75,6 +77,7 @@ export class GuidedExecutionCoordinator {
           constraints: JSON.stringify(request.snapshot.brief.body.constraints),
           verification: JSON.stringify(task.verification),
           stopConditions: JSON.stringify(task.stopConditions),
+          previousCheckpoint: '',
         };
         let stepResult: Awaited<ReturnType<GuidedRuntime['executeStep']>>;
         try {
@@ -89,6 +92,7 @@ export class GuidedExecutionCoordinator {
             {
               profiles: request.profiles,
               resume: true,
+              executionClaim: request.claim,
               runId: request.run.id,
               input,
               ...(request.signal ? { signal: request.signal } : {}),

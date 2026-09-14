@@ -38,7 +38,10 @@ export class WorkspaceProcess {
     let timedOut = false;
     let aborted = false;
     let failure: Error | undefined;
-    let timer: NodeJS.Timeout | undefined;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, options.timeoutMs);
     let abortHandler: (() => void) | undefined;
 
     this.exitPromise = new Promise<void>((resolve) => {
@@ -99,10 +102,6 @@ export class WorkspaceProcess {
         failure ??= error instanceof Error ? error : new Error(String(error));
       });
     };
-    timer = setTimeout(() => {
-      timedOut = true;
-      terminate();
-    }, options.timeoutMs);
     if (options.signal) {
       abortHandler = () => {
         aborted = true;

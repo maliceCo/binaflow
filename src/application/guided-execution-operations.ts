@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { AgentProfile } from '../core/agent-profile.js';
-import type { ArtifactReference, WorkflowRun } from '../core/run.js';
+import type { ArtifactReference } from '../core/run.js';
 import { renderTaskContractTodo } from './task-contract-render.js';
 import { getTaskContractReadiness } from './task-contract.js';
 import type {
