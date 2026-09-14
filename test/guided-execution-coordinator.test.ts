@@ -140,6 +140,14 @@ class FakePersistence implements GuidedExecutionStore {
   async getGuidedExecution(): Promise<GuidedExecutionProgress> {
     return this.current;
   }
+  async getGuidedExecutionByRequest(): Promise<GuidedExecutionProgress | undefined> {
+    return undefined;
+  }
+  async getGuidedExecutionRequest(): Promise<
+    { contractId: string; authorizationDigest: string } | undefined
+  > {
+    return undefined;
+  }
   async listGuidedExecutions(): Promise<{ items: GuidedExecutionProgress[] }> {
     return { items: [this.current] };
   }

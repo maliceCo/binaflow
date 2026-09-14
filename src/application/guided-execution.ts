@@ -114,12 +114,41 @@ export interface GuidedExecutionPreview {
   digest: string;
 }
 
+export interface GuidedResumePreview {
+  runId: string;
+  revision: number;
+  status: RunStatus;
+  activeBlock: GuidedExecutionBlock | null;
+  allowedDecisions: GuidedResumeDecision[];
+  digest: string;
+}
+
 export interface GuidedStartRequest {
   requestId: string;
   contractId: string;
   expectedRevision: number;
   todoVersion: number;
   previewDigest: string;
+}
+
+export interface GuidedExecutionQueries {
+  previewStart(request: {
+    contractId: string;
+    expectedRevision: number;
+    todoVersion: number;
+  }): Promise<GuidedExecutionPreview>;
+  previewResume(runId: string): Promise<GuidedResumePreview>;
+  get(runId: string): Promise<GuidedExecutionProgress>;
+  list(query?: { contractId?: string; limit?: number; cursor?: string }): Promise<{
+    items: GuidedExecutionProgress[];
+    nextCursor?: string;
+  }>;
+}
+
+export interface GuidedExecutionService extends GuidedExecutionQueries {
+  start(request: GuidedStartRequest): Promise<GuidedExecutionProgress>;
+  resume(request: GuidedResumeRequest): Promise<GuidedExecutionProgress>;
+  cancelWaiting(runId: string, reason: string): Promise<GuidedExecutionProgress>;
 }
 
 export interface GuidedResumeRequest {

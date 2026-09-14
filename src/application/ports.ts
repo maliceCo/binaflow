@@ -66,6 +66,10 @@ import type {
 export interface GuidedExecutionStore {
   createGuidedExecution(request: GuidedExecutionCreateRequest): Promise<GuidedExecutionProgress>;
   getGuidedExecution(runId: string): Promise<GuidedExecutionProgress | undefined>;
+  getGuidedExecutionByRequest(requestId: string): Promise<GuidedExecutionProgress | undefined>;
+  getGuidedExecutionRequest(
+    requestId: string,
+  ): Promise<{ contractId: string; authorizationDigest: string } | undefined>;
   listGuidedExecutions(query?: {
     contractId?: string;
     workspace?: string;

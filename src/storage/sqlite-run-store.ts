@@ -293,6 +293,28 @@ export class SqliteRunStore
     });
   }
 
+  async getGuidedExecutionRequest(
+    requestId: string,
+  ): Promise<{ contractId: string; authorizationDigest: string } | undefined> {
+    const row = this.database
+      .prepare(
+        'SELECT contract_id, authorization_digest FROM guided_executions WHERE request_id = ?',
+      )
+      .get(requestId) as { contract_id: string; authorization_digest: string } | undefined;
+    return row
+      ? { contractId: row.contract_id, authorizationDigest: row.authorization_digest }
+      : undefined;
+  }
+
+  async getGuidedExecutionByRequest(
+    requestId: string,
+  ): Promise<GuidedExecutionProgress | undefined> {
+    const row = this.database
+      .prepare('SELECT progress_json FROM guided_executions WHERE request_id = ?')
+      .get(requestId) as { progress_json: string } | undefined;
+    return row ? (JSON.parse(row.progress_json) as GuidedExecutionProgress) : undefined;
+  }
+
   async getGuidedExecution(runId: string): Promise<GuidedExecutionProgress | undefined> {
     const row = this.database
       .prepare('SELECT progress_json FROM guided_executions WHERE run_id = ?')
