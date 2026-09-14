@@ -72,6 +72,18 @@ describe('application runtime event buffering', () => {
 });
 
 describe('application capability composition', () => {
+  it('rejects partial task contract capability configuration', () => {
+    expect(() =>
+      createApplicationQueries({
+        config: { profiles: {} },
+        store: {} as RunStore,
+        artifacts: {} as never,
+        taskContractWorkspace: '/workspace/project',
+        modelDiscovery: { discoverModels: async () => [] },
+      }),
+    ).toThrow(/store and workspace/i);
+  });
+
   it('builds query capabilities without execution commands', () => {
     const queries: ApplicationQueries = createApplicationQueries({
       config: { profiles: {} },
@@ -115,6 +127,9 @@ describe('application capability composition', () => {
       const context = await openApplicationStorage('.binaflow/config.json', directory);
 
       expect(await context.application.listRuns()).toEqual({ runs: [] });
+      expect(context.application.taskContracts).toBeDefined();
+      expect(context.application.taskContracts).not.toHaveProperty('create');
+      expect(context.application.taskContracts).not.toHaveProperty('approvePlan');
       context.close();
       await expect(context.application.listRuns()).rejects.toThrow(
         /database connection is not open/i,

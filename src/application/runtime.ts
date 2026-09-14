@@ -125,6 +125,7 @@ async function openApplicationResources(
     artifacts,
     config.qaHistory.enabled ? store : undefined,
   );
+  const workspace = realpathSync(cwd);
   const application = createApplicationService({
     config,
     store,
@@ -141,6 +142,8 @@ async function openApplicationResources(
     readPreparationReviewMode: async () =>
       (await loadConfig(configPath, cwd)).preparation.reviewMode,
     ...(config.qaHistory.enabled ? { qaHistory: store } : {}),
+    taskContractStore: store,
+    taskContractWorkspace: workspace,
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
       eventListeners.add(listener);
@@ -170,6 +173,8 @@ export async function openApplicationStorage(
     config: { profiles: {}, qaHistory },
     store,
     artifacts,
+    taskContractStore: store,
+    taskContractWorkspace: realpathSync(cwd),
     ...(qaHistory.enabled ? { qaHistory: store } : {}),
     reviewStore: store,
     preparationStore: store,

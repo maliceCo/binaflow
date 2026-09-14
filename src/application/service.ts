@@ -18,8 +18,15 @@ import type {
   ApplicationRunListPage as RunListPage,
   ApplicationRunListQuery as RunListQuery,
   ApplicationRunStore as RunStore,
+  ApplicationTaskContractStore,
   WorkflowExecutor,
 } from './ports.js';
+import {
+  createTaskContractQueries,
+  createTaskContractService,
+  type TaskContractOperationsContext,
+} from './task-contract-operations.js';
+import type { TaskContractQueries, TaskContractService } from './task-contract.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
@@ -154,6 +161,7 @@ export interface ApplicationQueries {
   listPreparations?: (workspace?: string) => Promise<PreparationDraft[]>;
   getPreparation?: (draftId: string) => Promise<PreparationConversation>;
   getPreparationOverview?: (draftId: string) => Promise<PreparationStoredView>;
+  taskContracts?: TaskContractQueries;
 }
 
 export interface ApplicationCommands {
@@ -195,6 +203,7 @@ export interface ApplicationCommands {
 }
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
+  readonly taskContracts?: TaskContractService;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
@@ -214,6 +223,8 @@ export interface CreateApplicationServiceOptions {
   preparationDriver?: import('../core/agent.js').AgentDriver;
   readPreparationReviewMode?: () => Promise<import('../config.js').PreparationReviewMode>;
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
+  taskContractStore?: ApplicationTaskContractStore;
+  taskContractWorkspace?: string;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
@@ -226,12 +237,28 @@ export interface CreateApplicationQueriesOptions {
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   preparationStore?: import('./ports.js').ApplicationPreparationStore;
+  taskContractStore?: ApplicationTaskContractStore;
+  taskContractWorkspace?: string;
   modelDiscovery: AgentModelDiscovery;
+}
+
+function taskContractContext(
+  options: Pick<CreateApplicationQueriesOptions, 'taskContractStore' | 'taskContractWorkspace'>,
+): TaskContractOperationsContext | undefined {
+  const hasStore = options.taskContractStore !== undefined;
+  const hasWorkspace = options.taskContractWorkspace !== undefined;
+  if (hasStore !== hasWorkspace) {
+    throw new Error('Task contract store and workspace must be configured together');
+  }
+  return hasStore && hasWorkspace
+    ? { store: options.taskContractStore!, workspace: options.taskContractWorkspace! }
+    : undefined;
 }
 
 export function createApplicationQueries(
   options: CreateApplicationQueriesOptions,
 ): ApplicationQueries {
+  const taskContext = taskContractContext(options);
   const context = {
     config: options.config,
     store: options.store,
@@ -245,6 +272,7 @@ export function createApplicationQueries(
   >;
 
   return {
+    ...(taskContext ? { taskContracts: createTaskContractQueries(taskContext) } : {}),
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
     getRunView: (runId) => getRunView(context, runId),
     getTaskOutcome: (runId) => getTaskOutcome(context, runId),
@@ -290,6 +318,7 @@ export function createApplicationQueries(
 export function createApplicationService(
   options: CreateApplicationServiceOptions,
 ): ApplicationService {
+  const taskContext = taskContractContext(options);
   const internals: ApplicationInternals = {
     config: options.config,
     store: options.store,
@@ -315,8 +344,12 @@ export function createApplicationService(
     ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
   };
 
+  const queries = createApplicationQueries(options);
+  const { taskContracts, ...legacyQueries } = queries;
+  void taskContracts;
   return {
-    ...createApplicationQueries(options),
+    ...legacyQueries,
+    ...(taskContext ? { taskContracts: createTaskContractService(taskContext) } : {}),
     subscribeEvents: options.subscribeEvents,
     runWorkflow: (request) => runWorkflow(internals, request),
     resumeWorkflow: (request) => resumeWorkflow(internals, request),

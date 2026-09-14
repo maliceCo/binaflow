@@ -356,7 +356,7 @@ para el builder pertenece al handoff del hito 3.
   - **Verificacion / TDD:** assert de IDs/versiones y cada instruccion importante, saltos reales, markdown seguro ante titulos multilinea/backticks y advertencia de documento obsoleto; render determinista; no contenido que exceda limite ni truncamiento. Preferir assertions de contenido sobre snapshot gigante. `pnpm exec vitest run test/task-contract.test.ts test/task-contract-application.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: render version-bound guided execution todos`
 
-- [ ] **Tarea 2.4: Componer la capacidad en ApplicationService**
+- [x] **Tarea 2.4: Componer la capacidad en ApplicationService**
   - **Archivo:** `src/application/service.ts`; `src/application/runtime.ts`; `test/task-contract-application.test.ts`; `test/application-runtime.test.ts`.
   - **Funciones:** ApplicationQueries/ApplicationService y sus opciones; createApplicationQueries/createApplicationService; openApplicationResources/openApplicationStorage.
   - **Descripcion:** agregar la propiedad estatica opcional taskContracts con el tipo correspondiente de queries o servicio completo. Componer con store existente y workspace canonico. Capturar el workspace en la capacidad y omitirla en composiciones sin sus dependencias; error si solo se aporta una. La version de solo queries no publica comandos. Conservar todos los metodos de las fachadas legacy y la configuracion existente.
@@ -428,3 +428,4 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Tarea 2.1 verificada: `pnpm exec vitest run test/task-contract-persistence.test.ts test/migrations.test.ts` (5 pasados) y `pnpm run typecheck` correctos; migracion 012, FK y CAS comprobados.
 - Tarea 2.2 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/task-contract.test.ts test/task-contract-persistence.test.ts test/migrations.test.ts` (13 pasados), lint focalizado y typecheck correctos; el workspace se captura en servidor y no hay driver/engine en las operaciones.
 - Tarea 2.3 verificada con el mismo conjunto focal (13 pasados) y typecheck: Markdown determinista, versionado, advertencia historica/bloqueada, contenido completo y bloques seguros ante backticks; no se escribe en el workspace.
+- Tarea 2.4 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/application-runtime.test.ts test/execution-host.test.ts test/execution-host-integration.test.ts test/architecture-boundaries.test.ts` (34 pasados) y typecheck correctos; queries sin comandos, composicion parcial rechazada y runtime captura el workspace canonico.
