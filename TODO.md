@@ -348,7 +348,7 @@ para el builder pertenece al handoff del hito 3.
   - **Verificacion / TDD:** recorrido create -> plan -> comment -> approve -> TODO valido; candidato con scopeChanges devuelve bloqueo y conserva evidencia; no se puede aprobar viejo plan para eludirlo; nuevo plan invalida TODO viejo. Servicios espia de agente/engine deben permanecer sin llamadas si el fixture los compone; no agregar dependencias de esos servicios solo para espiarlos. `pnpm exec vitest run test/task-contract-application.test.ts test/task-contract.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: add explicit guided planning and approval operations`
 
-- [ ] **Tarea 2.3: Derivar un TODO legible y fiel a su version**
+- [x] **Tarea 2.3: Derivar un TODO legible y fiel a su version**
   - **Archivo:** nuevo `src/application/task-contract-render.ts`; `src/application/task-contract-operations.ts`; `test/task-contract.test.ts`; `test/task-contract-application.test.ts`.
   - **Funciones:** renderTaskContractTodo; query getTodoMarkdown.
   - **Descripcion:** generar la representacion Markdown del contrato sin filesystem. Resolver brief/plan de procedencia del TODO seleccionado, no mezclarlo con el plan mas reciente. Etiquetar version historica, bloqueo y readiness. Mostrar instrucciones/archivos/criterios completos con casillas pendientes y datos no ejecutables. No reutilizar renderTodo legacy si obliga a perder fases, procedencia o stopConditions; dejarlo intacto.
@@ -427,3 +427,4 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Tarea 1.2 verificada: `pnpm exec vitest run test/task-contract.test.ts` (6 pasados) y `pnpm run typecheck` correctos.
 - Tarea 2.1 verificada: `pnpm exec vitest run test/task-contract-persistence.test.ts test/migrations.test.ts` (5 pasados) y `pnpm run typecheck` correctos; migracion 012, FK y CAS comprobados.
 - Tarea 2.2 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/task-contract.test.ts test/task-contract-persistence.test.ts test/migrations.test.ts` (13 pasados), lint focalizado y typecheck correctos; el workspace se captura en servidor y no hay driver/engine en las operaciones.
+- Tarea 2.3 verificada con el mismo conjunto focal (13 pasados) y typecheck: Markdown determinista, versionado, advertencia historica/bloqueada, contenido completo y bloques seguros ante backticks; no se escribe en el workspace.

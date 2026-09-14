@@ -177,6 +177,21 @@ export interface TaskContractResolveBlockRequest {
   reason: string;
 }
 
+export interface TaskContractTodoMarkdownRequest {
+  contractId: string;
+  todoVersion: number;
+}
+
+export interface TaskContractTodoMarkdown {
+  contractId: string;
+  planVersion: number;
+  todoVersion: number;
+  current: boolean;
+  readiness: TaskContractReadiness;
+  fileName: 'TODO.md';
+  content: string;
+}
+
 export interface TaskContractStoredState {
   contract: TaskContract;
   currentBrief: TaskContractDocument<TaskContractBrief>;
@@ -203,6 +218,7 @@ export interface TaskContractQueries {
       contractId: string;
     },
   ): Promise<TaskContractActionPage>;
+  getTodoMarkdown(request: TaskContractTodoMarkdownRequest): Promise<TaskContractTodoMarkdown>;
 }
 
 export interface TaskContractService extends TaskContractQueries {

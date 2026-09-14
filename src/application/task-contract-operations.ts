@@ -1,11 +1,16 @@
 import type { ApplicationTaskContractStore } from './ports.js';
+import { renderTaskContractTodo } from './task-contract-render.js';
 import {
   getTaskContractReadiness,
   parseTaskContractBrief,
   parseTaskContractPlan,
   parseTaskContractTodo,
   TaskContractError,
+  type TaskContractDocument,
   type TaskContractDocumentKind,
+  type TaskContractBrief,
+  type TaskContractPlan,
+  type TaskContractTodo,
   type TaskContractListQuery,
   type TaskContractQueries,
   type TaskContractService,
@@ -16,6 +21,8 @@ import {
   type TaskContractCommentRequest,
   type TaskContractApprovePlanRequest,
   type TaskContractTodoRequest,
+  type TaskContractTodoMarkdownRequest,
+  type TaskContractTodoMarkdown,
   type TaskContractBlockRequest,
   type TaskContractResolveBlockRequest,
 } from './task-contract.js';
@@ -56,6 +63,7 @@ export function createTaskContractQueries(
       const validated = validateListActionsRequest(request);
       return context.store.listTaskContractActions({ ...validated, workspace: context.workspace });
     },
+    getTodoMarkdown: (request) => getTodoMarkdown(context, request),
   };
 }
 
@@ -179,6 +187,64 @@ function toView(
     currentTodo,
     approval,
     activeBlock,
+  };
+}
+
+async function getTodoMarkdown(
+  context: TaskContractOperationsContext,
+  request: TaskContractTodoMarkdownRequest,
+): Promise<TaskContractTodoMarkdown> {
+  assertRequestObject(request);
+  assertOnly(request, ['contractId', 'todoVersion']);
+  requireId(request.contractId);
+  assertVersion(request.todoVersion, 'todoVersion');
+  const state = await context.store.getTaskContract(context.workspace, request.contractId);
+  if (!state) throw new TaskContractError('invalid-target', 'Task contract does not exist');
+  const todo = (await context.store.getTaskContractDocument({
+    contractId: request.contractId,
+    workspace: context.workspace,
+    kind: 'todo',
+    version: request.todoVersion,
+  })) as TaskContractDocument<TaskContractTodo> | undefined;
+  if (!todo || todo.kind !== 'todo') {
+    throw new TaskContractError('invalid-target', 'Task contract TODO does not exist');
+  }
+  const plan = (await context.store.getTaskContractDocument({
+    contractId: request.contractId,
+    workspace: context.workspace,
+    kind: 'plan',
+    version: todo.body.planVersion,
+  })) as TaskContractDocument<TaskContractPlan> | undefined;
+  if (!plan || plan.kind !== 'plan' || plan.id !== todo.sourceDocumentId) {
+    throw new TaskContractError('invalid-input', 'Task contract TODO provenance is invalid');
+  }
+  const brief = (await context.store.getTaskContractDocument({
+    contractId: request.contractId,
+    workspace: context.workspace,
+    kind: 'brief',
+    version: plan.body.briefVersion,
+  })) as TaskContractDocument<TaskContractBrief> | undefined;
+  if (!brief || brief.kind !== 'brief' || brief.id !== plan.sourceDocumentId) {
+    throw new TaskContractError('invalid-input', 'Task contract plan provenance is invalid');
+  }
+  const view = toView(state);
+  return {
+    contractId: request.contractId,
+    planVersion: plan.version,
+    todoVersion: todo.version,
+    current: state.contract.currentTodoId === todo.id && state.contract.currentPlanId === plan.id,
+    readiness: view.readiness,
+    fileName: 'TODO.md',
+    content: renderTaskContractTodo({
+      contractId: request.contractId,
+      brief,
+      plan,
+      todo,
+      readiness: view.readiness,
+      current: state.contract.currentTodoId === todo.id && state.contract.currentPlanId === plan.id,
+      approvedPlanId: state.contract.approvedPlanId,
+      activeBlock: state.activeBlock,
+    }),
   };
 }
 

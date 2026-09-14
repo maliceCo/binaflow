@@ -84,8 +84,35 @@ describe('task contract application operations', () => {
       planVersion: 1,
     });
     expect(approved.readiness).toBe('needs-todo');
-    const ready = await service.publishTodo({ contractId, expectedRevision: 4, todo });
+    const ready = await service.publishTodo({
+      contractId,
+      expectedRevision: 4,
+      todo: {
+        ...todo,
+        phases: [
+          {
+            ...todo.phases[0]!,
+            tasks: [
+              {
+                ...todo.phases[0]!.tasks[0]!,
+                instructions: ['Run ```\ncommand\n```'],
+              },
+            ],
+          },
+        ],
+      },
+    });
     expect(ready.readiness).toBe('ready');
+    const markdown = await service.getTodoMarkdown({ contractId, todoVersion: 1 });
+    expect(markdown).toMatchObject({
+      current: true,
+      readiness: 'ready',
+      fileName: 'TODO.md',
+      planVersion: 1,
+    });
+    expect(markdown.content).not.toContain('NO EJECUTAR');
+    expect(markdown.content).toContain('````text');
+    expect(markdown.content).toContain('Run ```\ncommand\n```');
     expect((await service.listDocuments({ contractId, kind: 'plan' })).items).toHaveLength(1);
     expect((await service.listActions({ contractId })).items.map((action) => action.kind)).toEqual([
       'comment',
@@ -94,6 +121,14 @@ describe('task contract application operations', () => {
     await expect(service.get(contractId)).resolves.toMatchObject({
       contract: { workspace: '/workspace/project' },
     });
+    await service.reviseBrief({
+      contractId,
+      expectedRevision: 5,
+      brief: { ...brief, objective: 'Updated objective' },
+    });
+    const historical = await service.getTodoMarkdown({ contractId, todoVersion: 1 });
+    expect(historical.current).toBe(false);
+    expect(historical.content).toContain('NO EJECUTAR');
     store.close();
   });
 
