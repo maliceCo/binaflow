@@ -1,8 +1,10 @@
 # Binaflow web: objetivo e hitos
 
-Estado: el Hito 1 esta implementado y verificado localmente; los hitos restantes
-siguen siendo una ruta propuesta, no una especificacion de implementacion. La
-verificacion cubre el backend con SQLite, artifacts y un agente simulado; no
+Estado: los Hitos 1 y 2 estan implementados y verificados localmente. El Hito 2
+cubre el contrato persistido de tareas guiadas, sus documentos versionados,
+aprobaciones, bloqueos y la representacion Markdown en memoria; no inicia
+agentes ni crea runs. Los hitos restantes siguen siendo una ruta propuesta.
+La verificacion cubre el backend con SQLite, artifacts y agentes simulados; no
 cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
 continuidad para recuperar el proposito cuando falte contexto de la conversacion.
 
@@ -49,14 +51,14 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 ## Hitos propuestos
 
-| Hito                                      | Resultado esperado                                                                                                                                         |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Ejecucion independiente de la interfaz | Cambiar de navegador sin detener ni duplicar trabajo; recuperar estado y cancelar explicitamente. Probar primero con un flujo existente y agente simulado. |
-| 2. Contrato del nuevo flujo               | Fases, planes, tareas, bloqueos y aprobaciones versionados y persistidos; TODO como representacion del contrato, no como unica fuente de verdad.           |
-| 3. Ejecucion por fases y Git              | Progreso verificable, commits controlados y recuperacion sin repetir trabajo completado ni incluir cambios ajenos.                                         |
-| 4. Web personal y preparacion             | Acceso remoto autenticado, chat de exploracion, consulta de fuentes y plan con feedback y aprobacion.                                                      |
-| 5. Revision de codigo                     | Diffs por archivo, comentarios, edicion manual y revision del parche sobre versiones concretas.                                                            |
-| 6. QA y cierre                            | Tickets conversables, decisiones selectivas, QA_TODO autorizado, verificacion, revision adicional opcional y resumen final.                                |
+| Hito                                      | Resultado esperado                                                                                                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Ejecucion independiente de la interfaz | Cambiar de navegador sin detener ni duplicar trabajo; recuperar estado y cancelar explicitamente. Probar primero con un flujo existente y agente simulado.                                                |
+| 2. Contrato del nuevo flujo               | Implementado localmente: fases, planes, tareas, bloqueos y aprobaciones versionados y persistidos; TODO como representacion del contrato, no como unica fuente de verdad. Sin chat, handoff ni ejecucion. |
+| 3. Ejecucion por fases y Git              | Siguiente hito: progreso verificable, commits controlados y recuperacion sin repetir trabajo completado ni incluir cambios ajenos.                                                                        |
+| 4. Web personal y preparacion             | Acceso remoto autenticado, chat de exploracion, consulta de fuentes y plan con feedback y aprobacion.                                                                                                     |
+| 5. Revision de codigo                     | Diffs por archivo, comentarios, edicion manual y revision del parche sobre versiones concretas.                                                                                                           |
+| 6. QA y cierre                            | Tickets conversables, decisiones selectivas, QA_TODO autorizado, verificacion, revision adicional opcional y resumen final.                                                                               |
 
 ## Limites de arquitectura
 
@@ -81,8 +83,9 @@ y resume explicito con un agente simulado. Siguen fuera de alcance el ciclo de
 vida tras una caida abrupta, control por fase, integracion Git, revision de codigo
 y las decisiones selectivas de QA.
 
-Siguiente paso: definir y autorizar el contrato del **hito 2**, sin asumir que el
-hito 1 cubre web, autenticacion o despliegue remoto.
+Siguiente paso: definir la autorizacion del handoff y la ejecucion por fases del
+**hito 3**, sin asumir que los Hitos 1-2 cubren web, autenticacion o despliegue
+remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).
