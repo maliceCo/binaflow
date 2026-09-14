@@ -1,4 +1,10 @@
 import type { BinaflowConfig } from '../config.js';
+import type {
+  GuidedExecutionQueries,
+  GuidedExecutionService,
+  GuidedResumeRequest,
+  GuidedStartRequest,
+} from './guided-execution.js';
 import type { AgentModel, AgentModelDiscovery } from '../core/agent.js';
 import type { NormalizedEvent } from '../core/events.js';
 import type { WorkflowRun } from '../core/run.js';
@@ -162,6 +168,7 @@ export interface ApplicationQueries {
   getPreparation?: (draftId: string) => Promise<PreparationConversation>;
   getPreparationOverview?: (draftId: string) => Promise<PreparationStoredView>;
   taskContracts?: TaskContractQueries;
+  taskExecutions?: GuidedExecutionQueries;
 }
 
 export interface ApplicationCommands {
@@ -200,6 +207,16 @@ export interface ApplicationCommands {
   acknowledgePreparationReview?: (
     request: AcknowledgePreparationReviewRequest,
   ) => Promise<PreparationStoredView>;
+  startGuidedExecution?: (
+    request: GuidedStartRequest,
+  ) => Promise<import('./guided-execution.js').GuidedExecutionProgress>;
+  resumeGuidedExecution?: (
+    request: GuidedResumeRequest,
+  ) => Promise<import('./guided-execution.js').GuidedExecutionProgress>;
+  cancelGuidedExecution?: (
+    runId: string,
+    reason: string,
+  ) => Promise<import('./guided-execution.js').GuidedExecutionProgress>;
 }
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
@@ -225,6 +242,9 @@ export interface CreateApplicationServiceOptions {
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   taskContractStore?: ApplicationTaskContractStore;
   taskContractWorkspace?: string;
+  guidedExecution?: GuidedExecutionService;
+  executionLock?: import('./ports.js').WorkspaceExecutionLock;
+  workspace?: string;
   modelDiscovery: AgentModelDiscovery;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
@@ -239,6 +259,7 @@ export interface CreateApplicationQueriesOptions {
   preparationStore?: import('./ports.js').ApplicationPreparationStore;
   taskContractStore?: ApplicationTaskContractStore;
   taskContractWorkspace?: string;
+  guidedExecution?: GuidedExecutionQueries;
   modelDiscovery: AgentModelDiscovery;
 }
 
@@ -273,6 +294,7 @@ export function createApplicationQueries(
 
   return {
     ...(taskContext ? { taskContracts: createTaskContractQueries(taskContext) } : {}),
+    ...(options.guidedExecution ? { taskExecutions: options.guidedExecution } : {}),
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
     getRunView: (runId) => getRunView(context, runId),
     getTaskOutcome: (runId) => getTaskOutcome(context, runId),
@@ -342,6 +364,8 @@ export function createApplicationService(
       ? { readPreparationReviewMode: options.readPreparationReviewMode }
       : {}),
     ...(options.qaHistory ? { qaHistory: options.qaHistory } : {}),
+    ...(options.executionLock ? { executionLock: options.executionLock } : {}),
+    ...(options.workspace ? { workspace: options.workspace } : {}),
   };
 
   const queries = createApplicationQueries(options);
@@ -350,6 +374,7 @@ export function createApplicationService(
   return {
     ...legacyQueries,
     ...(taskContext ? { taskContracts: createTaskContractService(taskContext) } : {}),
+    ...(options.guidedExecution ? { taskExecutions: options.guidedExecution } : {}),
     subscribeEvents: options.subscribeEvents,
     runWorkflow: (request) => runWorkflow(internals, request),
     resumeWorkflow: (request) => resumeWorkflow(internals, request),
@@ -374,5 +399,15 @@ export function createApplicationService(
     recoverPreparation: (request) => recoverPreparation(internals, request),
     reviewPreparationProposal: (request) => reviewPreparationProposal(internals, request),
     acknowledgePreparationReview: (request) => acknowledgePreparationReview(internals, request),
+    ...(options.guidedExecution
+      ? {
+          startGuidedExecution: (request: GuidedStartRequest) =>
+            options.guidedExecution!.start(request),
+          resumeGuidedExecution: (request: GuidedResumeRequest) =>
+            options.guidedExecution!.resume(request),
+          cancelGuidedExecution: (runId: string, reason: string) =>
+            options.guidedExecution!.cancelWaiting(runId, reason),
+        }
+      : {}),
   };
 }

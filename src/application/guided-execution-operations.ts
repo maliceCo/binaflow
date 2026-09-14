@@ -295,15 +295,13 @@ export async function resume(
     throw new Error(`Resume decision is not allowed: ${request.decision}`);
   const lease = await context.lock.acquire(context.workspace);
   try {
-    const claim = await context.executions.claimGuidedExecution(request.runId, [
-      'waiting',
-      'failed',
-      'interrupted',
-      'pending',
-    ]);
+    const claim = await context.executions.claimGuidedExecution(request.runId, ['waiting']);
     if (!claim) throw new Error(`Guided execution ${request.runId} is not available for recovery`);
     try {
       const current = await requireExecution(context, request.runId);
+      if (current.revision !== request.expectedRevision || current.status !== 'waiting') {
+        throw new Error('Guided execution changed during recovery');
+      }
       const next = applyResumeDecision(current, request.decision);
       return await context.executions
         .saveGuidedProgress(next, current.revision, claim)

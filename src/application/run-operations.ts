@@ -23,6 +23,7 @@ import type {
 import type { ApplicationInternals } from './context.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
+import { guidedTaskBuildWorkflow } from '../workflows/guided-task-build.js';
 
 const DEFAULT_RUN_EVENT_LIMIT = 50;
 const MAX_RUN_EVENT_LIMIT = 100;
@@ -155,6 +156,19 @@ export function buildRunRecoveryExplanation(
   steps: StepRun[],
   workflow: WorkflowDefinition | undefined = resolveRecoveryWorkflow(run.workflowId),
 ): RunRecoveryExplanation {
+  const completedStepIds = steps
+    .filter((step) => step.status === 'completed')
+    .map((step) => step.stepId);
+  if (run.workflowId === guidedTaskBuildWorkflow.id) {
+    return {
+      eligible: false,
+      reason: 'Guided task runs must be resumed through taskExecutions.',
+      completedStepIds,
+      retryableStepIds: [],
+      workflowVersionCompatible: workflow?.version === run.workflowVersion,
+      actions: [],
+    };
+  }
   let workflowVersionCompatible = true;
   let installedVersion: number | undefined;
   try {
@@ -164,9 +178,6 @@ export function buildRunRecoveryExplanation(
     workflowVersionCompatible = false;
   }
 
-  const completedStepIds = steps
-    .filter((step) => step.status === 'completed')
-    .map((step) => step.stepId);
   const retryableStepIds = recoveryRetryableStepIds(workflow, steps);
 
   if (!workflowVersionCompatible) {

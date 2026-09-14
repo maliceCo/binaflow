@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentDriver, AgentRequest } from '../src/core/agent.js';
 import type { EventSink } from '../src/core/events.js';
 import type { AgentStepResult } from '../src/core/run.js';
@@ -87,6 +87,50 @@ function context(
     },
   };
 }
+
+it('serializes legacy workspace mutations through the shared execution lease', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'binaflow-legacy-lease-'));
+  directories.push(directory);
+  const { context: application, store } = context(
+    join(directory, 'runs.db'),
+    join(directory, 'artifacts'),
+    new FakeDriver([]),
+  );
+  application.config.profiles.builder = {
+    ...application.config.profiles.builder!,
+    workspaceMode: 'read-write',
+  };
+  const acquire = vi.fn().mockRejectedValue(new Error('workspace busy'));
+  application.executionLock = { acquire };
+  application.workspace = directory;
+
+  await expect(
+    runWorkflow(application, { workflowId: 'plan-build', objective: 'mutate', input: {} }),
+  ).rejects.toThrow('workspace busy');
+  expect(acquire).toHaveBeenCalledWith(directory);
+  expect(await store.listRunsPage()).toEqual({ runs: [] });
+  store.close();
+});
+
+it('rejects guided task launches through the generic workflow route', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'binaflow-guided-generic-'));
+  directories.push(directory);
+  const { context: application, store } = context(
+    join(directory, 'runs.db'),
+    join(directory, 'artifacts'),
+    new FakeDriver([]),
+  );
+
+  await expect(
+    runWorkflow(application, {
+      workflowId: 'guided-task-build',
+      objective: 'execute approved work',
+      input: {},
+    }),
+  ).rejects.toThrow(/taskExecutions/);
+  expect(await store.listRunsPage()).toEqual({ runs: [] });
+  store.close();
+});
 
 function planResult(): AgentStepResult {
   return {

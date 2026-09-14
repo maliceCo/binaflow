@@ -7,6 +7,7 @@ import {
   type InteractiveReviewContract,
   type InteractiveReviewWorkflowDefinition,
 } from './plan-build-qa-interactive.js';
+import { guidedTaskBuildWorkflow } from './guided-task-build.js';
 import {
   researchPlanBuildWorkflow,
   type ResearchWorkflowDefinition,
@@ -50,7 +51,10 @@ const registrations: readonly WorkflowRegistration[] = [
 ];
 
 const workflows: Record<string, WorkflowDefinition | ResearchWorkflowDefinition> =
-  Object.fromEntries(registrations.map((entry) => [entry.definition.id, entry.definition]));
+  Object.fromEntries([
+    ...registrations.map((entry) => [entry.definition.id, entry.definition] as const),
+    [guidedTaskBuildWorkflow.id, guidedTaskBuildWorkflow] as const,
+  ]);
 
 export const workflowSummaries: readonly WorkflowSummary[] = registrations.map((entry) => ({
   id: entry.definition.id,

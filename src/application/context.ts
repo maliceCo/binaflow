@@ -32,4 +32,6 @@ export interface ApplicationInternals {
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   qaHistory?: ApplicationQaHistoryStore;
   readPreparationReviewMode?: () => Promise<PreparationReviewMode>;
+  executionLock?: import('./ports.js').WorkspaceExecutionLock;
+  workspace?: string;
 }

@@ -2,6 +2,8 @@ import { mkdir } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
+import { FileWorkspaceExecutionLock } from '../workspace/execution-lock.js';
+import { LocalGitWorkspace } from '../workspace/git-workspace.js';
 import { loadConfig, loadDataDir, loadQaHistory } from '../config.js';
 import { createWorkflowRuntime, WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
@@ -16,6 +18,7 @@ import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 import { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
+import { createGuidedExecutionService } from './guided-execution-operations.js';
 import { discoverAgentModels } from './config-operations.js';
 import {
   createApplicationService,
@@ -126,6 +129,17 @@ async function openApplicationResources(
     config.qaHistory.enabled ? store : undefined,
   );
   const workspace = realpathSync(cwd);
+  const guidedGit = new LocalGitWorkspace();
+  const guidedLock = new FileWorkspaceExecutionLock();
+  const guidedExecution = createGuidedExecutionService({
+    taskContracts: store,
+    executions: store,
+    artifacts,
+    git: guidedGit,
+    lock: guidedLock,
+    workspace,
+    profiles: config.profiles,
+  });
   const application = createApplicationService({
     config,
     store,
@@ -144,6 +158,9 @@ async function openApplicationResources(
     ...(config.qaHistory.enabled ? { qaHistory: store } : {}),
     taskContractStore: store,
     taskContractWorkspace: workspace,
+    guidedExecution,
+    executionLock: guidedLock,
+    workspace,
     modelDiscovery: new PiModelDiscovery(),
     subscribeEvents: (listener) => {
       eventListeners.add(listener);

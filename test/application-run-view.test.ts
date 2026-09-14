@@ -101,6 +101,36 @@ describe('application run view', () => {
     expect(JSON.stringify(view)).not.toContain('omitted from the view');
   });
 
+  it('does not expose the guided template as a resumable generic workflow step', async () => {
+    const run = workflowRun({
+      workflowId: 'guided-task-build',
+      workflowVersion: 1,
+      status: 'interrupted',
+    });
+    const view = await getRunView(
+      {
+        store: store(
+          run,
+          [
+            {
+              runId: run.id,
+              stepId: 'guided-task-build',
+              profile: 'builder',
+              status: 'pending',
+              attempt: 1,
+            },
+          ],
+          [],
+        ) as RunStore,
+      },
+      run.id,
+    );
+
+    expect(view.phases).toEqual([]);
+    expect(view.availableActions).toEqual([]);
+    expect(view.workflow.compatible).toBe(true);
+  });
+
   it('projects the structured reviewed-TODO outcome for human presentation', async () => {
     const run = workflowRun({ workflowId: 'todo-build-qa' });
     const input = artifact(run.id, 'input', 'run');

@@ -15,6 +15,7 @@ import { researchPlanBuildWorkflow } from '../workflows/research-plan-build.js';
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { parsePlanBuildQaQaReport } from '../workflows/plan-build-qa.js';
 import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
+import { guidedTaskBuildWorkflow } from '../workflows/guided-task-build.js';
 import { parseTodoFinalResult, type TodoFinalResult } from '../workflows/todo-build-qa-render.js';
 import type {
   InteractiveReviewPhase,
@@ -177,8 +178,8 @@ export async function getRunView(
           }
         : recoveryBase;
   const phases = buildPhases(
-    compatible ? installedWorkflow : undefined,
-    steps,
+    compatible && run.workflowId !== guidedTaskBuildWorkflow.id ? installedWorkflow : undefined,
+    run.workflowId === guidedTaskBuildWorkflow.id ? [] : steps,
     Date.now(),
     run.status === 'running',
   );

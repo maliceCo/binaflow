@@ -19,6 +19,7 @@ import { validateWorkflowDefinition, type WorkflowDefinition } from '../core/wor
 import { MAX_QA_ITERATIONS, QA_ITERATION_INPUT } from './plan-build-qa-coordinator.js';
 import { planBuildQaWorkflow } from '../workflows/plan-build-qa.js';
 import { todoBuildQaWorkflow } from '../workflows/todo-build-qa.js';
+import { guidedTaskBuildWorkflow } from '../workflows/guided-task-build.js';
 import { planBuildQaInteractiveWorkflow } from '../workflows/plan-build-qa-interactive.js';
 import type { ApplicationInternals } from './context.js';
 import type { PreparationExecutionSeed } from './preparation.js';
@@ -49,7 +50,9 @@ export async function executeClaimedWorkflowForPreparation(
   workflow: WorkflowDefinition,
   request: ExecuteWorkflowRequest,
 ): Promise<WorkflowRun> {
-  return executeClaimedWorkflow(context, workflow, request);
+  return withLegacyExecutionLease(context, workflow, () =>
+    executeClaimedWorkflow(context, workflow, request),
+  );
 }
 
 export async function runWorkflow(
@@ -59,14 +62,16 @@ export async function runWorkflow(
   const workflow = resolveAndValidateWorkflow(context, request.workflowId);
   const runId = request.runId ?? randomUUID();
   try {
-    return await executeWorkflow(context, workflow, {
-      runId,
-      objective: request.objective,
-      input: { ...request.input, objective: request.objective },
-      profiles: context.config.profiles,
-      ...(request.signal ? { signal: request.signal } : {}),
-      ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
-    });
+    return await withLegacyExecutionLease(context, workflow, () =>
+      executeWorkflow(context, workflow, {
+        runId,
+        objective: request.objective,
+        input: { ...request.input, objective: request.objective },
+        profiles: context.config.profiles,
+        ...(request.signal ? { signal: request.signal } : {}),
+        ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+      }),
+    );
   } catch (error) {
     await context.store.releaseExecution(runId).catch(() => undefined);
     await context.store.markRunInterrupted(runId).catch(() => undefined);
@@ -91,30 +96,35 @@ export async function resumeWorkflow(
 ): Promise<ResumeWorkflowResult> {
   const previous = await context.store.getRun(request.runId);
   if (!previous) throw new Error(`Unknown run: ${request.runId}`);
+  if (previous.workflowId === guidedTaskBuildWorkflow.id) {
+    throw new Error('Guided task runs must be resumed through taskExecutions');
+  }
   if (previous.status === 'completed') {
     return { run: previous, alreadyCompleted: true };
   }
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
   validatePersistedRunCompatibility(previous, workflow);
-  await preflightPersistedInput(context, previous, workflow);
-  if (previous.status === 'running') {
-    throw new Error(`Run ${previous.id} is still running; mark it interrupted before recovery`);
-  }
-  await validateResumeEligibility(context, previous, workflow);
-  const claim = await claimRunForExecution(context, previous.id, [
-    'pending',
-    'failed',
-    'interrupted',
-  ]);
-  const run = await executeClaimedWorkflow(context, workflow, {
-    runId: request.runId,
-    profiles: context.config.profiles,
-    resume: true,
-    executionClaim: claim.claim,
-    ...(request.signal ? { signal: request.signal } : {}),
-    ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+  return withLegacyExecutionLease(context, workflow, async () => {
+    await preflightPersistedInput(context, previous, workflow);
+    if (previous.status === 'running') {
+      throw new Error(`Run ${previous.id} is still running; mark it interrupted before recovery`);
+    }
+    await validateResumeEligibility(context, previous, workflow);
+    const claim = await claimRunForExecution(context, previous.id, [
+      'pending',
+      'failed',
+      'interrupted',
+    ]);
+    const run = await executeClaimedWorkflow(context, workflow, {
+      runId: request.runId,
+      profiles: context.config.profiles,
+      resume: true,
+      executionClaim: claim.claim,
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+    });
+    return { run, alreadyCompleted: false };
   });
-  return { run, alreadyCompleted: false };
 }
 
 export interface ApprovalDecisionRequest {
@@ -133,47 +143,49 @@ export async function decideApproval(
   if (!previous) throw new Error(`Unknown run: ${request.runId}`);
   const workflow = resolveAndValidateWorkflow(context, previous.workflowId);
   validatePersistedRunCompatibility(previous, workflow);
-  await preflightPersistedInput(context, previous, workflow);
   const approvalDefinition = researchApproval(workflow);
   if (!approvalDefinition) throw new Error(`Workflow ${workflow.id} has no approval gate`);
   if (previous.status !== 'waiting') {
     throw new Error(`Run ${request.runId} is not waiting for approval`);
   }
 
-  const steps = await context.store.getStepRuns(request.runId);
-  const approval = findWaitingApprovalStep(workflow, previous, steps);
-  if (!approval) {
-    throw new Error(`Run ${request.runId} is not waiting for approval`);
-  }
-  const feedback = request.feedback?.trim();
-  if (request.decision === 'rejected' && !feedback) {
-    throw new Error('Rejection feedback must be non-empty');
-  }
+  return withLegacyExecutionLease(context, workflow, async () => {
+    await preflightPersistedInput(context, previous, workflow);
+    const steps = await context.store.getStepRuns(request.runId);
+    const approval = findWaitingApprovalStep(workflow, previous, steps);
+    if (!approval) {
+      throw new Error(`Run ${request.runId} is not waiting for approval`);
+    }
+    const feedback = request.feedback?.trim();
+    if (request.decision === 'rejected' && !feedback) {
+      throw new Error('Rejection feedback must be non-empty');
+    }
 
-  const decisionStep: StepRun = {
-    ...approval,
-    status: 'pending',
-    approval: {
-      decision: request.decision,
-      ...(feedback ? { feedback } : {}),
-      decidedAt: new Date().toISOString(),
-    },
-  };
-  const claimed = await context.store.claimApprovalForExecution(request.runId, decisionStep);
-  if (!claimed) {
-    const current = await context.store.getRun(request.runId);
-    if (!current) throw new Error(`Unknown run: ${request.runId}`);
-    if (current.status === 'running') throw new Error(`Run ${request.runId} is already running`);
-    throw new Error(`Run ${request.runId} is no longer waiting for approval`);
-  }
+    const decisionStep: StepRun = {
+      ...approval,
+      status: 'pending',
+      approval: {
+        decision: request.decision,
+        ...(feedback ? { feedback } : {}),
+        decidedAt: new Date().toISOString(),
+      },
+    };
+    const claimed = await context.store.claimApprovalForExecution(request.runId, decisionStep);
+    if (!claimed) {
+      const current = await context.store.getRun(request.runId);
+      if (!current) throw new Error(`Unknown run: ${request.runId}`);
+      if (current.status === 'running') throw new Error(`Run ${request.runId} is already running`);
+      throw new Error(`Run ${request.runId} is no longer waiting for approval`);
+    }
 
-  return executeClaimedWorkflow(context, workflow, {
-    runId: request.runId,
-    profiles: context.config.profiles,
-    resume: true,
-    executionClaim: claimed.claim,
-    ...(request.signal ? { signal: request.signal } : {}),
-    ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+    return executeClaimedWorkflow(context, workflow, {
+      runId: request.runId,
+      profiles: context.config.profiles,
+      resume: true,
+      executionClaim: claimed.claim,
+      ...(request.signal ? { signal: request.signal } : {}),
+      ...(request.onRunStarted ? { onRunStarted: request.onRunStarted } : {}),
+    });
   });
 }
 
@@ -195,6 +207,9 @@ function resolveAndValidateWorkflow(
   workflowId: string,
 ): WorkflowDefinition {
   const workflow = resolveWorkflow(workflowId);
+  if (workflow.id === guidedTaskBuildWorkflow.id) {
+    throw new Error('Guided task runs must be started through taskExecutions');
+  }
   validateWorkflowDefinition(workflow);
   validateWorkflowProfiles(workflow, context.config.profiles);
   return workflow;
@@ -326,6 +341,30 @@ async function executeWorkflow(
     return context.interactivePlanBuildQaCoordinator.execute(workflow, request);
   }
   return context.engine.execute(workflow, request);
+}
+
+async function withLegacyExecutionLease<T>(
+  context: ApplicationInternals,
+  workflow: WorkflowDefinition,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const lease = await acquireLegacyExecutionLease(context, workflow);
+  try {
+    return await operation();
+  } finally {
+    await lease?.release();
+  }
+}
+
+async function acquireLegacyExecutionLease(
+  context: ApplicationInternals,
+  workflow: WorkflowDefinition,
+): Promise<import('./guided-execution.js').WorkspaceExecutionLease | undefined> {
+  if (!context.executionLock || !context.workspace) return undefined;
+  const mutatesWorkspace = workflow.steps.some(
+    (step) => context.config.profiles[step.profile]?.workspaceMode === 'read-write',
+  );
+  return mutatesWorkspace ? context.executionLock.acquire(context.workspace) : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
