@@ -132,6 +132,31 @@ describe('task contract application operations', () => {
     store.close();
   });
 
+  it('does not restore an approval after resolving a manual block', async () => {
+    const { store, service } = setup();
+    const contractId = randomUUID();
+    await service.create({ contractId, brief });
+    await service.publishPlan({ contractId, expectedRevision: 1, plan });
+    await service.approvePlan({ contractId, expectedRevision: 2, planVersion: 1 });
+    const blocked = await service.block({
+      contractId,
+      expectedRevision: 3,
+      documentKind: 'plan',
+      documentVersion: 1,
+      reason: 'Human review is required',
+    });
+    expect(blocked.readiness).toBe('blocked');
+    const resolved = await service.resolveBlock({
+      contractId,
+      expectedRevision: 4,
+      blockId: blocked.activeBlock!.id,
+      reason: 'Reviewed manually',
+    });
+    expect(resolved.readiness).toBe('needs-approval');
+    expect(resolved.approval).toBeNull();
+    store.close();
+  });
+
   it('preserves a scope-review block and rejects malformed requests before storage', async () => {
     const { store, service } = setup();
     const contractId = randomUUID();
@@ -146,13 +171,34 @@ describe('task contract application operations', () => {
     expect(blocked.readiness).toBe('blocked');
     expect(blocked.activeBlock?.details).toMatchObject({ reason: 'TODO scope requires review' });
     await expect(
+      service.resolveBlock({
+        contractId,
+        expectedRevision: 4,
+        blockId: blocked.activeBlock!.id,
+        reason: 'Ignore the scope difference',
+      }),
+    ).rejects.toMatchObject({ code: 'blocked' });
+    await expect(
       service.publishPlan({
         contractId,
         expectedRevision: 4,
         plan: { ...plan, unexpected: true } as never,
       }),
     ).rejects.toMatchObject({ code: 'invalid-input' });
-    expect((await service.get(contractId)).contract.revision).toBe(4);
+    const revisedPlan = await service.publishPlan({
+      contractId,
+      expectedRevision: 4,
+      plan: { ...plan, summary: 'Reapprove the revised plan' },
+    });
+    expect(revisedPlan.readiness).toBe('needs-approval');
+    await service.approvePlan({ contractId, expectedRevision: 5, planVersion: 2 });
+    const readyAgain = await service.publishTodo({
+      contractId,
+      expectedRevision: 6,
+      todo: { ...todo, planVersion: 2 },
+    });
+    expect(readyAgain.readiness).toBe('ready');
+    expect((await store.listRunsPage()).runs).toHaveLength(0);
     store.close();
   });
 });

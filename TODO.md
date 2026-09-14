@@ -366,7 +366,7 @@ para el builder pertenece al handoff del hito 3.
 
 ### Fase 3: Regresion, reapertura y cierre documental
 
-- [ ] **Tarea 3.1: Verificar el contrato de extremo a extremo sin builder**
+- [x] **Tarea 3.1: Verificar el contrato de extremo a extremo sin builder**
   - **Archivo:** `test/task-contract-application.test.ts`; `test/task-contract-persistence.test.ts`. Corregir solo incumplimientos del contrato en los archivos ya autorizados por 1.2-2.4; si requiere otro contrato/archivo, detener.
   - **Descripcion:** fixture local con SQLite real temporal y fachada, sin red ni Pi. Crear y publicar plan v1, comentar/aprobar, publicar TODO, cerrar contexto y reabrir. Comprobar que el estado, las versiones, feedback y aprobacion se recuperan. Publicar plan v2 y comprobar que el TODO/approval de v1 no autorizan nada aunque puedan consultarse como historial. Reaprobar y publicar un TODO nuevo para volver a ready.
   - **Casos criticos adicionales:** dos clientes con expectedRevision antigua no pueden aprobar version sustituida; JSON invalido no muta; scope-review-required exige nuevo plan/brief; bloqueo manual resuelto no recupera aprobacion vieja; documento de otro workspace no es visible. No generar un workflow run en ningun paso y comprobar listRuns sin cambios.
@@ -429,3 +429,4 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Tarea 2.2 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/task-contract.test.ts test/task-contract-persistence.test.ts test/migrations.test.ts` (13 pasados), lint focalizado y typecheck correctos; el workspace se captura en servidor y no hay driver/engine en las operaciones.
 - Tarea 2.3 verificada con el mismo conjunto focal (13 pasados) y typecheck: Markdown determinista, versionado, advertencia historica/bloqueada, contenido completo y bloques seguros ante backticks; no se escribe en el workspace.
 - Tarea 2.4 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/application-runtime.test.ts test/execution-host.test.ts test/execution-host-integration.test.ts test/architecture-boundaries.test.ts` (34 pasados) y typecheck correctos; queries sin comandos, composicion parcial rechazada y runtime captura el workspace canonico.
+- Tarea 3.1 verificada: `pnpm exec vitest run test/task-contract.test.ts test/task-contract-persistence.test.ts test/task-contract-application.test.ts test/preparation.test.ts test/preparation-persistence.test.ts test/interactive-review-workflow.test.ts test/cli-protocol.test.ts` (39 pasados); reapertura, CAS obsoleto, invalidacion, bloqueos y ausencia de runs comprobados.

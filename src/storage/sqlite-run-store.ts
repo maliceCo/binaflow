@@ -475,7 +475,11 @@ export class SqliteRunStore
           kind: 'block',
           targetDocumentId: todoId,
           relatedActionId: null,
-          details: { reason: 'TODO scope requires review', differences: scope.differences },
+          details: {
+            reason: 'TODO scope requires review',
+            reasonCode: 'scope-review-required',
+            differences: scope.differences,
+          },
           createdAt: now,
         });
         this.updateTaskContract(
@@ -512,6 +516,7 @@ export class SqliteRunStore
         relatedActionId: null,
         details: {
           reason: request.reason,
+          reasonCode: 'manual',
           documentKind: request.documentKind,
           documentVersion: request.documentVersion,
           ...(request.differences ? { differences: request.differences } : {}),
@@ -543,6 +548,13 @@ export class SqliteRunStore
         )
         .get(request.contractId, request.blockId) as TaskContractActionRow | undefined;
       if (!block) throw taskContractInvalidTarget('The active task contract block does not exist');
+      const blockAction = fromTaskContractActionRow(block);
+      if (blockAction.details.reasonCode === 'scope-review-required') {
+        throw new TaskContractError(
+          'blocked',
+          'Scope review requires publishing a new brief or plan before resolution',
+        );
+      }
       const now = new Date().toISOString();
       this.insertTaskContractAction({
         id: randomUUID(),
