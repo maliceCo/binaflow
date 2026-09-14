@@ -111,6 +111,72 @@ export interface TaskContractDocument<
   body: T;
 }
 
+export interface TaskContractView {
+  contract: TaskContract;
+  readiness: TaskContractReadiness;
+  currentBrief: TaskContractDocumentHeader;
+  currentPlan: TaskContractDocumentHeader | null;
+  approvedPlan: TaskContractDocumentHeader | null;
+  currentTodo: TaskContractDocumentHeader | null;
+  approval: TaskContractAction | null;
+  activeBlock: TaskContractAction | null;
+}
+
+export interface TaskContractListQuery {
+  afterId?: string;
+  limit?: number;
+}
+
+export interface TaskContractCreateRequest {
+  contractId: string;
+  brief: TaskContractBrief;
+}
+
+export interface TaskContractReviseBriefRequest extends TaskContractCreateRequest {
+  expectedRevision: number;
+}
+
+export interface TaskContractPlanRequest {
+  contractId: string;
+  expectedRevision: number;
+  plan: TaskContractPlan;
+}
+
+export interface TaskContractCommentRequest {
+  contractId: string;
+  expectedRevision: number;
+  planVersion: number;
+  content: string;
+}
+
+export interface TaskContractApprovePlanRequest {
+  contractId: string;
+  expectedRevision: number;
+  planVersion: number;
+}
+
+export interface TaskContractTodoRequest {
+  contractId: string;
+  expectedRevision: number;
+  todo: TaskContractTodo;
+}
+
+export interface TaskContractBlockRequest {
+  contractId: string;
+  expectedRevision: number;
+  documentKind: TaskContractDocumentKind;
+  documentVersion: number;
+  reason: string;
+  differences?: TaskContractTodoScopeDifference[];
+}
+
+export interface TaskContractResolveBlockRequest {
+  contractId: string;
+  expectedRevision: number;
+  blockId: string;
+  reason: string;
+}
+
 export interface TaskContractStoredState {
   contract: TaskContract;
   currentBrief: TaskContractDocument<TaskContractBrief>;
@@ -119,6 +185,35 @@ export interface TaskContractStoredState {
   currentTodo: TaskContractDocument<TaskContractTodo> | null;
   activeBlock: TaskContractAction | null;
   approval: TaskContractAction | null;
+}
+
+export interface TaskContractQueries {
+  get(contractId: string): Promise<TaskContractView>;
+  list(query?: TaskContractListQuery): Promise<TaskContractPage>;
+  getDocument(
+    request: Omit<TaskContractDocumentRequest, 'workspace'>,
+  ): Promise<TaskContractDocument>;
+  listDocuments(
+    request: Omit<TaskContractListDocumentsRequest, 'contractId' | 'workspace'> & {
+      contractId: string;
+    },
+  ): Promise<TaskContractDocumentPage>;
+  listActions(
+    request: Omit<TaskContractListActionsRequest, 'contractId' | 'workspace'> & {
+      contractId: string;
+    },
+  ): Promise<TaskContractActionPage>;
+}
+
+export interface TaskContractService extends TaskContractQueries {
+  create(request: TaskContractCreateRequest): Promise<TaskContractView>;
+  reviseBrief(request: TaskContractReviseBriefRequest): Promise<TaskContractView>;
+  publishPlan(request: TaskContractPlanRequest): Promise<TaskContractView>;
+  commentPlan(request: TaskContractCommentRequest): Promise<TaskContractView>;
+  approvePlan(request: TaskContractApprovePlanRequest): Promise<TaskContractView>;
+  publishTodo(request: TaskContractTodoRequest): Promise<TaskContractView>;
+  block(request: TaskContractBlockRequest): Promise<TaskContractView>;
+  resolveBlock(request: TaskContractResolveBlockRequest): Promise<TaskContractView>;
 }
 
 export interface TaskContractDocumentPage {

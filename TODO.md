@@ -340,7 +340,7 @@ para el builder pertenece al handoff del hito 3.
   - **Verificacion / TDD:** base temporal nueva y actualizacion de una base v11 con datos de runs/preparacion; foreign_key_check sin errores y registros legacy intactos. Dos conexiones compiten por misma revision: solo una muta; otra falla sin documentos/acciones parciales. Target de otro contrato/workspace rechazado. Repetir create preserva estado y no duplica. `pnpm exec vitest run test/task-contract-persistence.test.ts test/migrations.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: persist guided task documents and approval decisions`
 
-- [ ] **Tarea 2.2: Proveer operaciones de aplicacion sin ejecutar agentes**
+- [x] **Tarea 2.2: Proveer operaciones de aplicacion sin ejecutar agentes**
   - **Archivo:** nuevo `src/application/task-contract-operations.ts`; nuevo `test/task-contract-application.test.ts`; `src/application/task-contract.ts` solo para los DTOs de solicitud/respuesta previstos.
   - **Funciones:** createTaskContractQueries, createTaskContractService; operaciones de la tabla del contrato salvo getTodoMarkdown, que se incorpora en 2.3 sin stubs.
   - **Descripcion:** capturar y validar solicitudes antes de awaits; usar contexto {store, workspace} estrecho. La decision humana entra por approvePlan separado de publicar/comentar. Delegar escrituras atomicas al puerto, no simular transacciones desde JS con varias llamadas independientes. Proyectar vistas acotadas y devolver errores claros de conflicto o bloqueo para que el consumidor refresque.
@@ -426,3 +426,4 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Implementacion: tareas 1.3 en adelante pendientes; Tarea 1.2 completada con parsers Ajv, validacion de limites/IDs/rutas, readiness, transiciones e incompatibilidad estructural del TODO.
 - Tarea 1.2 verificada: `pnpm exec vitest run test/task-contract.test.ts` (6 pasados) y `pnpm run typecheck` correctos.
 - Tarea 2.1 verificada: `pnpm exec vitest run test/task-contract-persistence.test.ts test/migrations.test.ts` (5 pasados) y `pnpm run typecheck` correctos; migracion 012, FK y CAS comprobados.
+- Tarea 2.2 verificada: `pnpm exec vitest run test/task-contract-application.test.ts test/task-contract.test.ts test/task-contract-persistence.test.ts test/migrations.test.ts` (13 pasados), lint focalizado y typecheck correctos; el workspace se captura en servidor y no hay driver/engine en las operaciones.

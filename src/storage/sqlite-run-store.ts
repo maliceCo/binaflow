@@ -46,7 +46,6 @@ import type {
 } from '../application/preparation.js';
 import {
   assertTaskContractTodoMatchesPlan,
-  getTaskContractReadiness,
   parseTaskContractBrief,
   parseTaskContractPlan,
   parseTaskContractTodo,
