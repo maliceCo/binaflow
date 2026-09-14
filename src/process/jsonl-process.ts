@@ -1,6 +1,7 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
+import { signalProcessTree, waitForExit } from './process-tree.js';
 
 export const MAX_JSONL_RECORD_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 64 * 1024;
@@ -296,38 +297,4 @@ function listenerError(kind: 'message' | 'stderr', error: unknown): Error {
   return new Error(
     `JSONL ${kind} listener failed: ${error instanceof Error ? error.message : String(error)}`,
   );
-}
-
-async function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<boolean> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      exit.then(() => true),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function signalProcessTree(
-  child: ChildProcessWithoutNullStreams,
-  force: boolean,
-): Promise<void> {
-  if (child.pid === undefined) return;
-  if (process.platform === 'win32') {
-    await new Promise<void>((resolve) => {
-      execFile('taskkill.exe', ['/PID', String(child.pid), '/T', ...(force ? ['/F'] : [])], () =>
-        resolve(),
-      );
-    });
-    return;
-  }
-  try {
-    process.kill(-child.pid, force ? 'SIGKILL' : 'SIGTERM');
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
-  }
 }
