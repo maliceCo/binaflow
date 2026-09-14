@@ -332,7 +332,7 @@ para el builder pertenece al handoff del hito 3.
 
 ### Fase 2: Persistencia y operaciones funcionales
 
-- [ ] **Tarea 2.1: Persistir contratos con migracion aditiva y CAS**
+- [x] **Tarea 2.1: Persistir contratos con migracion aditiva y CAS**
   - **Archivo:** nuevo `src/storage/migrations/012-task-contracts.ts`; `src/storage/migrations/index.ts`; `src/application/ports.ts`; `src/storage/sqlite-run-store.ts`; nuevo `test/task-contract-persistence.test.ts`; `test/migrations.test.ts` solo si necesita actualizar la expectativa de version final o un fixture explicito.
   - **Funciones:** taskContractsMigration; applyMigrations; ApplicationTaskContractStore; metodos SqliteRunStore de creacion, lectura, publicacion, comentario, aprobacion y bloqueos descritos en la API. Helpers SQL privados especificos.
   - **Descripcion:** crear las tres tablas/indices y subir currentSchemaVersion a 12. Ejecutar reglas de autorizacion bajo transaccion inmediata y CAS, preservar versiones/acciones inmutables y asegurar rollback completo. API del puerto recibe workspace del contexto y IDs; no SQL desde aplicacion. Mantener RunStore y los puertos core sin cambios. No duplicar modelos de tablas en otro modulo si no hay consumidor.
@@ -425,3 +425,4 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Checks baseline: `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test` (43 archivos, 340 pasados, 1 omitido) y `pnpm run build` correctos; `git diff --check` correcto.
 - Implementacion: tareas 1.3 en adelante pendientes; Tarea 1.2 completada con parsers Ajv, validacion de limites/IDs/rutas, readiness, transiciones e incompatibilidad estructural del TODO.
 - Tarea 1.2 verificada: `pnpm exec vitest run test/task-contract.test.ts` (6 pasados) y `pnpm run typecheck` correctos.
+- Tarea 2.1 verificada: `pnpm exec vitest run test/task-contract-persistence.test.ts test/migrations.test.ts` (5 pasados) y `pnpm run typecheck` correctos; migracion 012, FK y CAS comprobados.

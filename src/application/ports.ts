@@ -33,6 +33,54 @@ import type {
   UpdatePreparationRequest,
   UpdatePreparationSynthesisRequest,
 } from './preparation.js';
+import type {
+  TaskContractActionPage,
+  TaskContractDocument,
+  TaskContractDocumentPage,
+  TaskContractDocumentRequest,
+  TaskContractListActionsRequest,
+  TaskContractListDocumentsRequest,
+  TaskContractPage,
+  TaskContractStoredApprovalRequest,
+  TaskContractStoredBlockRequest,
+  TaskContractStoredCommentRequest,
+  TaskContractStoredCreateRequest,
+  TaskContractStoredPlanRequest,
+  TaskContractStoredResolveBlockRequest,
+  TaskContractStoredState,
+  TaskContractStoredTodoRequest,
+} from './task-contract.js';
+
+export interface ApplicationTaskContractStore {
+  createTaskContract(request: TaskContractStoredCreateRequest): Promise<TaskContractStoredState>;
+  getTaskContract(
+    workspace: string,
+    contractId: string,
+  ): Promise<TaskContractStoredState | undefined>;
+  listTaskContracts(workspace: string, afterId?: string, limit?: number): Promise<TaskContractPage>;
+  getTaskContractDocument(
+    request: TaskContractDocumentRequest,
+  ): Promise<TaskContractDocument | undefined>;
+  listTaskContractDocuments(
+    request: TaskContractListDocumentsRequest,
+  ): Promise<TaskContractDocumentPage>;
+  listTaskContractActions(request: TaskContractListActionsRequest): Promise<TaskContractActionPage>;
+  reviseTaskContractBrief(
+    request: TaskContractStoredCreateRequest & { expectedRevision: number },
+  ): Promise<TaskContractStoredState>;
+  publishTaskContractPlan(request: TaskContractStoredPlanRequest): Promise<TaskContractStoredState>;
+  commentTaskContractPlan(
+    request: TaskContractStoredCommentRequest,
+  ): Promise<TaskContractStoredState>;
+  approveTaskContractPlan(
+    request: TaskContractStoredApprovalRequest,
+  ): Promise<TaskContractStoredState>;
+  publishTaskContractTodo(request: TaskContractStoredTodoRequest): Promise<TaskContractStoredState>;
+  blockTaskContract(request: TaskContractStoredBlockRequest): Promise<TaskContractStoredState>;
+  resolveTaskContractBlock(
+    request: TaskContractStoredResolveBlockRequest,
+  ): Promise<TaskContractStoredState>;
+}
 
 export interface ApplicationArtifactStore {
   read(artifact: ArtifactReference): Promise<string>;

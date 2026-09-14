@@ -88,7 +88,7 @@ describe('SQLite migrations', () => {
     const columns = verification.prepare('PRAGMA table_info(step_runs)').all() as Array<{
       name: string;
     }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(columns.map((column) => column.name)).toContain('profile_json');
     expect(
       verification
@@ -106,6 +106,19 @@ describe('SQLite migrations', () => {
         { name: 'qa_defects' },
         { name: 'qa_occurrences' },
         { name: 'qa_defect_events' },
+      ]),
+    );
+    expect(
+      verification
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'task_contract_%'",
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        { name: 'task_contracts' },
+        { name: 'task_contract_documents' },
+        { name: 'task_contract_actions' },
       ]),
     );
     const indexes = verification

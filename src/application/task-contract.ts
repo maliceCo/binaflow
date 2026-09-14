@@ -111,6 +111,94 @@ export interface TaskContractDocument<
   body: T;
 }
 
+export interface TaskContractStoredState {
+  contract: TaskContract;
+  currentBrief: TaskContractDocument<TaskContractBrief>;
+  currentPlan: TaskContractDocument<TaskContractPlan> | null;
+  approvedPlan: TaskContractDocument<TaskContractPlan> | null;
+  currentTodo: TaskContractDocument<TaskContractTodo> | null;
+  activeBlock: TaskContractAction | null;
+  approval: TaskContractAction | null;
+}
+
+export interface TaskContractDocumentPage {
+  items: TaskContractDocumentHeader[];
+  nextCursor?: number;
+}
+
+export interface TaskContractActionPage {
+  items: TaskContractAction[];
+  nextCursor?: number;
+}
+
+export interface TaskContractPage {
+  items: TaskContract[];
+  nextCursor?: string;
+}
+
+export interface TaskContractDocumentRequest {
+  contractId: string;
+  workspace: string;
+  kind: TaskContractDocumentKind;
+  version: number;
+}
+
+export interface TaskContractListDocumentsRequest {
+  contractId: string;
+  workspace: string;
+  kind: TaskContractDocumentKind;
+  afterVersion?: number;
+  limit?: number;
+}
+
+export interface TaskContractListActionsRequest {
+  contractId: string;
+  workspace: string;
+  afterSequence?: number;
+  limit?: number;
+}
+
+export interface TaskContractMutationRequest {
+  contractId: string;
+  workspace: string;
+  expectedRevision: number;
+}
+
+export interface TaskContractStoredCreateRequest {
+  contractId: string;
+  workspace: string;
+  brief: TaskContractBrief;
+}
+
+export interface TaskContractStoredPlanRequest extends TaskContractMutationRequest {
+  plan: TaskContractPlan;
+}
+
+export interface TaskContractStoredCommentRequest extends TaskContractMutationRequest {
+  planVersion: number;
+  content: string;
+}
+
+export interface TaskContractStoredApprovalRequest extends TaskContractMutationRequest {
+  planVersion: number;
+}
+
+export interface TaskContractStoredTodoRequest extends TaskContractMutationRequest {
+  todo: TaskContractTodo;
+}
+
+export interface TaskContractStoredBlockRequest extends TaskContractMutationRequest {
+  documentKind: TaskContractDocumentKind;
+  documentVersion: number;
+  reason: string;
+  differences?: TaskContractTodoScopeDifference[];
+}
+
+export interface TaskContractStoredResolveBlockRequest extends TaskContractMutationRequest {
+  blockId: string;
+  reason: string;
+}
+
 export interface TaskContractVersionPointer {
   id: string;
   version: number;

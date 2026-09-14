@@ -11,8 +11,9 @@ import { interactiveReviewMigration } from './008-interactive-review.js';
 import { reviewAdjudicationMigration } from './009-review-adjudication.js';
 import { preparationMigration } from './010-preparation.js';
 import { preparationExperienceMigration } from './011-preparation-experience.js';
+import { taskContractsMigration } from './012-task-contracts.js';
 
-const currentSchemaVersion = 11;
+const currentSchemaVersion = 12;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -103,6 +104,11 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     if (version < 11) {
       database.exec(preparationExperienceMigration);
       recordMigration(database, 11);
+    }
+
+    if (version < 12) {
+      database.exec(taskContractsMigration);
+      recordMigration(database, 12);
     }
 
     const finalVersion = database

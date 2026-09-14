@@ -45,11 +45,45 @@ import type {
   UpdatePreparationSynthesisRequest,
 } from '../application/preparation.js';
 import {
+  assertTaskContractTodoMatchesPlan,
+  getTaskContractReadiness,
+  parseTaskContractBrief,
+  parseTaskContractPlan,
+  parseTaskContractTodo,
+  validateTaskContractTodoScope,
+  TaskContractError,
+  type TaskContract,
+  type TaskContractAction,
+  type TaskContractBrief,
+  type TaskContractActionPage,
+  type TaskContractDocument,
+  type TaskContractDocumentHeader,
+  type TaskContractDocumentKind,
+  type TaskContractDocumentPage,
+  type TaskContractDocumentRequest,
+  type TaskContractListActionsRequest,
+  type TaskContractListDocumentsRequest,
+  type TaskContractPage,
+  type TaskContractPlan,
+  type TaskContractStoredApprovalRequest,
+  type TaskContractStoredBlockRequest,
+  type TaskContractStoredCommentRequest,
+  type TaskContractStoredCreateRequest,
+  type TaskContractStoredPlanRequest,
+  type TaskContractStoredResolveBlockRequest,
+  type TaskContractStoredState,
+  type TaskContractStoredTodoRequest,
+  type TaskContractTodo,
+} from '../application/task-contract.js';
+import {
   reviewBlocksApproval,
   reviewFindingCounts,
   type PreparationReviewReport,
 } from '../application/preparation-review.js';
-import type { ApplicationPreparationStore } from '../application/ports.js';
+import type {
+  ApplicationPreparationStore,
+  ApplicationTaskContractStore,
+} from '../application/ports.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
@@ -69,7 +103,9 @@ import {
 
 const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
 
-export class SqliteRunStore implements RunStore, ApplicationPreparationStore {
+export class SqliteRunStore
+  implements RunStore, ApplicationPreparationStore, ApplicationTaskContractStore
+{
   private readonly database: Database.Database;
   private readonly ownerId = randomUUID();
   private readonly executionClaims = new Map<string, string>();
@@ -91,6 +127,660 @@ export class SqliteRunStore implements RunStore, ApplicationPreparationStore {
     this.executionClaims.clear();
     this.preparationClaims.clear();
     this.database.close();
+  }
+
+  async createTaskContract(
+    request: TaskContractStoredCreateRequest,
+  ): Promise<TaskContractStoredState> {
+    const brief = parseTaskContractBrief(request.brief);
+    return this.withImmediateTransaction(() => {
+      const existing = this.getTaskContractRow(request.contractId);
+      if (existing) {
+        const currentBrief = this.getTaskContractDocumentRow(
+          request.contractId,
+          existing.current_brief_id,
+        );
+        if (
+          existing.workspace !== request.workspace ||
+          !currentBrief ||
+          currentBrief.kind !== 'brief' ||
+          currentBrief.version !== 1 ||
+          currentBrief.body_json !== JSON.stringify(brief)
+        ) {
+          throw new TaskContractError(
+            'invalid-input',
+            `Task contract ${request.contractId} already exists with different initial data`,
+          );
+        }
+        return this.requireTaskContractState(request.workspace, request.contractId);
+      }
+
+      assertContractId(request.contractId);
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          `INSERT INTO task_contracts
+            (id, workspace, contract_version, revision, phase, current_brief_id,
+             current_plan_id, approved_plan_id, current_todo_id, current_block_id, created_at, updated_at)
+           VALUES (?, ?, 1, 1, 'exploration', NULL, NULL, NULL, NULL, NULL, ?, ?)`,
+        )
+        .run(request.contractId, request.workspace, now, now);
+      const briefId = randomUUID();
+      this.insertTaskContractDocument({
+        id: briefId,
+        contractId: request.contractId,
+        kind: 'brief',
+        version: 1,
+        sourceDocumentId: null,
+        body: brief,
+        createdAt: now,
+      });
+      this.database
+        .prepare(
+          'UPDATE task_contracts SET current_brief_id = ?, updated_at = ? WHERE id = ? AND revision = 1',
+        )
+        .run(briefId, now, request.contractId);
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async getTaskContract(
+    workspace: string,
+    contractId: string,
+  ): Promise<TaskContractStoredState | undefined> {
+    const row = this.getTaskContractRow(contractId);
+    if (!row) return undefined;
+    if (row.workspace !== workspace) throw taskContractTargetError(contractId);
+    return this.requireTaskContractState(workspace, contractId);
+  }
+
+  async listTaskContracts(
+    workspace: string,
+    afterId?: string,
+    limit = 20,
+  ): Promise<TaskContractPage> {
+    const pageLimit = validateTaskContractLimit(limit);
+    if (afterId !== undefined && afterId.length === 0) {
+      throw new TaskContractError('invalid-input', 'Task contract cursor must not be empty');
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM task_contracts
+          WHERE workspace = ? ${afterId === undefined ? '' : 'AND id > ?'}
+          ORDER BY id ASC LIMIT ?`,
+      )
+      .all(
+        workspace,
+        ...(afterId === undefined ? [] : [afterId]),
+        pageLimit + 1,
+      ) as TaskContractRow[];
+    const hasNext = rows.length > pageLimit;
+    const pageRows = hasNext ? rows.slice(0, pageLimit) : rows;
+    return {
+      items: pageRows.map(fromTaskContractRow),
+      ...(hasNext ? { nextCursor: pageRows[pageRows.length - 1]!.id } : {}),
+    };
+  }
+
+  async getTaskContractDocument(
+    request: TaskContractDocumentRequest,
+  ): Promise<TaskContractDocument | undefined> {
+    this.assertTaskContractWorkspace(request.workspace, request.contractId);
+    const row = this.database
+      .prepare(
+        `SELECT * FROM task_contract_documents
+          WHERE contract_id = ? AND kind = ? AND version = ?`,
+      )
+      .get(request.contractId, request.kind, request.version) as
+      TaskContractDocumentRow | undefined;
+    return row ? fromTaskContractDocumentRow(row) : undefined;
+  }
+
+  async listTaskContractDocuments(
+    request: TaskContractListDocumentsRequest,
+  ): Promise<TaskContractDocumentPage> {
+    this.assertTaskContractWorkspace(request.workspace, request.contractId);
+    const limit = validateTaskContractLimit(request.limit);
+    if (request.afterVersion !== undefined && request.afterVersion < 0) {
+      throw new TaskContractError('invalid-input', 'Document cursor must not be negative');
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT id, contract_id, kind, version, source_document_id, created_at
+           FROM task_contract_documents
+          WHERE contract_id = ? AND kind = ? ${request.afterVersion === undefined ? '' : 'AND version > ?'}
+          ORDER BY version ASC LIMIT ?`,
+      )
+      .all(
+        request.contractId,
+        request.kind,
+        ...(request.afterVersion === undefined ? [] : [request.afterVersion]),
+        limit + 1,
+      ) as TaskContractDocumentHeaderRow[];
+    const hasNext = rows.length > limit;
+    const pageRows = hasNext ? rows.slice(0, limit) : rows;
+    return {
+      items: pageRows.map(fromTaskContractDocumentHeaderRow),
+      ...(hasNext ? { nextCursor: pageRows[pageRows.length - 1]!.version } : {}),
+    };
+  }
+
+  async listTaskContractActions(
+    request: TaskContractListActionsRequest,
+  ): Promise<TaskContractActionPage> {
+    this.assertTaskContractWorkspace(request.workspace, request.contractId);
+    const limit = validateTaskContractLimit(request.limit);
+    if (request.afterSequence !== undefined && request.afterSequence < 0) {
+      throw new TaskContractError('invalid-input', 'Action cursor must not be negative');
+    }
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM task_contract_actions
+          WHERE contract_id = ? ${request.afterSequence === undefined ? '' : 'AND sequence > ?'}
+          ORDER BY sequence ASC LIMIT ?`,
+      )
+      .all(
+        request.contractId,
+        ...(request.afterSequence === undefined ? [] : [request.afterSequence]),
+        limit + 1,
+      ) as TaskContractActionRow[];
+    const hasNext = rows.length > limit;
+    const pageRows = hasNext ? rows.slice(0, limit) : rows;
+    return {
+      items: pageRows.map(fromTaskContractActionRow),
+      ...(hasNext ? { nextCursor: pageRows[pageRows.length - 1]!.sequence } : {}),
+    };
+  }
+
+  async reviseTaskContractBrief(
+    request: TaskContractStoredCreateRequest & { expectedRevision: number },
+  ): Promise<TaskContractStoredState> {
+    const brief = parseTaskContractBrief(request.brief);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      const currentVersion = this.latestTaskContractVersion(request.contractId, 'brief');
+      const now = new Date().toISOString();
+      const briefId = randomUUID();
+      this.insertTaskContractDocument({
+        id: briefId,
+        contractId: request.contractId,
+        kind: 'brief',
+        version: currentVersion + 1,
+        sourceDocumentId: null,
+        body: brief,
+        createdAt: now,
+      });
+      this.updateTaskContract(
+        request,
+        `current_brief_id = ?, current_plan_id = NULL, approved_plan_id = NULL,
+         current_todo_id = NULL, current_block_id = NULL, phase = 'exploration'`,
+        [briefId],
+      );
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async publishTaskContractPlan(
+    request: TaskContractStoredPlanRequest,
+  ): Promise<TaskContractStoredState> {
+    const plan = parseTaskContractPlan(request.plan);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      const brief = this.requireTaskContractDocument(
+        request.contractId,
+        contract.current_brief_id,
+        'brief',
+      ) as TaskContractDocument<TaskContractBrief>;
+      if (plan.briefVersion !== brief.version) {
+        throw new TaskContractError('incompatible-version', 'Plan must refer to the current brief');
+      }
+      const now = new Date().toISOString();
+      const planId = randomUUID();
+      this.insertTaskContractDocument({
+        id: planId,
+        contractId: request.contractId,
+        kind: 'plan',
+        version: this.latestTaskContractVersion(request.contractId, 'plan') + 1,
+        sourceDocumentId: brief.id,
+        body: plan,
+        createdAt: now,
+      });
+      this.updateTaskContract(
+        request,
+        `current_plan_id = ?, approved_plan_id = NULL, current_todo_id = NULL,
+         current_block_id = NULL, phase = 'planning'`,
+        [planId],
+      );
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async commentTaskContractPlan(
+    request: TaskContractStoredCommentRequest,
+  ): Promise<TaskContractStoredState> {
+    assertTaskContractText(request.content, 'Plan comment', 4 * 1024);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      const plan = this.requireTaskContractDocument(
+        request.contractId,
+        contract.current_plan_id,
+        'plan',
+      );
+      if (plan.version !== request.planVersion)
+        throw taskContractInvalidTarget('Plan comment target is stale');
+      this.assertNoActiveTaskContractBlock(contract);
+      const now = new Date().toISOString();
+      this.insertTaskContractAction({
+        id: randomUUID(),
+        contractId: request.contractId,
+        sequence: this.nextTaskContractActionSequence(request.contractId),
+        kind: 'comment',
+        targetDocumentId: plan.id,
+        relatedActionId: null,
+        details: { content: request.content, planVersion: request.planVersion },
+        createdAt: now,
+      });
+      this.updateTaskContract(
+        request,
+        `approved_plan_id = NULL, current_todo_id = NULL, phase = 'planning'`,
+        [],
+      );
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async approveTaskContractPlan(
+    request: TaskContractStoredApprovalRequest,
+  ): Promise<TaskContractStoredState> {
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      const brief = this.requireTaskContractDocument(
+        request.contractId,
+        contract.current_brief_id,
+        'brief',
+      ) as TaskContractDocument<TaskContractBrief>;
+      const plan = this.requireTaskContractDocument(
+        request.contractId,
+        contract.current_plan_id,
+        'plan',
+      ) as TaskContractDocument<TaskContractPlan>;
+      if (plan.body.briefVersion !== brief.version || plan.version !== request.planVersion) {
+        throw taskContractInvalidTarget(
+          'Only the current plan for the current brief can be approved',
+        );
+      }
+      this.assertNoActiveTaskContractBlock(contract);
+      const now = new Date().toISOString();
+      this.insertTaskContractAction({
+        id: randomUUID(),
+        contractId: request.contractId,
+        sequence: this.nextTaskContractActionSequence(request.contractId),
+        kind: 'approve-plan',
+        targetDocumentId: plan.id,
+        relatedActionId: null,
+        details: { decision: 'approve', planVersion: request.planVersion },
+        createdAt: now,
+      });
+      this.updateTaskContract(
+        request,
+        `approved_plan_id = ?, current_todo_id = NULL, phase = 'todo'`,
+        [plan.id],
+      );
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async publishTaskContractTodo(
+    request: TaskContractStoredTodoRequest,
+  ): Promise<TaskContractStoredState> {
+    const todo = parseTaskContractTodo(request.todo);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      const plan = this.requireTaskContractDocument(
+        request.contractId,
+        contract.current_plan_id,
+        'plan',
+      ) as TaskContractDocument<TaskContractPlan>;
+      if (!contract.approved_plan_id || contract.approved_plan_id !== plan.id) {
+        throw new TaskContractError(
+          'blocked',
+          'An approved current plan is required before publishing TODO',
+        );
+      }
+      assertTaskContractTodoMatchesPlan(todo, plan.version);
+      this.assertNoActiveTaskContractBlock(contract);
+      const scope = validateTaskContractTodoScope(todo, plan.body);
+      const now = new Date().toISOString();
+      const todoId = randomUUID();
+      this.insertTaskContractDocument({
+        id: todoId,
+        contractId: request.contractId,
+        kind: 'todo',
+        version: this.latestTaskContractVersion(request.contractId, 'todo') + 1,
+        sourceDocumentId: plan.id,
+        body: todo,
+        createdAt: now,
+      });
+      if (scope.compatible) {
+        this.updateTaskContract(request, `current_todo_id = ?, phase = 'todo'`, [todoId]);
+      } else {
+        const blockId = this.insertTaskContractAction({
+          id: randomUUID(),
+          contractId: request.contractId,
+          sequence: this.nextTaskContractActionSequence(request.contractId),
+          kind: 'block',
+          targetDocumentId: todoId,
+          relatedActionId: null,
+          details: { reason: 'TODO scope requires review', differences: scope.differences },
+          createdAt: now,
+        });
+        this.updateTaskContract(
+          request,
+          `current_todo_id = ?, approved_plan_id = NULL, current_block_id = ?, phase = 'planning'`,
+          [todoId, blockId],
+        );
+      }
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async blockTaskContract(
+    request: TaskContractStoredBlockRequest,
+  ): Promise<TaskContractStoredState> {
+    assertTaskContractText(request.reason, 'Task contract block reason', 4 * 1024);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      this.assertNoActiveTaskContractBlock(contract);
+      const target = this.requireTaskContractDocumentByVersion(
+        request.contractId,
+        request.documentKind,
+        request.documentVersion,
+      );
+      this.assertCurrentTaskContractDocument(contract, target);
+      const now = new Date().toISOString();
+      const blockId = this.insertTaskContractAction({
+        id: randomUUID(),
+        contractId: request.contractId,
+        sequence: this.nextTaskContractActionSequence(request.contractId),
+        kind: 'block',
+        targetDocumentId: target.id,
+        relatedActionId: null,
+        details: {
+          reason: request.reason,
+          documentKind: request.documentKind,
+          documentVersion: request.documentVersion,
+          ...(request.differences ? { differences: request.differences } : {}),
+        },
+        createdAt: now,
+      });
+      this.updateTaskContract(
+        request,
+        `approved_plan_id = NULL, current_todo_id = NULL, current_block_id = ?, phase = ?`,
+        [blockId, contract.current_plan_id ? 'planning' : 'exploration'],
+      );
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  async resolveTaskContractBlock(
+    request: TaskContractStoredResolveBlockRequest,
+  ): Promise<TaskContractStoredState> {
+    assertTaskContractText(request.reason, 'Task contract block resolution reason', 4 * 1024);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      assertExpectedTaskContractRevision(contract, request.expectedRevision);
+      if (!contract.current_block_id || contract.current_block_id !== request.blockId) {
+        throw taskContractInvalidTarget('The active task contract block is stale');
+      }
+      const block = this.database
+        .prepare(
+          "SELECT * FROM task_contract_actions WHERE contract_id = ? AND id = ? AND kind = 'block'",
+        )
+        .get(request.contractId, request.blockId) as TaskContractActionRow | undefined;
+      if (!block) throw taskContractInvalidTarget('The active task contract block does not exist');
+      const now = new Date().toISOString();
+      this.insertTaskContractAction({
+        id: randomUUID(),
+        contractId: request.contractId,
+        sequence: this.nextTaskContractActionSequence(request.contractId),
+        kind: 'resolve-block',
+        targetDocumentId: block.target_document_id,
+        relatedActionId: block.id,
+        details: { reason: request.reason },
+        createdAt: now,
+      });
+      this.updateTaskContract(request, 'current_block_id = ?', [null]);
+      return this.requireTaskContractState(request.workspace, request.contractId);
+    });
+  }
+
+  private withImmediateTransaction<T>(action: () => T): T {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const result = action();
+      this.database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      try {
+        this.database.exec('ROLLBACK');
+      } catch {
+        // Preserve the mutation error if rollback itself fails.
+      }
+      throw error;
+    }
+  }
+
+  private getTaskContractRow(contractId: string): TaskContractRow | undefined {
+    return this.database.prepare('SELECT * FROM task_contracts WHERE id = ?').get(contractId) as
+      TaskContractRow | undefined;
+  }
+
+  private assertTaskContractWorkspace(
+    workspace: string,
+    contractId: string,
+  ): TaskContractRow | undefined {
+    const row = this.getTaskContractRow(contractId);
+    if (row && row.workspace !== workspace) throw taskContractTargetError(contractId);
+    return row;
+  }
+
+  private requireTaskContractForWrite(workspace: string, contractId: string): TaskContractRow {
+    const row = this.assertTaskContractWorkspace(workspace, contractId);
+    if (!row) throw taskContractInvalidTarget(`Unknown task contract: ${contractId}`);
+    return row;
+  }
+
+  private requireTaskContractState(workspace: string, contractId: string): TaskContractStoredState {
+    const row = this.requireTaskContractForWrite(workspace, contractId);
+    const currentBrief = this.requireTaskContractDocument(
+      contractId,
+      row.current_brief_id,
+      'brief',
+    );
+    const currentPlan = row.current_plan_id
+      ? this.requireTaskContractDocument(contractId, row.current_plan_id, 'plan')
+      : null;
+    const approvedPlan = row.approved_plan_id
+      ? this.requireTaskContractDocument(contractId, row.approved_plan_id, 'plan')
+      : null;
+    const currentTodo = row.current_todo_id
+      ? this.requireTaskContractDocument(contractId, row.current_todo_id, 'todo')
+      : null;
+    const activeBlock = row.current_block_id
+      ? this.getTaskContractAction(contractId, row.current_block_id)
+      : null;
+    if (row.current_block_id && !activeBlock) {
+      throw new TaskContractError('invalid-input', 'Task contract has a missing active block');
+    }
+    const approval = approvedPlan
+      ? (this.database
+          .prepare(
+            `SELECT * FROM task_contract_actions
+              WHERE contract_id = ? AND kind = 'approve-plan' AND target_document_id = ?
+              ORDER BY sequence DESC LIMIT 1`,
+          )
+          .get(contractId, approvedPlan.id) as TaskContractActionRow | undefined)
+      : undefined;
+    return {
+      contract: fromTaskContractRow(row),
+      currentBrief: currentBrief as TaskContractDocument<
+        import('../application/task-contract.js').TaskContractBrief
+      >,
+      currentPlan: currentPlan as TaskContractDocument<TaskContractPlan> | null,
+      approvedPlan: approvedPlan as TaskContractDocument<TaskContractPlan> | null,
+      currentTodo: currentTodo as TaskContractDocument<TaskContractTodo> | null,
+      activeBlock: activeBlock ? fromTaskContractActionRow(activeBlock) : null,
+      approval: approval ? fromTaskContractActionRow(approval) : null,
+    };
+  }
+
+  private getTaskContractDocumentRow(
+    contractId: string,
+    documentId: string | null,
+  ): TaskContractDocumentRow | undefined {
+    if (!documentId) return undefined;
+    return this.database
+      .prepare('SELECT * FROM task_contract_documents WHERE contract_id = ? AND id = ?')
+      .get(contractId, documentId) as TaskContractDocumentRow | undefined;
+  }
+
+  private requireTaskContractDocument(
+    contractId: string,
+    documentId: string | null,
+    kind: TaskContractDocumentKind,
+  ): TaskContractDocument {
+    const row = this.getTaskContractDocumentRow(contractId, documentId);
+    if (!row || row.kind !== kind) {
+      throw new TaskContractError('invalid-input', `Task contract pointer for ${kind} is invalid`);
+    }
+    return fromTaskContractDocumentRow(row);
+  }
+
+  private requireTaskContractDocumentByVersion(
+    contractId: string,
+    kind: TaskContractDocumentKind,
+    version: number,
+  ): TaskContractDocument {
+    const row = this.database
+      .prepare(
+        'SELECT * FROM task_contract_documents WHERE contract_id = ? AND kind = ? AND version = ?',
+      )
+      .get(contractId, kind, version) as TaskContractDocumentRow | undefined;
+    if (!row) throw taskContractInvalidTarget(`Unknown ${kind} document version ${version}`);
+    return fromTaskContractDocumentRow(row);
+  }
+
+  private getTaskContractAction(
+    contractId: string,
+    actionId: string,
+  ): TaskContractActionRow | undefined {
+    return this.database
+      .prepare('SELECT * FROM task_contract_actions WHERE contract_id = ? AND id = ?')
+      .get(contractId, actionId) as TaskContractActionRow | undefined;
+  }
+
+  private assertCurrentTaskContractDocument(
+    contract: TaskContractRow,
+    document: TaskContractDocument,
+  ): void {
+    const pointer =
+      document.kind === 'brief'
+        ? contract.current_brief_id
+        : document.kind === 'plan'
+          ? contract.current_plan_id
+          : contract.current_todo_id;
+    if (pointer !== document.id)
+      throw taskContractInvalidTarget('The target document is not current');
+  }
+
+  private assertNoActiveTaskContractBlock(contract: TaskContractRow): void {
+    if (contract.current_block_id) {
+      throw new TaskContractError('blocked', 'The task contract has an active block');
+    }
+  }
+
+  private latestTaskContractVersion(contractId: string, kind: TaskContractDocumentKind): number {
+    const row = this.database
+      .prepare(
+        'SELECT COALESCE(MAX(version), 0) AS version FROM task_contract_documents WHERE contract_id = ? AND kind = ?',
+      )
+      .get(contractId, kind) as { version: number };
+    return row.version;
+  }
+
+  private nextTaskContractActionSequence(contractId: string): number {
+    const row = this.database
+      .prepare(
+        'SELECT COALESCE(MAX(sequence), 0) AS sequence FROM task_contract_actions WHERE contract_id = ?',
+      )
+      .get(contractId) as { sequence: number };
+    return row.sequence + 1;
+  }
+
+  private insertTaskContractDocument(document: TaskContractDocument): void {
+    this.database
+      .prepare(
+        `INSERT INTO task_contract_documents
+          (id, contract_id, kind, version, source_document_id, body_json, summary, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        document.id,
+        document.contractId,
+        document.kind,
+        document.version,
+        document.sourceDocumentId,
+        JSON.stringify(document.body),
+        taskContractSummary(document),
+        document.createdAt,
+      );
+  }
+
+  private insertTaskContractAction(action: TaskContractAction): string {
+    this.database
+      .prepare(
+        `INSERT INTO task_contract_actions
+          (id, contract_id, sequence, kind, target_document_id, related_action_id, details_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        action.id,
+        action.contractId,
+        action.sequence,
+        action.kind,
+        action.targetDocumentId,
+        action.relatedActionId,
+        JSON.stringify(action.details),
+        action.createdAt,
+      );
+    return action.id;
+  }
+
+  private updateTaskContract(
+    request: { contractId: string; workspace: string; expectedRevision: number },
+    assignments: string,
+    values: unknown[],
+  ): void {
+    const result = this.database
+      .prepare(
+        `UPDATE task_contracts
+            SET ${assignments}, revision = revision + 1, updated_at = ?
+          WHERE id = ? AND workspace = ? AND revision = ?`,
+      )
+      .run(
+        ...values,
+        new Date().toISOString(),
+        request.contractId,
+        request.workspace,
+        request.expectedRevision,
+      );
+    if (result.changes !== 1) throw taskContractStale(request.contractId);
   }
 
   async createRun(run: WorkflowRun, artifacts: ArtifactReference[] = []): Promise<void> {
@@ -2364,6 +3054,45 @@ interface ReviewDecisionRow {
   created_at: string;
 }
 
+interface TaskContractRow {
+  id: string;
+  workspace: string;
+  contract_version: 1;
+  revision: number;
+  phase: TaskContract['phase'];
+  current_brief_id: string;
+  current_plan_id: string | null;
+  approved_plan_id: string | null;
+  current_todo_id: string | null;
+  current_block_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TaskContractDocumentRow {
+  id: string;
+  contract_id: string;
+  kind: TaskContractDocumentKind;
+  version: number;
+  source_document_id: string | null;
+  body_json: string;
+  summary: string;
+  created_at: string;
+}
+
+type TaskContractDocumentHeaderRow = Omit<TaskContractDocumentRow, 'body_json' | 'summary'>;
+
+interface TaskContractActionRow {
+  id: string;
+  contract_id: string;
+  sequence: number;
+  kind: TaskContractAction['kind'];
+  target_document_id: string;
+  related_action_id: string | null;
+  details_json: string;
+  created_at: string;
+}
+
 interface PreparationDraftRow {
   id: string;
   workspace: string;
@@ -2557,6 +3286,143 @@ interface ExecutionOwnerRow {
   owner_pid: number;
   owner_started_at: string;
   acquired_at: string;
+}
+
+function fromTaskContractRow(row: TaskContractRow): TaskContract {
+  return {
+    id: row.id,
+    kind: 'guided-task',
+    workspace: row.workspace,
+    contractVersion: row.contract_version,
+    revision: row.revision,
+    phase: row.phase,
+    currentBriefId: row.current_brief_id,
+    currentPlanId: row.current_plan_id,
+    approvedPlanId: row.approved_plan_id,
+    currentTodoId: row.current_todo_id,
+    currentBlockId: row.current_block_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function fromTaskContractDocumentHeaderRow(
+  row: TaskContractDocumentHeaderRow,
+): TaskContractDocumentHeader {
+  return {
+    id: row.id,
+    contractId: row.contract_id,
+    kind: row.kind,
+    version: row.version,
+    sourceDocumentId: row.source_document_id,
+    createdAt: row.created_at,
+  };
+}
+
+function fromTaskContractDocumentRow(row: TaskContractDocumentRow): TaskContractDocument {
+  let body: TaskContractDocument['body'];
+  try {
+    const parsed: unknown = JSON.parse(row.body_json);
+    body =
+      row.kind === 'brief'
+        ? parseTaskContractBrief(parsed)
+        : row.kind === 'plan'
+          ? parseTaskContractPlan(parsed)
+          : parseTaskContractTodo(parsed);
+  } catch (error) {
+    if (error instanceof TaskContractError) throw error;
+    throw new TaskContractError('invalid-input', `Stored ${row.kind} document is invalid`);
+  }
+  return { ...fromTaskContractDocumentHeaderRow(row), body };
+}
+
+function fromTaskContractActionRow(row: TaskContractActionRow): TaskContractAction {
+  let details: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(row.details_json);
+    if (!isRecord(parsed)) throw new Error('details must be an object');
+    details = parsed;
+  } catch {
+    throw new TaskContractError('invalid-input', 'Stored task contract action details are invalid');
+  }
+  return {
+    id: row.id,
+    contractId: row.contract_id,
+    sequence: row.sequence,
+    kind: row.kind,
+    targetDocumentId: row.target_document_id,
+    relatedActionId: row.related_action_id,
+    details,
+    createdAt: row.created_at,
+  };
+}
+
+function taskContractSummary(document: TaskContractDocument): string {
+  if (document.kind === 'brief') {
+    return (document.body as TaskContractBrief).objective.slice(0, 256);
+  }
+  if (document.kind === 'plan') {
+    return (document.body as TaskContractPlan).summary.slice(0, 256);
+  }
+  return (document.body as TaskContractTodo).phases[0]?.title.slice(0, 256) ?? 'TODO';
+}
+
+function assertContractId(value: string): void {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)) {
+    throw new TaskContractError(
+      'invalid-input',
+      'Task contract ID must be a canonical lowercase UUID v4',
+    );
+  }
+}
+
+function assertExpectedTaskContractRevision(
+  contract: TaskContractRow,
+  expectedRevision: number,
+): void {
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+    throw new TaskContractError('invalid-input', 'Task contract revision must be positive');
+  }
+  if (contract.revision !== expectedRevision) throw taskContractStale(contract.id);
+}
+
+function assertTaskContractText(value: string, label: string, maxBytes: number): void {
+  if (value.trim().length === 0 || Buffer.byteLength(value, 'utf8') > maxBytes) {
+    throw new TaskContractError(
+      'invalid-input',
+      `${label} must be non-empty and at most ${maxBytes} bytes`,
+    );
+  }
+}
+
+function validateTaskContractLimit(limit: number | undefined): number {
+  const value = limit ?? 20;
+  if (!Number.isInteger(value) || value < 1 || value > 50) {
+    throw new TaskContractError(
+      'invalid-input',
+      'Task contract page limit must be between 1 and 50',
+    );
+  }
+  return value;
+}
+
+function taskContractStale(contractId: string): TaskContractError {
+  return new TaskContractError('stale-revision', `Task contract ${contractId} revision is stale`);
+}
+
+function taskContractTargetError(contractId: string): TaskContractError {
+  return new TaskContractError(
+    'invalid-target',
+    `Task contract ${contractId} is not in this workspace`,
+  );
+}
+
+function taskContractInvalidTarget(message: string): TaskContractError {
+  return new TaskContractError('invalid-target', message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function toRunParams(run: WorkflowRun): Record<string, unknown> {
