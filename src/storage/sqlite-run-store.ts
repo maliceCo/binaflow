@@ -3305,12 +3305,13 @@ export class SqliteRunStore
     const result = this.database
       .prepare(
         `UPDATE guided_executions
-         SET revision = ?, stage = ?, progress_json = ?, updated_at = ?
+         SET revision = ?, stage = ?, active_block_json = ?, progress_json = ?, updated_at = ?
          WHERE run_id = ? AND revision = ?`,
       )
       .run(
         progress.revision,
         progress.stage,
+        progress.activeBlock ? canonicalizeJson(progress.activeBlock) : null,
         canonicalizeJson(progress),
         new Date().toISOString(),
         progress.runId,
