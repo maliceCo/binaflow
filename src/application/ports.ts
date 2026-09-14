@@ -34,6 +34,17 @@ import type {
   UpdatePreparationSynthesisRequest,
 } from './preparation.js';
 import type {
+  GuidedExecutionCheckpoint,
+  GuidedExecutionClaim,
+  GuidedExecutionCommitIntent,
+  GuidedExecutionCreateRequest,
+  GuidedExecutionDecisionRecord,
+  GuidedExecutionProgress,
+  WorkspaceCommandOptions,
+  WorkspaceCommandResult,
+  WorkspaceExecutionLease,
+} from './guided-execution.js';
+import type {
   TaskContractActionPage,
   TaskContractDocument,
   TaskContractDocumentPage,
@@ -50,6 +61,84 @@ import type {
   TaskContractStoredState,
   TaskContractStoredTodoRequest,
 } from './task-contract.js';
+
+export interface GuidedExecutionStore {
+  createGuidedExecution(request: GuidedExecutionCreateRequest): Promise<GuidedExecutionProgress>;
+  getGuidedExecution(runId: string): Promise<GuidedExecutionProgress | undefined>;
+  listGuidedExecutions(query?: {
+    contractId?: string;
+    workspace?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<{ items: GuidedExecutionProgress[]; nextCursor?: string }>;
+  claimGuidedExecution(
+    runId: string,
+    eligibleStatuses: readonly RunStatus[],
+  ): Promise<GuidedExecutionClaim | undefined>;
+  assertGuidedExecutionClaim(claim: GuidedExecutionClaim): Promise<void>;
+  saveGuidedCheckpoint(
+    checkpoint: GuidedExecutionCheckpoint,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress>;
+  saveGuidedDecision(
+    decision: GuidedExecutionDecisionRecord,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress>;
+  saveGuidedCommitIntent(
+    intent: GuidedExecutionCommitIntent,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress>;
+  completeGuidedPhase(
+    runId: string,
+    phaseId: string,
+    commitSha: string | null,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress>;
+  saveGuidedProgress(
+    progress: GuidedExecutionProgress,
+    expectedRevision: number,
+    claim: GuidedExecutionClaim,
+  ): Promise<void>;
+  releaseGuidedExecution(runId: string, claim: GuidedExecutionClaim): Promise<void>;
+}
+
+export interface GitWorkspace {
+  inspect(workspace: string): Promise<import('./guided-execution.js').GuidedExecutionGitState>;
+  preflight(workspace: string): Promise<import('./guided-execution.js').GuidedExecutionGitState>;
+  validatePaths(workspace: string, paths: readonly string[]): Promise<void>;
+  stagePaths(workspace: string, paths: readonly string[]): Promise<void>;
+  inspectStagedTree(workspace: string): Promise<{
+    tree: string;
+    fingerprint: import('./guided-execution.js').GuidedExecutionGitState;
+  }>;
+  commitPhase(workspace: string, intent: GuidedExecutionCommitIntent): Promise<string>;
+  inspectCommit(
+    workspace: string,
+    commitSha: string,
+  ): Promise<{
+    sha: string;
+    parent: string;
+    tree: string;
+    branch: string;
+    fingerprint: import('./guided-execution.js').GuidedExecutionGitState;
+  }>;
+  reconcileCommitIntent(
+    workspace: string,
+    intent: GuidedExecutionCommitIntent,
+  ): Promise<{ commitSha: string | null; noChanges: boolean }>;
+}
+
+export interface WorkspaceExecutionLock {
+  acquire(workspace: string): Promise<WorkspaceExecutionLease>;
+}
+
+export interface WorkspaceCommandRunner {
+  run(
+    command: string,
+    args: readonly string[],
+    options: WorkspaceCommandOptions,
+  ): Promise<WorkspaceCommandResult>;
+}
 
 export interface ApplicationTaskContractStore {
   createTaskContract(request: TaskContractStoredCreateRequest): Promise<TaskContractStoredState>;
