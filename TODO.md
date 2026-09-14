@@ -322,7 +322,7 @@ para el builder pertenece al handoff del hito 3.
   - **Verificacion:** `git status --short`; `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`. Si una pausa global de pruebas sigue vigente, pedir autorizacion antes de implementar; no omitir TDD para declarar exito.
   - **Commit Msg:** `docs: record guided task contract prerequisites` (solo registro propio; no commit vacio).
 
-- [ ] **Tarea 1.2: Definir y probar documentos y reglas puras**
+- [x] **Tarea 1.2: Definir y probar documentos y reglas puras**
   - **Archivo:** nuevo `src/application/task-contract.ts`; nuevo `test/task-contract.test.ts`.
   - **Funciones:** tipos TaskContract, TaskContractView, TaskContractBrief, TaskContractPlan, TaskContractTodo, TaskContractAction; parsers y helpers de validacion/readiness/transicion descritos en el contrato.
   - **Descripcion:** implementar exactamente schemas y limites, diferencia entre revision CAS y versiones de documentos, validacion de pertenencia de tareas al plan, y matriz de invalidacion. Solo funciones puras y tipos; sin engine, store, prompts ni enums futuros sin consumidor. Errores de contrato con codigos estables para invalid-input, stale-revision, invalid-target, blocked y incompatible-version, en este modulo si se requieren subclases Error.
@@ -423,4 +423,5 @@ cuenta propia. El orquestador actualiza el plan antes de autorizar continuacion.
 - Baseline verificado el 2026-09-14: `git status --short` muestra solo `?? TODO.md` (este plan); schema actual v11 y migracion 012 disponible.
 - Referencias leidas: `AGENTS.md`, `docs/web-workflow-vision.md`, `docs/binaflow_web_flow.drawio` y consumidores indicados.
 - Checks baseline: `pnpm run format:check`, `pnpm run lint`, `pnpm run typecheck`, `pnpm run test` (43 archivos, 340 pasados, 1 omitido) y `pnpm run build` correctos; `git diff --check` correcto.
-- Implementacion: tareas 1.2 en adelante pendientes.
+- Implementacion: tareas 1.3 en adelante pendientes; Tarea 1.2 completada con parsers Ajv, validacion de limites/IDs/rutas, readiness, transiciones e incompatibilidad estructural del TODO.
+- Tarea 1.2 verificada: `pnpm exec vitest run test/task-contract.test.ts` (6 pasados) y `pnpm run typecheck` correctos.
