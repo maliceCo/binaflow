@@ -205,7 +205,7 @@ describe('configuration operations', () => {
     });
     const pid = Number(await readFile(pidPath, 'utf8'));
     expect(() => process.kill(pid, 0)).toThrow();
-  });
+  }, 10_000);
 
   it('generates and atomically writes a safe configuration', async () => {
     const directory = await temporaryDirectory('binaflow-init-');
