@@ -58,7 +58,9 @@ brief/plan nuevo y aprobando el plan nuevo; no existe un boton generico para
 resolverlo.
 
 `ready` significa consistencia estructural y aprobacion vigente. No es permiso
-independiente para ejecutar y no se conecta a `ExecutionHost`.
+independiente para ejecutar y no se conecta a `ExecutionHost`. El handoff del
+Hito 3 consume esta revision y version de TODO mediante `previewStart`; consulta
+[ejecucion guiada](guided-execution.md) para los checkpoints, lease y recovery.
 
 ## Validacion y limites
 
@@ -104,5 +106,6 @@ este hito.
 ## Fuera de alcance
 
 No hay chat, LLM, internet, UI web, HTTP, Git, builder, progreso por tarea,
-tickets QA, handoff a runs ni autenticacion. La integracion con preparaciones y
-la autorizacion del handoff pertenecen al Hito 3 o posteriores.
+tickets QA, handoff a runs ni autenticacion. La integracion con preparaciones queda fuera de este flujo. La autorizacion
+del handoff y la ejecucion por fases estan documentadas en
+[ejecucion guiada](guided-execution.md).

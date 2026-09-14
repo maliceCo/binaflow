@@ -1,9 +1,9 @@
 # Binaflow web: objetivo e hitos
 
-Estado: los Hitos 1 y 2 estan implementados y verificados localmente. El Hito 2
-cubre el contrato persistido de tareas guiadas, sus documentos versionados,
-aprobaciones, bloqueos y la representacion Markdown en memoria; no inicia
-agentes ni crea runs. Los hitos restantes siguen siendo una ruta propuesta.
+Estado: los Hitos 1, 2 y 3 estan implementados y verificados localmente. El
+Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
+autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
+La web, autenticacion y despliegue remoto siguen siendo una ruta propuesta.
 La verificacion cubre el backend con SQLite, artifacts y agentes simulados; no
 cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
 continuidad para recuperar el proposito cuando falte contexto de la conversacion.
@@ -55,7 +55,7 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Ejecucion independiente de la interfaz | Cambiar de navegador sin detener ni duplicar trabajo; recuperar estado y cancelar explicitamente. Probar primero con un flujo existente y agente simulado.                                                |
 | 2. Contrato del nuevo flujo               | Implementado localmente: fases, planes, tareas, bloqueos y aprobaciones versionados y persistidos; TODO como representacion del contrato, no como unica fuente de verdad. Sin chat, handoff ni ejecucion. |
-| 3. Ejecucion por fases y Git              | Siguiente hito: progreso verificable, commits controlados y recuperacion sin repetir trabajo completado ni incluir cambios ajenos.                                                                        |
+| 3. Ejecucion por fases y Git              | Implementado localmente: progreso verificable, commits controlados y recuperacion sin repetir trabajo completado ni incluir cambios ajenos. Ver [ejecucion guiada](guided-execution.md).                  |
 | 4. Web personal y preparacion             | Acceso remoto autenticado, chat de exploracion, consulta de fuentes y plan con feedback y aprobacion.                                                                                                     |
 | 5. Revision de codigo                     | Diffs por archivo, comentarios, edicion manual y revision del parche sobre versiones concretas.                                                                                                           |
 | 6. QA y cierre                            | Tickets conversables, decisiones selectivas, QA_TODO autorizado, verificacion, revision adicional opcional y resumen final.                                                                               |
@@ -83,9 +83,8 @@ y resume explicito con un agente simulado. Siguen fuera de alcance el ciclo de
 vida tras una caida abrupta, control por fase, integracion Git, revision de codigo
 y las decisiones selectivas de QA.
 
-Siguiente paso: definir la autorizacion del handoff y la ejecucion por fases del
-**hito 3**, sin asumir que los Hitos 1-2 cubren web, autenticacion o despliegue
-remoto.
+Siguiente paso: definir la web y autenticacion sobre las garantias comprobadas
+del **hito 3**, sin asumir que los Hitos 1-3 cubren despliegue remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).
