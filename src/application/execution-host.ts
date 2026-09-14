@@ -6,6 +6,13 @@ import type {
   ApplicationRunListQuery,
 } from './ports.js';
 import type { RunWorkflowRequest } from './execution-operations.js';
+import type {
+  GuidedExecutionProgress,
+  GuidedExecutionService,
+  GuidedResumeRequest,
+  GuidedStartRequest,
+} from './guided-execution.js';
+import type { GuidedExecutionRunner } from './guided-execution-operations.js';
 import type { ApplicationService } from './service.js';
 import type { RunView } from './run-view.js';
 
@@ -19,8 +26,22 @@ export interface ExecutionStartResult {
   runId: string;
 }
 
+export interface HostedGuidedExecution {
+  readonly service: GuidedExecutionService;
+  readonly runner: GuidedExecutionRunner;
+}
+
 export interface ExecutionHostClient {
   start(request: ExecutionStartRequest): Promise<ExecutionStartResult>;
+  readonly taskExecutions?: {
+    previewStart: GuidedExecutionService['previewStart'];
+    previewResume: GuidedExecutionService['previewResume'];
+    get: GuidedExecutionService['get'];
+    list: GuidedExecutionService['list'];
+    start(request: GuidedStartRequest): Promise<GuidedExecutionProgress>;
+    resume(request: GuidedResumeRequest): Promise<GuidedExecutionProgress>;
+    cancelWaiting(runId: string, reason: string): Promise<GuidedExecutionProgress>;
+  };
   cancel(runId: string): Promise<void>;
   listRuns(query?: ApplicationRunListQuery): Promise<ApplicationRunListPage>;
   getRunView(runId: string): Promise<RunView>;
@@ -40,6 +61,7 @@ export interface CreateExecutionHostOptions {
     ApplicationService,
     'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents' | 'readArtifact'
   >;
+  guidedExecution?: HostedGuidedExecution;
   findRun(runId: string): Promise<WorkflowRun | undefined>;
   close(): void | Promise<void>;
 }
@@ -54,8 +76,20 @@ interface ActiveExecution {
   cancelPromise?: Promise<void>;
 }
 
+interface ActiveGuidedExecution {
+  readonly runId: string;
+  readonly request: GuidedStartRequest | GuidedResumeRequest;
+  readonly receipt: Deferred<GuidedExecutionProgress>;
+  readonly receiptPromise: Promise<GuidedExecutionProgress>;
+  readonly controller: AbortController;
+  readonly completion: Promise<void>;
+  readonly resolveCompletion: () => void;
+  cancelPromise?: Promise<void>;
+}
+
 export function createExecutionHost(options: CreateExecutionHostOptions): ExecutionHost {
   let activeExecution: ActiveExecution | undefined;
+  let activeGuidedExecution: ActiveGuidedExecution | undefined;
   let closePromise: Promise<void> | undefined;
   let closing = false;
   let internalFailure: unknown;
@@ -66,6 +100,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       assertCanStart();
       const captured = captureStartRequest(request);
       const current = activeExecution;
+      if (activeGuidedExecution) throw new Error('Execution host is already running a guided task');
       if (current) {
         if (sameStartRequest(current.request, captured)) return current.receiptPromise;
         if (current.request.requestId === captured.requestId) {
@@ -93,10 +128,75 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     }
   };
 
+  const startGuided = (request: GuidedStartRequest): Promise<GuidedExecutionProgress> => {
+    try {
+      assertCanStart();
+      const guided = requireGuidedExecution();
+      if (activeExecution) throw new Error('Execution host is already running a legacy workflow');
+      const current = activeGuidedExecution;
+      if (current) {
+        if (sameGuidedRequest(current.request, request)) return current.receiptPromise;
+        throw new Error(`Execution host is already running ${current.runId}`);
+      }
+      const active = createActiveGuided(request, `guided-${request.requestId}`);
+      activeGuidedExecution = active;
+      void executeGuided(active, guided, guided.service.start(request));
+      return active.receiptPromise;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
+  const resumeGuided = (request: GuidedResumeRequest): Promise<GuidedExecutionProgress> => {
+    try {
+      assertCanStart();
+      const guided = requireGuidedExecution();
+      if (activeExecution) throw new Error('Execution host is already running a legacy workflow');
+      const current = activeGuidedExecution;
+      if (current) {
+        if (sameGuidedRequest(current.request, request)) return current.receiptPromise;
+        throw new Error(`Execution host is already running ${current.runId}`);
+      }
+      const active = createActiveGuided(request, request.runId);
+      activeGuidedExecution = active;
+      void executeGuided(active, guided, guided.service.resume(request));
+      return active.receiptPromise;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
+  const cancelGuidedWaiting = (runId: string, reason: string): Promise<GuidedExecutionProgress> => {
+    try {
+      assertOpen();
+      const active = activeGuidedExecution;
+      if (active && active.runId === runId) {
+        active.controller.abort();
+        return active.completion.then(() => active.receiptPromise);
+      }
+      if (active) throw new Error(`Guided execution host owns ${active.runId}`);
+      return admitQuery(() => requireGuidedExecution().service.cancelWaiting(runId, reason));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
   const cancel = (runId: string): Promise<void> => {
     try {
       assertOpen();
       const active = activeExecution;
+      if (activeGuidedExecution && activeGuidedExecution.runId === runId) {
+        if (!activeGuidedExecution.cancelPromise) {
+          activeGuidedExecution.controller.abort();
+          activeGuidedExecution.cancelPromise = activeGuidedExecution.completion.then(
+            () => undefined,
+          );
+        }
+        return activeGuidedExecution.cancelPromise;
+      }
+      if (activeGuidedExecution) {
+        throw new Error(`Run ${runId} is not owned by this execution host`);
+      }
       if (active) {
         if (active.runId !== runId) {
           throw new Error(`Run ${runId} is not owned by this execution host`);
@@ -123,6 +223,21 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   const client: ExecutionHostClient = {
     start,
     cancel,
+    ...(options.guidedExecution
+      ? {
+          taskExecutions: {
+            previewStart: (request) =>
+              admitQuery(() => options.guidedExecution!.service.previewStart(request)),
+            previewResume: (runId) =>
+              admitQuery(() => options.guidedExecution!.service.previewResume(runId)),
+            get: (runId) => admitQuery(() => options.guidedExecution!.service.get(runId)),
+            list: (query) => admitQuery(() => options.guidedExecution!.service.list(query)),
+            start: startGuided,
+            resume: resumeGuided,
+            cancelWaiting: cancelGuidedWaiting,
+          },
+        }
+      : {}),
     listRuns: (query) => admitQuery(() => options.application.listRuns(query)),
     getRunView: (runId) => admitQuery(() => options.application.getRunView(runId)),
     listRunEvents: (runId, query) =>
@@ -187,6 +302,51 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     }
   }
 
+  function requireGuidedExecution(): HostedGuidedExecution {
+    if (!options.guidedExecution) throw new Error('Guided execution is not configured');
+    return options.guidedExecution;
+  }
+
+  function createActiveGuided(
+    request: GuidedStartRequest | GuidedResumeRequest,
+    runId: string,
+  ): ActiveGuidedExecution {
+    const receipt = deferred<GuidedExecutionProgress>();
+    const completion = deferred<void>();
+    return {
+      runId,
+      request,
+      receipt,
+      receiptPromise: receipt.promise,
+      controller: new AbortController(),
+      completion: completion.promise,
+      resolveCompletion: completion.resolve,
+    };
+  }
+
+  async function executeGuided(
+    active: ActiveGuidedExecution,
+    guided: HostedGuidedExecution,
+    operation: Promise<GuidedExecutionProgress>,
+  ): Promise<void> {
+    let admitted = false;
+    try {
+      const progress = await operation;
+      if (closing || active.controller.signal.aborted) {
+        throw new Error('Execution host is closed or the guided request was cancelled');
+      }
+      active.receipt.resolve(progress);
+      admitted = true;
+      await guided.runner.execute(progress.runId, active.controller.signal);
+    } catch (error) {
+      if (!admitted) active.receipt.reject(error);
+      else internalFailure = error;
+    } finally {
+      active.resolveCompletion();
+      if (activeGuidedExecution === active) activeGuidedExecution = undefined;
+    }
+  }
+
   async function cancelPersistedRun(runId: string): Promise<void> {
     const run = await options.findRun(runId);
     if (!run) throw new Error(`Run ${runId} does not exist`);
@@ -233,6 +393,11 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     if (active) {
       active.controller.abort();
       await active.completion;
+    }
+    const activeGuided = activeGuidedExecution;
+    if (activeGuided) {
+      activeGuided.controller.abort();
+      await activeGuided.completion;
     }
     await Promise.all([...admittedQueries]);
     await options.close();
@@ -316,6 +481,13 @@ function sameStartRequest(first: CapturedStartRequest, second: CapturedStartRequ
     first.workflowId === second.workflowId &&
     first.objective === second.objective
   );
+}
+
+function sameGuidedRequest(
+  first: GuidedStartRequest | GuidedResumeRequest,
+  second: GuidedStartRequest | GuidedResumeRequest,
+): boolean {
+  return JSON.stringify(first) === JSON.stringify(second);
 }
 
 function isHostedInput(value: unknown, objective: string): value is { objective: string } {

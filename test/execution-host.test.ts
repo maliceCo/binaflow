@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RunWorkflowRequest } from '../src/application/execution-operations.js';
+import type {
+  GuidedExecutionProgress,
+  GuidedExecutionService,
+} from '../src/application/guided-execution.js';
 import type { WorkflowRun } from '../src/core/run.js';
 import type { ApplicationService } from '../src/application/service.js';
 import { createExecutionHost } from '../src/application/execution-host.js';
@@ -375,6 +379,48 @@ describe('execution host lifecycle', () => {
     operation.reject(new Error('sqlite write failed'));
 
     await expect(host.close()).rejects.toThrow('sqlite write failed');
+    expect(closeContext).toHaveBeenCalledOnce();
+  });
+
+  it('admits guided execution and keeps its coordinator under host ownership', async () => {
+    const coordinator = deferred<GuidedExecutionProgress>();
+    const progress: GuidedExecutionProgress = {
+      runId: 'guided-123e4567-e89b-42d3-a456-426614174000',
+      contractId: 'contract-1',
+      revision: 1,
+      stage: 'execution',
+      status: 'pending',
+      phases: [],
+      activeBlock: null,
+      nextAction: 'execute',
+    };
+    const service = {
+      start: vi.fn<GuidedExecutionService['start']>(async () => progress),
+    } as unknown as GuidedExecutionService;
+    const runner = {
+      execute: vi.fn(async () => coordinator.promise),
+    };
+    const closeContext = vi.fn();
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn()),
+      guidedExecution: { service, runner },
+      findRun: async () => undefined,
+      close: closeContext,
+    });
+    const request = {
+      requestId: '123e4567-e89b-42d3-a456-426614174000',
+      contractId: 'contract-1',
+      expectedRevision: 1,
+      todoVersion: 1,
+      previewDigest: 'digest',
+    };
+
+    await expect(host.client.taskExecutions!.start(request)).resolves.toEqual(progress);
+    expect(runner.execute).toHaveBeenCalledWith(progress.runId, expect.any(AbortSignal));
+    const closing = host.close();
+    expect(closeContext).not.toHaveBeenCalled();
+    coordinator.resolve({ ...progress, status: 'waiting', nextAction: 'review-changes' });
+    await closing;
     expect(closeContext).toHaveBeenCalledOnce();
   });
 

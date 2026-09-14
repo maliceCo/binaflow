@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
+import { createWorkspaceCommandRunner } from '../process/workspace-process.js';
 import { FileWorkspaceExecutionLock } from '../workspace/execution-lock.js';
 import { LocalGitWorkspace } from '../workspace/git-workspace.js';
 import { loadConfig, loadDataDir, loadQaHistory } from '../config.js';
@@ -18,7 +19,12 @@ import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 import { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
-import { createGuidedExecutionService } from './guided-execution-operations.js';
+import { GuidedExecutionCoordinator } from './guided-execution-coordinator.js';
+import {
+  createGuidedExecutionRunner,
+  createGuidedExecutionService,
+  type GuidedExecutionRunner,
+} from './guided-execution-operations.js';
 import { discoverAgentModels } from './config-operations.js';
 import {
   createApplicationService,
@@ -62,6 +68,7 @@ export async function openExecutionHost(
   try {
     return createExecutionHost({
       application: resources.application,
+      guidedExecution: resources.guidedExecution,
       findRun: resources.findRun,
       close: resources.close,
     });
@@ -89,6 +96,7 @@ export async function openApplicationContext(
 
 interface ApplicationResources {
   readonly application: ApplicationService;
+  readonly guidedExecution: import('./execution-host.js').HostedGuidedExecution;
   readonly findRun: (runId: string) => Promise<WorkflowRun | undefined>;
   close(): void;
 }
@@ -131,6 +139,14 @@ async function openApplicationResources(
   const workspace = realpathSync(cwd);
   const guidedGit = new LocalGitWorkspace();
   const guidedLock = new FileWorkspaceExecutionLock();
+  const guidedCoordinator = new GuidedExecutionCoordinator(
+    runtime,
+    store,
+    store,
+    artifacts,
+    guidedGit,
+    createWorkspaceCommandRunner(),
+  );
   const guidedExecution = createGuidedExecutionService({
     taskContracts: store,
     executions: store,
@@ -140,6 +156,19 @@ async function openApplicationResources(
     workspace,
     profiles: config.profiles,
   });
+  const guidedExecutionRunner: GuidedExecutionRunner = createGuidedExecutionRunner(
+    {
+      taskContracts: store,
+      executions: store,
+      artifacts,
+      git: guidedGit,
+      lock: guidedLock,
+      workspace,
+      profiles: config.profiles,
+      runStore: store,
+    },
+    guidedCoordinator,
+  );
   const application = createApplicationService({
     config,
     store,
@@ -171,6 +200,7 @@ async function openApplicationResources(
   });
   return {
     application,
+    guidedExecution: { service: guidedExecution, runner: guidedExecutionRunner },
     findRun: (runId) => store.getRun(runId),
     close: () => store.close(),
   };

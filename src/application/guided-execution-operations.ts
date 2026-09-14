@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { AgentProfile } from '../core/agent-profile.js';
-import type { ArtifactReference } from '../core/run.js';
+import type { ArtifactReference, WorkflowRun } from '../core/run.js';
 import { renderTaskContractTodo } from './task-contract-render.js';
 import { getTaskContractReadiness } from './task-contract.js';
 import type {
   ApplicationPreparationArtifactStore,
+  ApplicationRunStore,
   ApplicationTaskContractStore,
   GitWorkspace,
   GuidedExecutionStore,
@@ -27,6 +28,11 @@ import {
   type GuidedStartRequest,
 } from './guided-execution.js';
 import { GUIDED_TASK_BUILD_VERSION } from '../workflows/guided-task-build.js';
+import type { GuidedExecutionCoordinator } from './guided-execution-coordinator.js';
+
+export interface GuidedExecutionRunner {
+  execute(runId: string, signal?: AbortSignal): Promise<GuidedExecutionProgress>;
+}
 
 export interface GuidedExecutionOperationsContext {
   readonly taskContracts: ApplicationTaskContractStore;
@@ -38,6 +44,48 @@ export interface GuidedExecutionOperationsContext {
   readonly lock: WorkspaceExecutionLock;
   readonly workspace: string;
   readonly profiles: Record<string, AgentProfile>;
+}
+
+export function createGuidedExecutionRunner(
+  context: GuidedExecutionOperationsContext & {
+    runStore: Pick<ApplicationRunStore, 'getRun' | 'getArtifacts'>;
+  },
+  coordinator: GuidedExecutionCoordinator,
+): GuidedExecutionRunner {
+  return {
+    execute: async (runId, signal) => {
+      const lease = await context.lock.acquire(context.workspace);
+      try {
+        const progress = await requireExecution(context, runId);
+        if (progress.status === 'completed' || progress.status === 'cancelled') return progress;
+        const run = await context.runStore.getRun(runId);
+        if (!run) throw new Error(`Unknown run: ${runId}`);
+        const claim = await context.executions.claimGuidedExecution(runId, ['pending', 'running']);
+        if (!claim) throw new Error(`Guided execution ${runId} is already owned or not executable`);
+        try {
+          const snapshotReference = (await context.runStore.getArtifacts(runId)).find(
+            (artifact) =>
+              artifact.stepId === 'execution' && artifact.name === 'execution.SNAPSHOT.json',
+          );
+          if (!snapshotReference) throw new Error(`Guided execution ${runId} snapshot is missing`);
+          const snapshot = JSON.parse(
+            await context.artifacts.read(snapshotReference),
+          ) as GuidedExecutionSnapshot;
+          return await coordinator.execute({
+            run,
+            snapshot,
+            claim,
+            profiles: context.profiles,
+            ...(signal ? { signal } : {}),
+          });
+        } finally {
+          await context.executions.releaseGuidedExecution(runId, claim);
+        }
+      } finally {
+        await lease.release();
+      }
+    },
+  };
 }
 
 export function createGuidedExecutionQueries(
