@@ -156,6 +156,7 @@ function toView(
     state;
   return {
     contract,
+    ...(state.execution ? { execution: state.execution } : {}),
     readiness: getTaskContractReadiness({
       brief: { id: currentBrief.id, version: currentBrief.version },
       plan: currentPlan

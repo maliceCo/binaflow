@@ -58,6 +58,15 @@ export interface GuidedGitChange {
   contentHash: string | null;
 }
 
+export interface GuidedCommitInspection {
+  sha: string;
+  parent: string;
+  tree: string;
+  branch: string;
+  trailer?: string;
+  fingerprint: GuidedExecutionGitState;
+}
+
 export interface GuidedExecutionProfile extends AgentProfileSnapshot {
   name: string;
 }
@@ -182,12 +191,12 @@ export interface GuidedExecutionSnapshot {
 }
 
 export interface GuidedExecutionCreateRequest {
-  runId: string;
   requestId: string;
   snapshot: GuidedExecutionSnapshot;
   snapshotArtifact: ArtifactReference;
   todoArtifact: ArtifactReference;
   inputArtifact: ArtifactReference;
+  authorizationDigest?: string;
 }
 
 export interface GuidedExecutionClaim {
@@ -245,6 +254,8 @@ export interface WorkspaceCommandResult {
   truncated: boolean;
   timedOut: boolean;
   aborted: boolean;
+  ok: boolean;
+  error?: string;
 }
 
 export interface WorkspaceCommandOptions {

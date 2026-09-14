@@ -40,6 +40,7 @@ import type {
   GuidedExecutionCreateRequest,
   GuidedExecutionDecisionRecord,
   GuidedExecutionProgress,
+  GuidedCommitInspection,
   WorkspaceCommandOptions,
   WorkspaceCommandResult,
   WorkspaceExecutionLease,
@@ -112,16 +113,7 @@ export interface GitWorkspace {
     fingerprint: import('./guided-execution.js').GuidedExecutionGitState;
   }>;
   commitPhase(workspace: string, intent: GuidedExecutionCommitIntent): Promise<string>;
-  inspectCommit(
-    workspace: string,
-    commitSha: string,
-  ): Promise<{
-    sha: string;
-    parent: string;
-    tree: string;
-    branch: string;
-    fingerprint: import('./guided-execution.js').GuidedExecutionGitState;
-  }>;
+  inspectCommit(workspace: string, commitSha: string): Promise<GuidedCommitInspection>;
   reconcileCommitIntent(
     workspace: string,
     intent: GuidedExecutionCommitIntent,

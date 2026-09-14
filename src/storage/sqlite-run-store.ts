@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { assertRunTransition, assertStepTransition } from '../core/state-machine.js';
 import type { ArtifactReference, RunStatus, StepRun, WorkflowRun } from '../core/run.js';
 import type { QaDefect, QaDefectEvent, QaOccurrence, QaSearchResult } from '../core/qa-history.js';
@@ -82,7 +82,17 @@ import {
 import type {
   ApplicationPreparationStore,
   ApplicationTaskContractStore,
+  GuidedExecutionStore,
 } from '../application/ports.js';
+import {
+  canonicalizeJson,
+  type GuidedExecutionCheckpoint,
+  type GuidedExecutionClaim,
+  type GuidedExecutionCommitIntent,
+  type GuidedExecutionCreateRequest,
+  type GuidedExecutionDecisionRecord,
+  type GuidedExecutionProgress,
+} from '../application/guided-execution.js';
 import type { ExecutionClaim } from '../core/ports.js';
 import type { NormalizedEvent } from '../core/events.js';
 import { applyMigrations } from './migrations/index.js';
@@ -103,7 +113,11 @@ import {
 const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
 
 export class SqliteRunStore
-  implements RunStore, ApplicationPreparationStore, ApplicationTaskContractStore
+  implements
+    RunStore,
+    ApplicationPreparationStore,
+    ApplicationTaskContractStore,
+    GuidedExecutionStore
 {
   private readonly database: Database.Database;
   private readonly ownerId = randomUUID();
@@ -126,6 +140,327 @@ export class SqliteRunStore
     this.executionClaims.clear();
     this.preparationClaims.clear();
     this.database.close();
+  }
+
+  async createGuidedExecution(
+    request: GuidedExecutionCreateRequest,
+  ): Promise<GuidedExecutionProgress> {
+    const snapshot = request.snapshot;
+    const existingByRequest = this.database
+      .prepare(
+        'SELECT run_id, contract_id, authorization_digest FROM guided_executions WHERE request_id = ?',
+      )
+      .get(request.requestId) as
+      { run_id: string; contract_id: string; authorization_digest: string } | undefined;
+    const digest =
+      request.authorizationDigest ??
+      createHash('sha256').update(canonicalizeJson(snapshot)).digest('hex');
+    if (existingByRequest) {
+      if (
+        existingByRequest.contract_id !== snapshot.contractId ||
+        existingByRequest.authorization_digest !== digest
+      ) {
+        throw new TaskContractError(
+          'invalid-input',
+          'Guided execution request is already used with different content',
+        );
+      }
+      return this.requireGuidedProgress(existingByRequest.run_id);
+    }
+    const existingByContract = this.database
+      .prepare('SELECT run_id FROM guided_executions WHERE contract_id = ?')
+      .get(snapshot.contractId) as { run_id: string } | undefined;
+    if (existingByContract) {
+      throw new TaskContractError(
+        'blocked',
+        'Task contract has already been handed off for execution',
+      );
+    }
+
+    const runId = `guided-${request.requestId}`;
+    return this.withImmediateTransaction(() => {
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          `INSERT INTO runs (id, workflow_id, workflow_version, objective, status, created_at, updated_at)
+           VALUES (?, 'guided-task-build', ?, ?, 'pending', ?, ?)`,
+        )
+        .run(runId, snapshot.workflowVersion, snapshot.objective, now, now);
+      const phases = snapshot.todo.body.phases.map((phase, phaseIndex) => ({
+        id: phase.id,
+        ordinal: phaseIndex + 1,
+        title: phase.title,
+        status: 'pending' as const,
+        tasks: phase.tasks.map((task, taskIndex) => ({
+          id: task.id,
+          phaseId: phase.id,
+          ordinal: taskIndex + 1,
+          status: 'pending' as const,
+          attempt: 1,
+        })),
+      }));
+      const progress: GuidedExecutionProgress = {
+        runId,
+        contractId: snapshot.contractId,
+        revision: 1,
+        stage: 'execution',
+        status: 'pending',
+        phases,
+        activeBlock: null,
+        nextAction: 'execute',
+      };
+      for (const artifact of [
+        request.snapshotArtifact,
+        request.todoArtifact,
+        request.inputArtifact,
+      ]) {
+        if (artifact.runId !== runId) {
+          throw new TaskContractError(
+            'invalid-input',
+            `Guided execution artifact is not linked to run ${runId}`,
+          );
+        }
+        const stored = this.database
+          .prepare('SELECT run_id FROM artifacts WHERE id = ?')
+          .get(artifact.id) as { run_id: string } | undefined;
+        if (stored && stored.run_id !== runId) {
+          throw new TaskContractError(
+            'invalid-input',
+            `Guided execution artifact is not linked to run ${runId}`,
+          );
+        }
+        if (!stored) this.insertArtifact(artifact);
+      }
+      this.database
+        .prepare(
+          `INSERT INTO guided_executions
+           (run_id, contract_id, request_id, workspace, coordinator_version, revision,
+            brief_id, brief_version, plan_id, plan_version, todo_id, todo_version, approval_id,
+            authorization_digest, authorization_json, profile_json, snapshot_artifact_id,
+            todo_artifact_id, input_artifact_id, initial_git_json, stage, progress_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'execution', ?, ?, ?)`,
+        )
+        .run(
+          runId,
+          snapshot.contractId,
+          request.requestId,
+          snapshot.workspace,
+          snapshot.coordinatorVersion,
+          1,
+          snapshot.brief.id,
+          snapshot.brief.version,
+          snapshot.plan.id,
+          snapshot.plan.version,
+          snapshot.todo.id,
+          snapshot.todo.version,
+          snapshot.approval.id,
+          digest,
+          canonicalizeJson(snapshot),
+          canonicalizeJson(snapshot.profile),
+          request.snapshotArtifact.id,
+          request.todoArtifact.id,
+          request.inputArtifact.id,
+          canonicalizeJson(snapshot.git),
+          canonicalizeJson(progress),
+          now,
+          now,
+        );
+      for (const phase of phases) {
+        this.database
+          .prepare(
+            `INSERT INTO guided_execution_phases (run_id, phase_id, ordinal, title, status)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(runId, phase.id, phase.ordinal, phase.title, phase.status);
+        for (const task of phase.tasks) {
+          this.database
+            .prepare(
+              `INSERT INTO guided_execution_tasks (run_id, task_id, phase_id, ordinal, title, status, attempt)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              runId,
+              task.id,
+              task.phaseId,
+              task.ordinal,
+              snapshot.todo.body.phases[phase.ordinal - 1]!.tasks[task.ordinal - 1]!.id,
+              task.status,
+              task.attempt,
+            );
+        }
+      }
+      return progress;
+    });
+  }
+
+  async getGuidedExecution(runId: string): Promise<GuidedExecutionProgress | undefined> {
+    const row = this.database
+      .prepare('SELECT progress_json FROM guided_executions WHERE run_id = ?')
+      .get(runId) as { progress_json: string } | undefined;
+    return row ? (JSON.parse(row.progress_json) as GuidedExecutionProgress) : undefined;
+  }
+
+  async listGuidedExecutions(
+    query: { contractId?: string; workspace?: string; limit?: number; cursor?: string } = {},
+  ): Promise<{ items: GuidedExecutionProgress[]; nextCursor?: string }> {
+    const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+    const rows = this.database
+      .prepare(
+        `SELECT progress_json, run_id FROM guided_executions
+         WHERE (? IS NULL OR contract_id = ?) AND (? IS NULL OR workspace = ?) AND (? IS NULL OR run_id > ?)
+         ORDER BY run_id LIMIT ?`,
+      )
+      .all(
+        query.contractId ?? null,
+        query.contractId ?? null,
+        query.workspace ?? null,
+        query.workspace ?? null,
+        query.cursor ?? null,
+        query.cursor ?? null,
+        limit + 1,
+      ) as Array<{ progress_json: string; run_id: string }>;
+    const page = rows.slice(0, limit);
+    return {
+      items: page.map((row) => JSON.parse(row.progress_json) as GuidedExecutionProgress),
+      ...(rows.length > limit ? { nextCursor: page[page.length - 1]!.run_id } : {}),
+    };
+  }
+
+  async claimGuidedExecution(
+    runId: string,
+    eligibleStatuses: readonly RunStatus[],
+  ): Promise<GuidedExecutionClaim | undefined> {
+    return this.withImmediateTransaction(() => {
+      const run = this.database.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
+        { status: RunStatus } | undefined;
+      if (!run || !eligibleStatuses.includes(run.status)) return undefined;
+      this.acquireExecutionOwner(runId);
+      const progress = this.requireGuidedProgress(runId);
+      const claim = this.createExecutionClaim(runId);
+      return { ...claim, revision: progress.revision };
+    });
+  }
+
+  async assertGuidedExecutionClaim(claim: GuidedExecutionClaim): Promise<void> {
+    this.assertCurrentExecutionOwner(claim.runId);
+    if (this.executionClaims.get(claim.runId) !== claim.token) {
+      throw new RunExecutionOwnedError(claim.runId);
+    }
+  }
+
+  async saveGuidedCheckpoint(
+    checkpoint: GuidedExecutionCheckpoint,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress> {
+    return this.withImmediateTransaction(() => {
+      this.assertGuidedClaimInTransaction(claim);
+      const progress = this.requireGuidedProgress(checkpoint.runId);
+      const next = { ...progress, revision: progress.revision + 1 };
+      this.database
+        .prepare(
+          'UPDATE guided_executions SET revision = ?, last_checkpoint_json = ?, progress_json = ?, updated_at = ? WHERE run_id = ? AND revision = ?',
+        )
+        .run(
+          next.revision,
+          canonicalizeJson(checkpoint),
+          canonicalizeJson(next),
+          new Date().toISOString(),
+          checkpoint.runId,
+          progress.revision,
+        );
+      this.updateCheckpointRows(checkpoint);
+      return next;
+    });
+  }
+
+  async saveGuidedDecision(
+    decision: GuidedExecutionDecisionRecord,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress> {
+    return this.withImmediateTransaction(() => {
+      this.assertGuidedClaimInTransaction(claim);
+      const progress = this.requireGuidedProgress(decision.runId);
+      const next = { ...progress, revision: progress.revision + 1 };
+      this.database
+        .prepare(
+          'INSERT INTO guided_execution_decisions (id, run_id, sequence, revision, decision, reason, fingerprint, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          decision.id,
+          decision.runId,
+          decision.sequence,
+          decision.revision,
+          decision.decision,
+          decision.reason,
+          decision.fingerprint,
+          decision.createdAt,
+        );
+      this.updateGuidedProgress(next, progress.revision);
+      return next;
+    });
+  }
+
+  async saveGuidedCommitIntent(
+    intent: GuidedExecutionCommitIntent,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress> {
+    return this.withImmediateTransaction(() => {
+      this.assertGuidedClaimInTransaction(claim);
+      const progress = this.requireGuidedProgress(intent.runId);
+      const next = { ...progress, revision: progress.revision + 1 };
+      this.database
+        .prepare(
+          'UPDATE guided_execution_phases SET commit_intent_json = ?, status = ? WHERE run_id = ? AND phase_id = ?',
+        )
+        .run(canonicalizeJson(intent), 'running', intent.runId, intent.phaseId);
+      this.updateGuidedProgress(next, progress.revision);
+      return next;
+    });
+  }
+
+  async completeGuidedPhase(
+    runId: string,
+    phaseId: string,
+    commitSha: string | null,
+    claim: GuidedExecutionClaim,
+  ): Promise<GuidedExecutionProgress> {
+    return this.withImmediateTransaction(() => {
+      this.assertGuidedClaimInTransaction(claim);
+      const progress = this.requireGuidedProgress(runId);
+      const phases = progress.phases.map((phase) =>
+        phase.id === phaseId
+          ? {
+              ...phase,
+              status: 'completed' as const,
+              ...(commitSha ? { commitSha } : { noChanges: true }),
+            }
+          : phase,
+      );
+      const next = { ...progress, phases, revision: progress.revision + 1 };
+      this.database
+        .prepare(
+          'UPDATE guided_execution_phases SET status = ?, commit_sha = ?, no_changes = ? WHERE run_id = ? AND phase_id = ?',
+        )
+        .run('completed', commitSha, commitSha ? 0 : 1, runId, phaseId);
+      this.updateGuidedProgress(next, progress.revision);
+      return next;
+    });
+  }
+
+  async saveGuidedProgress(
+    progress: GuidedExecutionProgress,
+    expectedRevision: number,
+    claim: GuidedExecutionClaim,
+  ): Promise<void> {
+    this.withImmediateTransaction(() => {
+      this.assertGuidedClaimInTransaction(claim);
+      this.updateGuidedProgress(progress, expectedRevision);
+    });
+  }
+
+  async releaseGuidedExecution(runId: string, claim: GuidedExecutionClaim): Promise<void> {
+    await this.assertGuidedExecutionClaim(claim);
+    await this.releaseExecution(runId);
   }
 
   async createTaskContract(
@@ -638,8 +973,12 @@ export class SqliteRunStore
           )
           .get(contractId, approvedPlan.id) as TaskContractActionRow | undefined)
       : undefined;
+    const execution = this.database
+      .prepare('SELECT run_id FROM guided_executions WHERE contract_id = ?')
+      .get(contractId) as { run_id: string } | undefined;
     return {
       contract: fromTaskContractRow(row),
+      ...(execution ? { execution: { runId: execution.run_id } } : {}),
       currentBrief: currentBrief as TaskContractDocument<
         import('../application/task-contract.js').TaskContractBrief
       >,
@@ -778,6 +1117,15 @@ export class SqliteRunStore
     assignments: string,
     values: unknown[],
   ): void {
+    const execution = this.database
+      .prepare('SELECT run_id FROM guided_executions WHERE contract_id = ?')
+      .get(request.contractId) as { run_id: string } | undefined;
+    if (execution) {
+      throw new TaskContractError(
+        'blocked',
+        `Task contract is already linked to guided execution ${execution.run_id}`,
+      );
+    }
     const result = this.database
       .prepare(
         `UPDATE task_contracts
@@ -2928,6 +3276,106 @@ export class SqliteRunStore
           externalSessionId: stepRun.result?.sessionId ?? null,
           startedAt: stepRun.startedAt ?? stepRun.finishedAt ?? new Date().toISOString(),
         });
+    }
+  }
+
+  private requireGuidedProgress(runId: string): GuidedExecutionProgress {
+    const row = this.database
+      .prepare('SELECT progress_json FROM guided_executions WHERE run_id = ?')
+      .get(runId) as { progress_json: string } | undefined;
+    if (!row) throw new TaskContractError('invalid-target', `Unknown guided execution: ${runId}`);
+    return JSON.parse(row.progress_json) as GuidedExecutionProgress;
+  }
+
+  private assertGuidedClaimInTransaction(claim: GuidedExecutionClaim): void {
+    this.assertCurrentExecutionOwner(claim.runId);
+    if (this.executionClaims.get(claim.runId) !== claim.token) {
+      throw new RunExecutionOwnedError(claim.runId);
+    }
+  }
+
+  private updateGuidedProgress(progress: GuidedExecutionProgress, expectedRevision: number): void {
+    const current = this.requireGuidedProgress(progress.runId);
+    if (current.revision !== expectedRevision) {
+      throw new TaskContractError(
+        'stale-revision',
+        `Guided execution revision is stale: ${progress.runId}`,
+      );
+    }
+    const result = this.database
+      .prepare(
+        `UPDATE guided_executions
+         SET revision = ?, stage = ?, progress_json = ?, updated_at = ?
+         WHERE run_id = ? AND revision = ?`,
+      )
+      .run(
+        progress.revision,
+        progress.stage,
+        canonicalizeJson(progress),
+        new Date().toISOString(),
+        progress.runId,
+        expectedRevision,
+      );
+    if (result.changes !== 1)
+      throw new TaskContractError('stale-revision', 'Guided execution changed concurrently');
+    for (const phase of progress.phases) {
+      this.database
+        .prepare(
+          `UPDATE guided_execution_phases
+           SET status = ?, commit_sha = ?, no_changes = ?
+           WHERE run_id = ? AND phase_id = ?`,
+        )
+        .run(
+          phase.status,
+          phase.commitSha ?? null,
+          phase.noChanges ? 1 : 0,
+          progress.runId,
+          phase.id,
+        );
+      for (const task of phase.tasks) {
+        this.database
+          .prepare(
+            `UPDATE guided_execution_tasks
+             SET status = ?, attempt = ?, agent_step_id = ?, result_artifact_id = ?, verification_artifact_id = ?
+             WHERE run_id = ? AND task_id = ?`,
+          )
+          .run(
+            task.status,
+            task.attempt,
+            task.agentStepId ?? null,
+            task.resultArtifact?.id ?? null,
+            task.verificationArtifact?.id ?? null,
+            progress.runId,
+            task.id,
+          );
+      }
+    }
+    const run = this.database
+      .prepare('SELECT status FROM runs WHERE id = ?')
+      .get(progress.runId) as { status: RunStatus } | undefined;
+    if (run && run.status !== progress.status) {
+      const runUpdate = this.database
+        .prepare('UPDATE runs SET status = ?, updated_at = ? WHERE id = ? AND status = ?')
+        .run(progress.status, new Date().toISOString(), progress.runId, run.status);
+      if (runUpdate.changes !== 1)
+        throw new RunStatusConflictError(progress.runId, run.status, progress.status);
+    }
+  }
+
+  private updateCheckpointRows(checkpoint: GuidedExecutionCheckpoint): void {
+    const serialized = canonicalizeJson(checkpoint);
+    if (checkpoint.taskId) {
+      this.database
+        .prepare(
+          'UPDATE guided_execution_tasks SET checkpoint_json = ? WHERE run_id = ? AND task_id = ?',
+        )
+        .run(serialized, checkpoint.runId, checkpoint.taskId);
+    } else {
+      this.database
+        .prepare(
+          'UPDATE guided_execution_phases SET checkpoint_json = ? WHERE run_id = ? AND phase_id = ?',
+        )
+        .run(serialized, checkpoint.runId, checkpoint.phaseId);
     }
   }
 

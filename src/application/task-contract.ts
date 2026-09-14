@@ -114,6 +114,7 @@ export interface TaskContractDocument<
 export interface TaskContractView {
   contract: TaskContract;
   readiness: TaskContractReadiness;
+  execution?: { runId: string };
   currentBrief: TaskContractDocumentHeader;
   currentPlan: TaskContractDocumentHeader | null;
   approvedPlan: TaskContractDocumentHeader | null;
@@ -194,6 +195,7 @@ export interface TaskContractTodoMarkdown {
 
 export interface TaskContractStoredState {
   contract: TaskContract;
+  execution?: { runId: string };
   currentBrief: TaskContractDocument<TaskContractBrief>;
   currentPlan: TaskContractDocument<TaskContractPlan> | null;
   approvedPlan: TaskContractDocument<TaskContractPlan> | null;
