@@ -130,6 +130,7 @@ export function createWebServer(options: WebServerOptions): WebServer {
           method,
           path,
           body,
+          query: new URL(request.url ?? '/', options.config.origin).searchParams,
           ...(request.socket.remoteAddress ? { remoteAddress: request.socket.remoteAddress } : {}),
         },
         options.api ?? {},

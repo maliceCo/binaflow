@@ -14,8 +14,11 @@ import {
 import {
   parseLauncherSettings,
   toWebLauncherSettingsDto,
+  toWebProjectSummaryDto,
   type LauncherSettings,
+  type ProjectCatalogEntry,
 } from './launcher-contracts.js';
+import type { ProjectDirectoryListing } from './project-catalog.js';
 import { toWebOperationDto, toWebTaskDto } from './dto.js';
 
 export interface WebSettingsCapabilities {
@@ -31,6 +34,21 @@ export interface WebSettingsCapabilities {
 
 export interface WebApiCapabilities {
   readonly settings?: WebSettingsCapabilities;
+  readonly projectCatalog?: {
+    getRoots: () => Array<{ id: string; label: string }>;
+    listProjects: () => Promise<ProjectCatalogEntry[]>;
+    listDirectory: (
+      rootId: string,
+      segments: string[],
+      offset: number,
+      limit: number,
+    ) => Promise<ProjectDirectoryListing>;
+    register: (
+      rootId: string,
+      segments: string[],
+      projectId?: string,
+    ) => Promise<ProjectCatalogEntry>;
+  };
   readonly taskContracts?: Pick<TaskContractService, 'list' | 'get' | 'create'>;
   readonly guidedPreparation?: Pick<GuidedPreparationService, 'execute'>;
   readonly getTaskDetail?: (contractId: string) => Promise<WebTaskDetailDto>;
@@ -48,6 +66,7 @@ export interface WebApiRequest {
   method: string;
   path: string;
   body?: unknown;
+  query?: URLSearchParams;
   remoteAddress?: string;
 }
 
@@ -59,6 +78,35 @@ export async function handleWebApi(
   api: WebApiCapabilities,
 ): Promise<WebApiResponse> {
   try {
+    if (request.path === '/api/v1/project-roots' && request.method === 'GET') {
+      if (!api.projectCatalog) return unavailable();
+      return ok(200, { items: api.projectCatalog.getRoots() });
+    }
+    if (request.path === '/api/v1/project-directories' && request.method === 'GET') {
+      if (!api.projectCatalog) return unavailable();
+      const rootId = request.query?.get('rootId');
+      if (!rootId) throw new WebContractError('invalid-input', 'rootId is required');
+      const segments = request.query?.getAll('segment') ?? [];
+      const offset = parseQueryInteger(request.query?.get('offset'), 0);
+      const limit = parseQueryInteger(request.query?.get('limit'), 50);
+      return ok(200, await api.projectCatalog.listDirectory(rootId, segments, offset, limit));
+    }
+    if (request.path === '/api/v1/projects' && request.method === 'GET') {
+      if (!api.projectCatalog) return unavailable();
+      return ok(200, {
+        items: (await api.projectCatalog.listProjects()).map(toWebProjectSummaryDto),
+      });
+    }
+    if (request.path === '/api/v1/projects' && request.method === 'POST') {
+      if (!api.projectCatalog) return unavailable();
+      const input = parseProjectRegistration(request.body);
+      const project = await api.projectCatalog.register(
+        input.rootId,
+        input.segments,
+        input.projectId,
+      );
+      return ok(201, toWebProjectSummaryDto(project));
+    }
     if (request.path === '/api/v1/settings' && request.method === 'GET') {
       if (!api.settings) return unavailable();
       return ok(200, toWebLauncherSettingsDto(api.settings.get()));
@@ -195,6 +243,44 @@ function isLoopbackAddress(address: string): boolean {
   return (
     isIP(address) === 6 && (address === '::1' || address.toLowerCase().startsWith('::ffff:127.'))
   );
+}
+
+function parseProjectRegistration(value: unknown): {
+  rootId: string;
+  segments: string[];
+  projectId?: string;
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new WebContractError('invalid-input', 'Invalid project registration');
+  }
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => !['rootId', 'segments', 'projectId'].includes(key))) {
+    throw new WebContractError('invalid-input', 'Unknown project registration field');
+  }
+  if (
+    typeof record.rootId !== 'string' ||
+    !Array.isArray(record.segments) ||
+    record.segments.some((segment) => typeof segment !== 'string')
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid project registration');
+  }
+  if (record.projectId !== undefined && typeof record.projectId !== 'string') {
+    throw new WebContractError('invalid-input', 'Invalid project ID');
+  }
+  return {
+    rootId: record.rootId,
+    segments: record.segments,
+    ...(record.projectId === undefined ? {} : { projectId: record.projectId }),
+  };
+}
+
+function parseQueryInteger(value: string | null | undefined, fallback: number): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new WebContractError('invalid-input', 'Invalid directory pagination');
+  }
+  return parsed;
 }
 
 function parseTlsUpload(value: unknown): { certificatePem: string; keyPem: string } {

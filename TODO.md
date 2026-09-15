@@ -544,7 +544,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** wizard local, CSRF/Origin, request remoto rechazado para roots/TLS, PEM invalido o demasiado grande, cert/key no coincidentes, settings desconocidos, rollback y render accesible sin HTML crudo. `pnpm exec vitest run test/web-settings-api.test.ts test/web-settings-client.test.tsx test/web-server.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: configure personal web access through a guarded wizard`
 
-- [ ] **Tarea 5.7: Persistir proyectos locales y navegar raices autorizadas**
+- [x] **Tarea 5.7: Persistir proyectos locales y navegar raices autorizadas**
   - **Archivo:** nuevos `src/web/project-catalog.ts`, `src/web/project-browser.ts`; `src/web/settings-store.ts`, `src/web/routes.ts`, `src/web/dto.ts`; nuevos `test/project-catalog.test.ts`, `test/project-browser.test.ts`, `test/web-project-routes.test.ts`.
   - **Funciones:** FileProjectCatalog list/add/remove, listProjectDirectory y registerProjectFromDirectory.
   - **Descripcion:** catalogo global version 1 con escritura atomica y projectId estable. El explorador lista un nivel por request mediante rootId+segmentos relativos, solo directorios y marca si existe `.binaflow/config.json`; paginar y ordenar de forma determinista. En setup local puede elegir nuevas raices desde roots del sistema detectadas por plataforma; tras setup solo navega dentro de roots guardadas. Cada hop usa realpath y comprueba containment. Registrar valida config/workspace sin abrir SQLite, evita duplicados por path canonico/projectId y conserva rutas solo server-side. Eliminar del catalogo no borra repo, config, dataDir ni historial.
@@ -734,4 +734,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.6 completada: API y pantallas de setup/settings, cambios sensibles solo
   desde loopback, importacion de TLS fuera del JSON y compatibilidad legacy; 12
   tests enfocados, typecheck, build:web y test:web pasan.
-- Siguiente accion: ejecutar Tarea 5.7, catalogo y explorador seguro de proyectos.
+- Tarea 5.7 completada: catalogo atomico local, registro no destructivo, explorador
+  paginado de un nivel, containment con realpath y rutas rootId/segmentos sin paths;
+  8 tests enfocados, lint y typecheck pasan.
+- Siguiente accion: ejecutar Tarea 5.8, ownership de un unico proyecto activo.
