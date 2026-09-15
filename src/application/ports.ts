@@ -55,6 +55,16 @@ import type {
   TransferManifest,
 } from './portability.js';
 import type {
+  GuidedPreparationMessage,
+  GuidedPreparationOperationRequest,
+  GuidedPreparationRequestRecord,
+  GuidedPreparationSource,
+  GuidedPreparationState,
+  GuidedPlanOutput,
+  GuidedReplyOutput,
+  GuidedTodoOutput,
+} from './guided-preparation.js';
+import type {
   TaskContractActionPage,
   TaskContractDocument,
   TaskContractDocumentPage,
@@ -174,6 +184,50 @@ export interface ApplicationTaskContractStore {
   resolveTaskContractBlock(
     request: TaskContractStoredResolveBlockRequest,
   ): Promise<TaskContractStoredState>;
+}
+
+export interface GuidedPreparationStore {
+  getGuidedPreparation(
+    workspace: string,
+    contractId: string,
+  ): Promise<GuidedPreparationState | undefined>;
+  listGuidedPreparationMessages(request: {
+    workspace: string;
+    contractId: string;
+    afterSequence?: number;
+    limit?: number;
+  }): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }>;
+  listGuidedPreparationSources(request: {
+    workspace: string;
+    contractId: string;
+    afterSequence?: number;
+    limit?: number;
+  }): Promise<{ items: GuidedPreparationSource[]; nextCursor?: number }>;
+  getGuidedPreparationRequest(request: {
+    workspace: string;
+    contractId: string;
+    requestId: string;
+  }): Promise<GuidedPreparationRequestRecord | undefined>;
+  beginGuidedPreparationRequest(request: {
+    workspace: string;
+    operation: GuidedPreparationOperationRequest;
+  }): Promise<GuidedPreparationRequestRecord>;
+  finishGuidedPreparationRequest(request: {
+    workspace: string;
+    operation: GuidedPreparationOperationRequest;
+    status: Extract<
+      GuidedPreparationRequestRecord['status'],
+      'completed' | 'failed' | 'cancelled' | 'interrupted'
+    >;
+    result?: GuidedReplyOutput | GuidedPlanOutput | GuidedTodoOutput;
+    errorCode?: string;
+    publishedDocumentId?: string;
+  }): Promise<GuidedPreparationRequestRecord>;
+}
+
+export interface PublicSourceReader {
+  search(query: string, signal: AbortSignal): Promise<readonly GuidedPreparationSource[]>;
+  readUrl(url: string, signal: AbortSignal): Promise<GuidedPreparationSource>;
 }
 
 export interface PortabilityService {
