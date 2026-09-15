@@ -87,9 +87,11 @@ interface ActiveGuidedExecution {
   cancelPromise?: Promise<void>;
 }
 
+type ActiveOperation =
+  { kind: 'legacy'; value: ActiveExecution } | { kind: 'guided'; value: ActiveGuidedExecution };
+
 export function createExecutionHost(options: CreateExecutionHostOptions): ExecutionHost {
-  let activeExecution: ActiveExecution | undefined;
-  let activeGuidedExecution: ActiveGuidedExecution | undefined;
+  let activeOperation: ActiveOperation | undefined;
   let closePromise: Promise<void> | undefined;
   let closing = false;
   let internalFailure: unknown;
@@ -99,8 +101,10 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const captured = captureStartRequest(request);
-      const current = activeExecution;
-      if (activeGuidedExecution) throw new Error('Execution host is already running a guided task');
+      const current = activeOperation?.kind === 'legacy' ? activeOperation.value : undefined;
+      if (activeOperation?.kind === 'guided') {
+        throw new Error('Execution host is already running a guided task');
+      }
       if (current) {
         if (sameStartRequest(current.request, captured)) return current.receiptPromise;
         if (current.request.requestId === captured.requestId) {
@@ -120,7 +124,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
         completion: completion.promise,
         resolveCompletion: completion.resolve,
       };
-      activeExecution = active;
+      activeOperation = { kind: 'legacy', value: active };
       void execute(active, captured, receipt);
       return receipt.promise;
     } catch (error) {
@@ -132,14 +136,16 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const guided = requireGuidedExecution();
-      if (activeExecution) throw new Error('Execution host is already running a legacy workflow');
-      const current = activeGuidedExecution;
+      if (activeOperation?.kind === 'legacy') {
+        throw new Error('Execution host is already running a legacy workflow');
+      }
+      const current = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
       if (current) {
         if (sameGuidedRequest(current.request, request)) return current.receiptPromise;
         throw new Error(`Execution host is already running ${current.runId}`);
       }
       const active = createActiveGuided(request, `guided-${request.requestId}`);
-      activeGuidedExecution = active;
+      activeOperation = { kind: 'guided', value: active };
       void executeGuided(active, guided, guided.service.start(request));
       return active.receiptPromise;
     } catch (error) {
@@ -151,14 +157,16 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const guided = requireGuidedExecution();
-      if (activeExecution) throw new Error('Execution host is already running a legacy workflow');
-      const current = activeGuidedExecution;
+      if (activeOperation?.kind === 'legacy') {
+        throw new Error('Execution host is already running a legacy workflow');
+      }
+      const current = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
       if (current) {
         if (sameGuidedRequest(current.request, request)) return current.receiptPromise;
         throw new Error(`Execution host is already running ${current.runId}`);
       }
       const active = createActiveGuided(request, request.runId);
-      activeGuidedExecution = active;
+      activeOperation = { kind: 'guided', value: active };
       void executeGuided(active, guided, guided.service.resume(request));
       return active.receiptPromise;
     } catch (error) {
@@ -169,7 +177,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   const cancelGuidedWaiting = (runId: string, reason: string): Promise<GuidedExecutionProgress> => {
     try {
       assertOpen();
-      const active = activeGuidedExecution;
+      const active = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
       if (active && active.runId === runId) {
         active.controller.abort();
         return active.completion.then(() => active.receiptPromise);
@@ -184,17 +192,16 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   const cancel = (runId: string): Promise<void> => {
     try {
       assertOpen();
-      const active = activeExecution;
-      if (activeGuidedExecution && activeGuidedExecution.runId === runId) {
-        if (!activeGuidedExecution.cancelPromise) {
-          activeGuidedExecution.controller.abort();
-          activeGuidedExecution.cancelPromise = activeGuidedExecution.completion.then(
-            () => undefined,
-          );
+      const active = activeOperation?.kind === 'legacy' ? activeOperation.value : undefined;
+      const activeGuided = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
+      if (activeGuided && activeGuided.runId === runId) {
+        if (!activeGuided.cancelPromise) {
+          activeGuided.controller.abort();
+          activeGuided.cancelPromise = activeGuided.completion.then(() => undefined);
         }
-        return activeGuidedExecution.cancelPromise;
+        return activeGuided.cancelPromise;
       }
-      if (activeGuidedExecution) {
+      if (activeGuided) {
         throw new Error(`Run ${runId} is not owned by this execution host`);
       }
       if (active) {
@@ -298,7 +305,9 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       }
     } finally {
       active.resolveCompletion();
-      if (activeExecution === active) activeExecution = undefined;
+      if (activeOperation?.kind === 'legacy' && activeOperation.value === active) {
+        activeOperation = undefined;
+      }
     }
   }
 
@@ -343,7 +352,9 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       else internalFailure = error;
     } finally {
       active.resolveCompletion();
-      if (activeGuidedExecution === active) activeGuidedExecution = undefined;
+      if (activeOperation?.kind === 'guided' && activeOperation.value === active) {
+        activeOperation = undefined;
+      }
     }
   }
 
@@ -389,12 +400,12 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   }
 
   async function finishClose(): Promise<void> {
-    const active = activeExecution;
+    const active = activeOperation?.kind === 'legacy' ? activeOperation.value : undefined;
     if (active) {
       active.controller.abort();
       await active.completion;
     }
-    const activeGuided = activeGuidedExecution;
+    const activeGuided = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
     if (activeGuided) {
       activeGuided.controller.abort();
       await activeGuided.completion;

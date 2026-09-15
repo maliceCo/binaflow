@@ -429,7 +429,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** falso driver/source reader; chat -> confirmar -> plan -> aprobar -> TODO; nuevo mensaje o comentario invalida gate; stale/consumed; cancel/failure; replay; no escritura del workspace ni builder antes de inicio; changes-review no reanuda implementacion. `pnpm exec vitest run test/guided-preparation-operations.test.ts test/guided-execution-operations.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: coordinate guided preparation with explicit approvals`
 
-- [ ] **Tarea 3.2: Unificar la ranura del host sin cambiar comportamiento**
+- [x] **Tarea 3.2: Unificar la ranura del host sin cambiar comportamiento**
   - **Archivo:** `src/application/execution-host.ts`; `test/execution-host.test.ts`, `test/execution-host-integration.test.ts`.
   - **Funciones:** estado ActiveExecution/ActiveGuidedExecution, admision y finishClose.
   - **Descripcion:** refactor aislado a una ranura discriminada, conservando recibos, cancelacion, replays, consultas admitidas y closure de legacy/guided. Sin agregar aun preparacion ni API HTTP.
@@ -582,4 +582,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 3.1 completada: servicio guiado coordina chat, fuentes, confirmación, plan,
   aprobación y TODO con perfil planner read-only; el preflight de ejecución bloquea
   preparaciones sin brief confirmado.
-- Siguiente accion: ejecutar la Tarea 3.2, unificando la ranura de ownership del host.
+- Tarea 3.2 completada: el host usa una ranura discriminada única para ejecuciones
+  legacy y guided, conservando replays, cancelación, consultas y cierre ordenado;
+  22 tests enfocados pasan.
+- Siguiente accion: ejecutar la Tarea 3.3, exponiendo preparación y consultas bajo el mismo host.
