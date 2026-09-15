@@ -560,7 +560,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** seleccionar A, consultar desde dos clientes, cambiar idle a B, rechazo busy, config invalida, dataDir ocupado, fallo de apertura y shutdown durante query/operacion. `pnpm exec vitest run test/web-project-lifecycle.test.ts test/execution-host.test.ts test/application-runtime.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: own one active project in the personal launcher`
 
-- [ ] **Tarea 5.9: Construir selector y estado de proyectos en la web**
+- [x] **Tarea 5.9: Construir selector y estado de proyectos en la web**
   - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`, `src/web/server.ts`; nuevos `src/web/client/Projects.tsx`, `src/web/client/ProjectBrowser.tsx`; `src/web/client/App.tsx`, `api.ts`, `styles.css`; nuevos `test/web-project-api.test.ts`, `test/web-project-client.test.tsx`.
   - **Funciones:** GET `/api/v1/projects`, GET `/projects/current`, POST `/projects/:id/select`, POST `/projects/current/close` y flujo visual agregar/abrir/cambiar.
   - **Descripcion:** despues de login/setup mostrar proyectos registrados, owner local/remoto, disponibilidad, version Git resumida y proyecto activo sin revelar paths. Agregar usa navegacion manual de 5.7. Seleccionar/cambiar requiere CSRF, projectId catalogado y confirmacion visible; 409 busy conserva la vista y explica la operacion activa. La cabecera muestra siempre equipo y proyecto activos. Si otra sesion cambia el proyecto, polling no solapado detecta activeProjectRevision y reconcilia la navegacion. Sin proyecto activo, las rutas de tareas devuelven estado tipado, no 500.
@@ -741,4 +741,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   un unico contexto, rechaza cambios busy y limpia destinos fallidos; 28 tests
   enfocados y typecheck pasan. La composicion HTTP completa se conecta al catalogo
   y la identidad del dispositivo en las tareas 5.9/5.10.
-- Siguiente accion: ejecutar Tarea 5.9, selector y estado de proyectos en la web.
+- Tarea 5.9 completada: rutas seguras de catalogo/directorios/seleccion y pantallas
+  React de proyectos con referencias de servidor, busy tipado y sin paths en DTOs;
+  10 tests enfocados, typecheck y build:web pasan.
+- Siguiente accion: ejecutar Tarea 5.10, identidad y pairing de dispositivos.

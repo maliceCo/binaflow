@@ -35,6 +35,19 @@ export interface LauncherSettings {
   projectRoots: Array<{ id: string; label: string }>;
 }
 
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  ownership: string;
+  updatedAt: string;
+}
+
+export interface ProjectDirectory {
+  name: string;
+  segments: string[];
+  hasBinaflowConfig: boolean;
+}
+
 export interface ApiClient {
   session(): Promise<SessionData>;
   login(code: string): Promise<SessionData>;
@@ -43,6 +56,17 @@ export interface ApiClient {
   getSettings(): Promise<LauncherSettings>;
   updateSettings(input: unknown): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   uploadTls(certificatePem: string, keyPem: string): Promise<LauncherSettings>;
+  listProjects(): Promise<ProjectSummary[]>;
+  listProjectRoots(): Promise<Array<{ id: string; label: string }>>;
+  listProjectDirectory(
+    rootId: string,
+    segments: string[],
+    offset?: number,
+  ): Promise<{ items: ProjectDirectory[]; nextOffset: number | null }>;
+  registerProject(rootId: string, segments: string[], projectId?: string): Promise<ProjectSummary>;
+  getActiveProject(): Promise<ProjectSummary | null>;
+  selectProject(projectId: string): Promise<ProjectSummary>;
+  closeActiveProject(): Promise<void>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
 }
 
@@ -89,6 +113,49 @@ export function createApiClient(): ApiClient {
         csrfToken,
       );
       return result.data.settings;
+    },
+    async listProjects() {
+      const result = await request<{ items: ProjectSummary[] }>('/api/v1/projects');
+      return result.data.items;
+    },
+    async listProjectRoots() {
+      const result = await request<{ items: Array<{ id: string; label: string }> }>(
+        '/api/v1/project-roots',
+      );
+      return result.data.items;
+    },
+    async listProjectDirectory(rootId, segments, offset = 0) {
+      const query = new URLSearchParams({ rootId, offset: String(offset), limit: '50' });
+      for (const segment of segments) query.append('segment', segment);
+      const result = await request<{ items: ProjectDirectory[]; nextOffset: number | null }>(
+        `/api/v1/project-directories?${query.toString()}`,
+      );
+      return result.data;
+    },
+    async registerProject(rootId, segments, projectId) {
+      const result = await request<ProjectSummary>(
+        '/api/v1/projects',
+        'POST',
+        { rootId, segments, ...(projectId ? { projectId } : {}) },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async getActiveProject() {
+      const result = await request<{ project: ProjectSummary | null }>('/api/v1/projects/current');
+      return result.data.project;
+    },
+    async selectProject(projectId) {
+      const result = await request<ProjectSummary>(
+        `/api/v1/projects/${encodeURIComponent(projectId)}/select`,
+        'POST',
+        {},
+        csrfToken,
+      );
+      return result.data;
+    },
+    async closeActiveProject() {
+      await request('/api/v1/projects/current/close', 'POST', {}, csrfToken);
     },
     async execute(taskId, operation) {
       const result = await request<Operation>(

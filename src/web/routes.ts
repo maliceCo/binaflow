@@ -32,8 +32,15 @@ export interface WebSettingsCapabilities {
   ) => Promise<{ certFile: string; keyFile: string }>;
 }
 
+export interface WebProjectRuntimeCapabilities {
+  readonly getActiveProject: () => ProjectCatalogEntry | undefined;
+  readonly selectProject: (projectId: string) => Promise<ProjectCatalogEntry>;
+  readonly closeActiveProject: () => Promise<void>;
+}
+
 export interface WebApiCapabilities {
   readonly settings?: WebSettingsCapabilities;
+  readonly projectRuntime?: WebProjectRuntimeCapabilities;
   readonly projectCatalog?: {
     getRoots: () => Array<{ id: string; label: string }>;
     listProjects: () => Promise<ProjectCatalogEntry[]>;
@@ -106,6 +113,30 @@ export async function handleWebApi(
         input.projectId,
       );
       return ok(201, toWebProjectSummaryDto(project));
+    }
+    if (request.path === '/api/v1/projects/current' && request.method === 'GET') {
+      if (!api.projectRuntime) return unavailable();
+      const project = api.projectRuntime.getActiveProject();
+      return ok(200, { project: project ? toWebProjectSummaryDto(project) : null });
+    }
+    const selectProjectId = request.path.match(/^\/api\/v1\/projects\/([^/]+)\/select$/)?.[1];
+    if (selectProjectId && request.method === 'POST') {
+      if (!api.projectRuntime) return unavailable();
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Project selection does not accept a body');
+      }
+      return ok(
+        200,
+        toWebProjectSummaryDto(await api.projectRuntime.selectProject(selectProjectId)),
+      );
+    }
+    if (request.path === '/api/v1/projects/current/close' && request.method === 'POST') {
+      if (!api.projectRuntime) return unavailable();
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Project close does not accept a body');
+      }
+      await api.projectRuntime.closeActiveProject();
+      return ok(200, { project: null });
     }
     if (request.path === '/api/v1/settings' && request.method === 'GET') {
       if (!api.settings) return unavailable();
@@ -315,7 +346,10 @@ function mapError(cause: unknown): WebApiResponse {
   const status =
     code === 'invalid-target' || code === 'not-found'
       ? 404
-      : code === 'conflict' || code === 'stale-revision'
+      : code === 'conflict' ||
+          code === 'stale-revision' ||
+          code === 'project-busy' ||
+          code === 'project-inactive'
         ? 409
         : 422;
   return error(status, code, cause instanceof Error ? cause.message : 'Operation failed');

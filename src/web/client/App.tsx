@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { createApiClient, createRequestId, type LauncherSettings, type Task } from './api.js';
 import { Setup } from './Setup.js';
 import { Settings } from './Settings.js';
+import { Projects } from './Projects.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -125,6 +126,7 @@ export function App(): ReactElement {
           {showSettings && settings && (
             <Settings api={api} settings={settings} onSaved={setSettings} />
           )}
+          {settings && <Projects api={api} onProjectChanged={refreshWorkspace} />}
           <section className="workspace-grid">
             <TaskList tasks={tasks} onRefresh={refreshTasks} />
             {selected ? (

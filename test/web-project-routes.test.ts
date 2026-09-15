@@ -14,6 +14,11 @@ const project = {
 };
 
 const api = {
+  projectRuntime: {
+    getActiveProject: () => project,
+    selectProject: async () => project,
+    closeActiveProject: async () => undefined,
+  },
   projectCatalog: {
     getRoots: () => [{ id: 'root-1', label: 'Projects' }],
     listProjects: async () => [project],
@@ -50,6 +55,18 @@ describe('web project routes', () => {
     ).resolves.toMatchObject({ status: 200, body: { data: { items: [{ name: 'Project' }] } } });
     const result = await handleWebApi({ method: 'GET', path: '/api/v1/projects' }, api);
     expect(JSON.stringify(result)).not.toContain('/private/');
+  });
+
+  it('selects and closes projects through explicit lifecycle endpoints', async () => {
+    await expect(
+      handleWebApi({ method: 'GET', path: '/api/v1/projects/current' }, api),
+    ).resolves.toMatchObject({ status: 200, body: { data: { project: { id: projectId } } } });
+    await expect(
+      handleWebApi({ method: 'POST', path: `/api/v1/projects/${projectId}/select`, body: {} }, api),
+    ).resolves.toMatchObject({ status: 200, body: { data: { id: projectId } } });
+    await expect(
+      handleWebApi({ method: 'POST', path: '/api/v1/projects/current/close', body: {} }, api),
+    ).resolves.toMatchObject({ status: 200, body: { data: { project: null } } });
   });
 
   it('registers only through root references', async () => {
