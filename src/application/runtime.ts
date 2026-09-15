@@ -13,9 +13,10 @@ import { PiModelDiscovery } from '../drivers/pi-discovery.js';
 import {
   assertActivePortableDatabase,
   FileDataDirectoryLock,
+  inspectPortableDatabaseState,
 } from '../storage/data-directory-lock.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
-import type { ApplicationRunStore } from './ports.js';
+import type { ApplicationPortabilityStore, ApplicationRunStore } from './ports.js';
 import type { WorkflowRun } from '../core/run.js';
 import { createExecutionHost, type ExecutionHost } from './execution-host.js';
 import { interpretWorkflowDisposition } from '../workflows/dispositions.js';
@@ -49,6 +50,64 @@ export interface ApplicationStorageContext {
 }
 
 export type ApplicationRuntimeContext = ApplicationContext;
+
+export interface PortabilityContext {
+  readonly portability: import('./ports.js').PortabilityService;
+  close(): void;
+}
+
+/** Opens only the resources needed by dataset transfer commands. */
+export async function openPortabilityContext(
+  configPath = '.binaflow/config.json',
+  cwd = process.cwd(),
+): Promise<PortabilityContext> {
+  const config = await loadConfig(configPath, cwd);
+  await mkdir(config.dataDir, { recursive: true });
+  const dataDir = realpathSync(config.dataDir);
+  const lease = await new FileDataDirectoryLock().acquire(dataDir);
+  let store: SqliteRunStore | undefined;
+  try {
+    const state = inspectPortableDatabaseState(`${dataDir}/runs.db`);
+    if (!state || state.state === 'active') store = new SqliteRunStore(`${dataDir}/runs.db`);
+    const portabilityStore = store ?? readOnlyPortabilityStore();
+    const portability = createPortabilityService({
+      store: portabilityStore,
+      dataDir,
+      workspace: realpathSync(cwd),
+    });
+    let closed = false;
+    return {
+      portability,
+      close: () => {
+        if (closed) return;
+        closed = true;
+        try {
+          store?.close();
+        } finally {
+          void lease.release();
+        }
+      },
+    };
+  } catch (error) {
+    store?.close();
+    await lease.release();
+    throw error;
+  }
+}
+
+function readOnlyPortabilityStore(): ApplicationPortabilityStore {
+  const unavailable = async (): Promise<never> => {
+    throw new Error('The configured dataset is not writable during transfer');
+  };
+  return {
+    getPortabilityState: unavailable,
+    inspectPortabilityBlockers: unavailable,
+    beginExportIntent: unavailable,
+    finalizeExport: unavailable,
+    cancelExportIntent: unavailable,
+    backupDatabaseTo: unavailable,
+  };
+}
 
 /** Discovers Pi-authenticated models before a Binaflow configuration exists. */
 export async function discoverAvailableModels() {

@@ -280,7 +280,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** destino vacio; retorno con padre exacto; dataset/padre/active divergentes; output existente ajeno; tamper tras preview; fallo antes de rename deja baseline intacto; replay exacto; config fixture sigue byte-identica. `pnpm exec vitest run test/portability-import.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: import portable datasets without replacing local data`
 
-- [ ] **Tarea 3.3: Exponer comandos CLI humanos y JSON v1**
+- [x] **Tarea 3.3: Exponer comandos CLI humanos y JSON v1**
   - **Archivo:** nuevo `src/cli/commands/portability.ts`; `src/cli/index.ts`; `src/cli/protocol.ts`; `src/application/runtime.ts` para composition root dedicado; `test/cli-protocol.test.ts`; nuevo `test/cli-portability.test.ts`.
   - **Funciones:** registerPortabilityCommands; openPortabilityContext; DTOs/sanitizacion para preview-export, export, cancel-export, inspect, preview-import e import.
   - **Descripcion:** comandos con `--request-id`, `--digest`, `--output`/`--output-data-dir` explicitos. Soportar salida humana y `--json` en envelope CLI v1; rechazar `--jsonl`. Imprimir blockers, hashes cortos, sensibilidad y pasos Git/config sin volcar conversaciones, artifact paths internos o tokens. `inspect` funciona sin abrir dataDir; los demas respetan root `--config/--cwd`.
@@ -387,4 +387,9 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 3.2 completada: preview/import no destructivo, baseline/linaje, staging y
   activacion en `src/application/portability-operations.ts`; 2 tests especificos
   pasan, lint y typecheck pasan.
-- Siguiente accion: exponer comandos CLI humanos y JSON v1.
+- Tarea 3.3 completada: comandos explicitamente separados, contexto dedicado y
+  DTOs JSON sanitizados en `src/cli/commands/portability.ts` y
+  `src/application/runtime.ts`; 20 tests CLI/protocolo pasan, lint y typecheck
+  pasan.
+- Siguiente accion: verificar el viaje completo A -> B -> A con fixtures
+  temporales, SQLite, artifacts y Git.
