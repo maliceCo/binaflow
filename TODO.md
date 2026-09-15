@@ -455,7 +455,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** login/logout/TTL/rate-limit; Host/Origin/CSRF, cuerpo/headers invalido o grande, path traversal y sin sesion no hay datos; bind LAN sin TLS rechaza antes de escuchar. Listener de tests solo loopback puerto efimero. `pnpm exec vitest run test/web-server.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: add authenticated personal HTTP server`
 
-- [ ] **Tarea 4.2: Conectar rutas versionadas con operaciones admitidas**
+- [x] **Tarea 4.2: Conectar rutas versionadas con operaciones admitidas**
   - **Archivo:** nuevos `src/web/routes.ts`, `src/web/dto.ts`; `src/web/server.ts`, `src/web/contracts.ts`; nuevo `test/web-api.test.ts`.
   - **Funciones:** matchRoute, handleTaskRequest, DTOs de documentos/recibos/progreso y error mapping.
   - **Descripcion:** tabla G mediante llamadas explicitas. Validar body/query/path, IDs y pertenencia. 202 al admitir; no abort por response close. Aprobar e iniciar ligan revisiones/digest. Cancel waiting usa resume decision cancel con preview del usuario, no recomputado silenciosamente. Progreso/artifacts se proyectan sin rutas internas.
@@ -591,4 +591,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 4.1 completada: configuración web estricta, TLS obligatorio fuera de loopback,
   código de arranque, sesiones HttpOnly con TTL, rate limit, CSRF, headers y assets
   explícitos; 3 tests enfocados pasan.
-- Siguiente accion: ejecutar la Tarea 4.2, conectando rutas versionadas con operaciones admitidas.
+- Tarea 4.2 completada: rutas `/api/v1` autenticadas para tareas, detalle, mensajes,
+  fuentes y operaciones; DTOs sin estado interno y errores tipados; 5 tests enfocados
+  pasan.
+- Siguiente accion: ejecutar la Tarea 4.3, construyendo las pantallas web.

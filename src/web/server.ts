@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import type { WebConfig } from './config.js';
 import { createWebAuth, type WebAuth, type WebSession } from './auth.js';
+import { handleWebApi, type WebApiCapabilities } from './routes.js';
 
 const MAX_BODY_BYTES = 128 * 1024;
 const SESSION_COOKIE = 'binaflow_session';
@@ -24,6 +25,7 @@ export interface WebServerOptions {
   config: WebConfig;
   auth?: WebAuth;
   assets?: WebServerAssets;
+  api?: WebApiCapabilities;
   stderr?: { write(message: string): void };
 }
 
@@ -100,6 +102,27 @@ export function createWebServer(options: WebServerOptions): WebServer {
     }
     const method = request.method ?? 'GET';
     const path = new URL(request.url ?? '/', options.config.origin).pathname;
+    if (path.startsWith('/api/v1/')) {
+      const session = getSession(request);
+      if (!session) {
+        sendJson(response, 401, { version: 1, error: { code: 'session-required', message: 'Session required' } });
+        return;
+      }
+      if (method !== 'GET' && !requireMutationSession(request, response)) return;
+      let body: unknown;
+      if (method !== 'GET') {
+        try {
+          body = await readJsonBody(request);
+        } catch (error) {
+          const tooLarge = error instanceof Error && /too large/i.test(error.message);
+          sendJson(response, tooLarge ? 413 : 400, { version: 1, error: { code: tooLarge ? 'too-large' : 'invalid-input', message: 'Invalid request' } });
+          return;
+        }
+      }
+      const result = await handleWebApi({ method, path, body }, options.api ?? {});
+      sendJson(response, result.status, result.body);
+      return;
+    }
     if (method === 'GET' && path === '/') {
       send(response, 200, 'text/html; charset=utf-8', assets.index);
       return;
