@@ -3,7 +3,9 @@
 Estado: los Hitos 1, 2 y 3 estan implementados y verificados localmente. El
 Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
 autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
-La web, autenticacion y despliegue remoto siguen siendo una ruta propuesta.
+El siguiente paso es el Hito 3.5: portabilidad con un solo equipo activo.
+La web queda despues, inicialmente en red interna y sin VPN. Autenticacion y
+mecanismo de despliegue siguen pendientes de definir.
 La verificacion cubre el backend con SQLite, artifacts y agentes simulados; no
 cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
 continuidad para recuperar el proposito cuando falte contexto de la conversacion.
@@ -17,8 +19,9 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 ## Decisiones acordadas
 
 - Un solo usuario inicialmente, con acceso desde distintos equipos.
-- Repositorio, Pi y Binaflow en una maquina anfitriona fija; mas adelante puede
-  alojarse en un servidor.
+- Repositorio, Pi y Binaflow en una maquina anfitriona activa; normalmente fija,
+  con traslado explicito a otro equipo para viajar y retorno al regresar.
+  No trabajar simultaneamente sobre ambas copias ni fusionarlas automaticamente.
 - Cerrar el navegador no cancela el trabajo. Otro navegador recupera el estado.
   Esto no significa que el trabajo sobreviva sin interrupcion a una caida del
   servidor: ese caso requiere recuperacion segura.
@@ -49,16 +52,62 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
    a QA; si no, aprobacion final y resumen. Retirar solo los TODO temporales de
    esta ejecucion, conservando sus versiones, decisiones y commits como historial.
 
-## Hitos propuestos
+## Seguimiento de hitos
 
-| Hito                                      | Resultado esperado                                                                                                                                                                                        |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Ejecucion independiente de la interfaz | Cambiar de navegador sin detener ni duplicar trabajo; recuperar estado y cancelar explicitamente. Probar primero con un flujo existente y agente simulado.                                                |
-| 2. Contrato del nuevo flujo               | Implementado localmente: fases, planes, tareas, bloqueos y aprobaciones versionados y persistidos; TODO como representacion del contrato, no como unica fuente de verdad. Sin chat, handoff ni ejecucion. |
-| 3. Ejecucion por fases y Git              | Implementado localmente: progreso verificable, commits controlados y recuperacion sin repetir trabajo completado ni incluir cambios ajenos. Ver [ejecucion guiada](guided-execution.md).                  |
-| 4. Web personal y preparacion             | Acceso remoto autenticado, chat de exploracion, consulta de fuentes y plan con feedback y aprobacion.                                                                                                     |
-| 5. Revision de codigo                     | Diffs por archivo, comentarios, edicion manual y revision del parche sobre versiones concretas.                                                                                                           |
-| 6. QA y cierre                            | Tickets conversables, decisiones selectivas, QA_TODO autorizado, verificacion, revision adicional opcional y resumen final.                                                                               |
+### Completados localmente
+
+- [x] **1. Ejecucion independiente de la interfaz:** cambiar de cliente sin
+      detener ni duplicar trabajo, consultar estado y cancelar explicitamente.
+      Verificado con agente simulado, no con navegadores reales.
+- [x] **2. Contrato del nuevo flujo:** planes, tareas, bloqueos y aprobaciones
+      versionados y persistidos; TODO derivado del contrato. Este hito por si solo
+      no incluye chat, handoff ni ejecucion.
+- [x] **3. Ejecucion por fases y Git:** progreso verificable, commits controlados
+      y recuperacion explicita. Ver [ejecucion guiada](guided-execution.md).
+
+### Pendientes, en orden
+
+- [ ] **3.5. Portabilidad entre equipos:** exportar/importar datos de forma
+      consistente y volver del viaje sin perder historial ni pisar cambios.
+      Un solo equipo activo, sin sincronizacion bidireccional.
+- [ ] **4. Web personal y preparacion:** acceso en red interna, autenticacion,
+      chat de exploracion, consulta de fuentes, plan con feedback/aprobacion e
+      inicio y seguimiento de la ejecucion. Sin VPN como requisito inicial.
+- [ ] **5. Revision de codigo:** diffs por archivo, comentarios, edicion manual
+      y revision del parche sobre versiones concretas.
+- [ ] **6. QA y cierre:** tickets conversables, decisiones selectivas, QA_TODO
+      autorizado, verificacion, revision adicional opcional y resumen final.
+
+## Hito 3.5: decision de portabilidad
+
+**Acordado:** traslado controlado, no sincronizacion de dos equipos que avanzan
+independientemente. Durante el viaje trabaja el portatil; la copia del servidor
+no cambia. Al regresar se transfiere el estado de vuelta. Esto es una regla de
+uso; no presupone un bloqueo distribuido entre equipos desconectados.
+
+Alcance que debe concretarse en el plan de implementacion:
+
+1. Exportar una instantanea consistente de SQLite y artefactos, incluidos
+   conversaciones, documentos, decisiones y progreso, sin operaciones activas.
+   No copiar solo el archivo de base de datos mientras se escribe.
+2. Validar integridad/versiones e importar con respaldo previo. Resolver las
+   rutas absolutas y la identidad del workspace sin reescribir silenciosamente
+   evidencia historica ni reutilizar aprobaciones para otro entorno.
+3. Trasladar el codigo mediante Git y comprobar que corresponde al estado
+   exportado. Definir el tratamiento de cambios sin commit antes de implementar;
+   nunca descartarlos ni hacer commits automaticos solo para exportar.
+4. Detectar si el destino cambio desde la transferencia anterior y bloquear la
+   sustitucion en ese caso. No merge automatico de SQLite ni sobrescritura ciega.
+5. Excluir credenciales de Pi/proveedores del paquete. Los datos exportados pueden
+   contener informacion sensible; no prometer una eliminacion total de secretos
+   presentes en conversaciones o artefactos.
+
+Aceptacion objetivo: equipo A -> equipo B -> trabajo en B -> retorno a A,
+conservando IDs, documentos e historial; un cambio independiente en A debe
+impedir una importacion destructiva. Falta definir y probar la reautorizacion y
+recuperacion de runs trasladados; importar historial no autoriza ejecutarlo.
+
+Estado: decision de alcance aprobada; implementacion no iniciada.
 
 ## Limites de arquitectura
 
@@ -79,12 +128,13 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 La base actual ofrece preparacion conversacional, pasos persistidos, revisiones
 interactivas y un anfitrion de ejecucion independiente de sus clientes. El Hito 1
 verifica cambio de cliente, consultas persistidas, replay, cancelacion explicita
-y resume explicito con un agente simulado. Siguen fuera de alcance el ciclo de
-vida tras una caida abrupta, control por fase, integracion Git, revision de codigo
-y las decisiones selectivas de QA.
+y resume explicito con un agente simulado. El Hito 3 agrega control por fase e
+integracion Git. Siguen pendientes la portabilidad, la web, la revision de codigo
+y las decisiones selectivas de QA; no hay recuperacion automatica tras una caida
+abrupta.
 
-Siguiente paso: definir la web y autenticacion sobre las garantias comprobadas
-del **hito 3**, sin asumir que los Hitos 1-3 cubren despliegue remoto.
+Siguiente paso: preparar el plan de implementacion del **hito 3.5**, antes del
+Hito 4. No asumir que los Hitos 1-3 cubren traslado de datos o despliegue remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).
