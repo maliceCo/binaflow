@@ -48,6 +48,66 @@ describe('web API routes', () => {
     ).resolves.toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
   });
 
+  it('validates transfer commands without accepting server paths', async () => {
+    const transfers = {
+      preview: vi.fn(async (value: unknown) => ({
+        ...(value as object),
+        blockers: [],
+        digest: 'b'.repeat(64),
+        packageBytes: 10,
+      })),
+      start: vi.fn(async (value: unknown) => ({
+        ...(value as object),
+        stage: 'sending',
+        bytesSent: 0,
+        bytesReceived: 0,
+      })),
+      status: vi.fn(async (id: string) => ({
+        transferId: id,
+        projectId: contractId,
+        stage: 'sending',
+        bytesSent: 0,
+        bytesReceived: 0,
+      })),
+      resume: vi.fn(async (id: string) => ({
+        transferId: id,
+        projectId: contractId,
+        stage: 'sending',
+        bytesSent: 0,
+        bytesReceived: 0,
+      })),
+    };
+    const body = {
+      transferId: requestId,
+      requestId,
+      projectId: contractId,
+      targetProjectId: contractId,
+      targetDeviceId: 'a'.repeat(64),
+    };
+    await expect(
+      handleWebApi({ method: 'POST', path: '/api/v1/transfers/preview', body }, { transfers }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { data: { transferId: requestId, requestId, projectId: contractId, blockers: [] } },
+    });
+    await expect(
+      handleWebApi(
+        {
+          method: 'POST',
+          path: '/api/v1/transfers/preview',
+          body: { ...body, packagePath: '/secret' },
+        },
+        { transfers },
+      ),
+    ).resolves.toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
+    await expect(
+      handleWebApi(
+        { method: 'POST', path: `/api/v1/transfers/${requestId}`, body: {} },
+        { transfers },
+      ),
+    ).resolves.toMatchObject({ status: 202, body: { data: { stage: 'sending' } } });
+  });
+
   it('does not expose an unavailable capability as a server error', async () => {
     await expect(handleWebApi({ method: 'GET', path: '/api/v1/tasks' }, {})).resolves.toMatchObject(
       {

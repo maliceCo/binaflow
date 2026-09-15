@@ -54,6 +54,17 @@ export interface DeviceSummary {
   status: 'paired' | 'revoked';
 }
 
+export interface TransferStatus {
+  transferId: string;
+  projectId: string;
+  stage: string;
+  bytesSent: number;
+  bytesReceived: number;
+  totalBytes?: number;
+  packageDigest?: string;
+  errorCode?: string;
+}
+
 export interface ApiClient {
   session(): Promise<SessionData>;
   login(code: string): Promise<SessionData>;
@@ -76,6 +87,10 @@ export interface ApiClient {
   listDevices(): Promise<DeviceSummary[]>;
   beginPairing(): Promise<{ pairingId: string; code: string; deviceId: string; expiresAt: number }>;
   revokeDevice(deviceId: string): Promise<void>;
+  previewTransfer(input: Record<string, unknown>): Promise<unknown>;
+  startTransfer(input: Record<string, unknown>): Promise<TransferStatus>;
+  getTransfer(transferId: string): Promise<TransferStatus>;
+  resumeTransfer(transferId: string): Promise<TransferStatus>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
 }
 
@@ -181,6 +196,29 @@ export function createApiClient(): ApiClient {
     },
     async revokeDevice(deviceId) {
       await request('/api/v1/devices/revoke', 'POST', { deviceId }, csrfToken);
+    },
+    async previewTransfer(input) {
+      const result = await request<unknown>('/api/v1/transfers/preview', 'POST', input, csrfToken);
+      return result.data;
+    },
+    async startTransfer(input) {
+      const result = await request<TransferStatus>('/api/v1/transfers', 'POST', input, csrfToken);
+      return result.data;
+    },
+    async getTransfer(transferId) {
+      const result = await request<TransferStatus>(
+        `/api/v1/transfers/${encodeURIComponent(transferId)}`,
+      );
+      return result.data;
+    },
+    async resumeTransfer(transferId) {
+      const result = await request<TransferStatus>(
+        `/api/v1/transfers/${encodeURIComponent(transferId)}`,
+        'POST',
+        {},
+        csrfToken,
+      );
+      return result.data;
     },
     async execute(taskId, operation) {
       const result = await request<Operation>(

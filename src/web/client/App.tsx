@@ -5,6 +5,7 @@ import { Setup } from './Setup.js';
 import { Settings } from './Settings.js';
 import { Projects } from './Projects.js';
 import { Devices } from './Devices.js';
+import { TransferWizard } from './TransferWizard.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -129,6 +130,7 @@ export function App(): ReactElement {
           )}
           {settings && <Projects api={api} onProjectChanged={refreshWorkspace} />}
           {settings && <Devices api={api} />}
+          {settings && <TransferWizard api={api} />}
           <section className="workspace-grid">
             <TaskList tasks={tasks} onRefresh={refreshTasks} />
             {selected ? (

@@ -23,7 +23,12 @@ import {
 } from './launcher-contracts.js';
 import type { PairingOffer } from './peer-auth.js';
 import type { ProjectDirectoryListing } from './project-catalog.js';
-import { toWebOperationDto, toWebTaskDto } from './dto.js';
+import {
+  toWebOperationDto,
+  toWebTaskDto,
+  toWebTransferDto,
+  toWebTransferPreviewDto,
+} from './dto.js';
 
 export interface WebSettingsCapabilities {
   readonly get: () => LauncherSettings;
@@ -34,6 +39,13 @@ export interface WebSettingsCapabilities {
     certificatePem: string,
     keyPem: string,
   ) => Promise<{ certFile: string; keyFile: string }>;
+}
+
+export interface WebTransferCapabilities {
+  readonly preview: (value: unknown) => Promise<unknown>;
+  readonly start: (value: unknown) => Promise<unknown>;
+  readonly status: (transferId: string) => Promise<unknown>;
+  readonly resume: (transferId: string) => Promise<unknown>;
 }
 
 export interface WebDeviceCapabilities {
@@ -52,6 +64,7 @@ export interface WebProjectRuntimeCapabilities {
 export interface WebApiCapabilities {
   readonly settings?: WebSettingsCapabilities;
   readonly devices?: WebDeviceCapabilities;
+  readonly transfers?: WebTransferCapabilities;
   readonly projectRuntime?: WebProjectRuntimeCapabilities;
   readonly projectCatalog?: {
     getRoots: () => Array<{ id: string; label: string }>;
@@ -97,6 +110,32 @@ export async function handleWebApi(
   api: WebApiCapabilities,
 ): Promise<WebApiResponse> {
   try {
+    if (request.path === '/api/v1/transfers/preview' && request.method === 'POST') {
+      if (!api.transfers) return unavailable();
+      return ok(
+        200,
+        toWebTransferPreviewDto(await api.transfers.preview(parseTransferCommand(request.body))),
+      );
+    }
+    if (request.path === '/api/v1/transfers' && request.method === 'POST') {
+      if (!api.transfers) return unavailable();
+      return ok(
+        202,
+        toWebTransferDto(await api.transfers.start(parseTransferCommand(request.body))),
+      );
+    }
+    const transferId = request.path.match(/^\/api\/v1\/transfers\/([^/]+)$/)?.[1];
+    if (transferId && request.method === 'GET') {
+      if (!api.transfers) return unavailable();
+      return ok(200, toWebTransferDto(await api.transfers.status(transferId)));
+    }
+    if (transferId && request.method === 'POST') {
+      if (!api.transfers) return unavailable();
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Transfer resume does not accept a body');
+      }
+      return ok(202, toWebTransferDto(await api.transfers.resume(transferId)));
+    }
     if (request.path === '/api/v1/devices' && request.method === 'GET') {
       if (!api.devices) return unavailable();
       return ok(200, { items: api.devices.list().map(toWebDeviceSummaryDto) });
@@ -311,6 +350,47 @@ function isLoopbackAddress(address: string): boolean {
   return (
     isIP(address) === 6 && (address === '::1' || address.toLowerCase().startsWith('::ffff:127.'))
   );
+}
+
+function parseTransferCommand(value: unknown): {
+  transferId: string;
+  requestId: string;
+  projectId: string;
+  targetDeviceId: string;
+  targetProjectId: string;
+  confirmed?: boolean;
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new WebContractError('invalid-input', 'Invalid transfer request');
+  }
+  const record = value as Record<string, unknown>;
+  const allowed = [
+    'transferId',
+    'requestId',
+    'projectId',
+    'targetDeviceId',
+    'targetProjectId',
+    'confirmed',
+  ];
+  if (Object.keys(record).some((key) => !allowed.includes(key))) {
+    throw new WebContractError('invalid-input', 'Unknown transfer request field');
+  }
+  for (const key of ['transferId', 'requestId', 'projectId', 'targetDeviceId', 'targetProjectId']) {
+    if (typeof record[key] !== 'string' || !record[key]) {
+      throw new WebContractError('invalid-input', 'Transfer identifiers are required');
+    }
+  }
+  if (record.confirmed !== undefined && typeof record.confirmed !== 'boolean') {
+    throw new WebContractError('invalid-input', 'Transfer confirmation is invalid');
+  }
+  return {
+    transferId: record.transferId as string,
+    requestId: record.requestId as string,
+    projectId: record.projectId as string,
+    targetDeviceId: record.targetDeviceId as string,
+    targetProjectId: record.targetProjectId as string,
+    ...(record.confirmed === undefined ? {} : { confirmed: record.confirmed }),
+  };
 }
 
 function parseDeviceConfirmation(value: unknown): {

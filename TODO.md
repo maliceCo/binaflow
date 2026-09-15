@@ -584,7 +584,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** A->B real con SQLite/Git/artifacts temporales, rangos y reconexion, lost response/replay, hash corrupto, HEAD distinto, target dirty, corte antes/despues de export, config CAS cambiada y lineage B->A. `pnpm exec vitest run test/project-transfer.test.ts test/peer-transfer.test.ts test/transfer-journal.test.ts test/portability-integration.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: hand off active projects between paired servers`
 
-- [ ] **Tarea 5.12: Guiar transferencia, progreso y recuperacion desde la web**
+- [x] **Tarea 5.12: Guiar transferencia, progreso y recuperacion desde la web**
   - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/TransferWizard.tsx`, `src/web/client/Transfers.tsx`; `src/web/client/Projects.tsx`, `App.tsx`, `api.ts`, `styles.css`; nuevos `test/web-transfer-api.test.ts`, `test/web-transfer-client.test.tsx`.
   - **Funciones:** rutas preview/start/status/resume de transfer y wizard seleccionar equipo -> vincular clone target -> preflight -> confirmar -> progreso/recuperar.
   - **Descripcion:** desde el proyecto activo elegir peer emparejado. En destino, notificacion pide seleccionar el clon local mediante el catalogo; nunca permite path remoto. Mostrar checks de version, Git, ejecuciones, tamano, TLS y destino. La confirmacion presenta que A quedara inutilizable y usa transferId/requestId/digest congelados. Progreso usa polling acotado y bytes reales, no porcentajes inventados sin total. Doble click/reload conserva IDs y no duplica export/import. Tras exito, A muestra `Transferido a <equipo>` solo lectura y B abre el proyecto activo. Estados recuperables ofrecen Reanudar o Descargar paquete offline existente; no ofrecen forzar activo.
@@ -750,4 +750,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.11 completada: journal atomico, transferencia por streaming/reanudacion,
   preflight, importacion con lineage y CAS de configuracion sobre portabilidad
   existente; 5 tests enfocados y typecheck pasan.
-- Siguiente accion: ejecutar Tarea 5.12, wizard web de transferencia y recovery.
+- Tarea 5.12 completada: DTOs seguros sin rutas, endpoints preview/start/status/resume,
+  wizard con IDs persistidos, confirmacion explicita, polling acotado y recovery;
+  5 tests web enfocados, typecheck y build:web pasan.
+- Siguiente accion: ejecutar Tarea 5.13, E2E de dos launchers.
