@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync } from 'node:fs';
 import { initialMigration } from './001-initial.js';
 import { currentMigration } from './002-current.js';
@@ -13,8 +14,9 @@ import { preparationMigration } from './010-preparation.js';
 import { preparationExperienceMigration } from './011-preparation-experience.js';
 import { taskContractsMigration } from './012-task-contracts.js';
 import { guidedExecutionMigration } from './013-guided-execution.js';
+import { portabilityMigration } from './014-portability.js';
 
-const currentSchemaVersion = 13;
+export const currentSchemaVersion = 14;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -117,6 +119,12 @@ export function applyMigrations(database: Database.Database, databasePath: strin
       recordMigration(database, 13);
     }
 
+    if (version < 14) {
+      database.exec(portabilityMigration);
+      ensurePortabilityState(database);
+      recordMigration(database, 14);
+    }
+
     const finalVersion = database
       .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
       .get() as { version: number } | undefined;
@@ -141,6 +149,17 @@ function withWriteLock(database: Database.Database, action: () => void): void {
     }
     throw error;
   }
+}
+
+function ensurePortabilityState(database: Database.Database): void {
+  database
+    .prepare(
+      `INSERT OR IGNORE INTO portability_state
+       (singleton_id, dataset_id, state, last_transfer_id, pending_request_id,
+        pending_digest, pending_destination, pending_transfer_id, updated_at)
+       VALUES (1, ?, 'active', NULL, NULL, NULL, NULL, NULL, ?)`,
+    )
+    .run(randomUUID(), new Date().toISOString());
 }
 
 function recordMigration(database: Database.Database, version: number): void {

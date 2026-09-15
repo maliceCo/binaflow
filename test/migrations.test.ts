@@ -88,7 +88,9 @@ describe('SQLite migrations', () => {
     const columns = verification.prepare('PRAGMA table_info(step_runs)').all() as Array<{
       name: string;
     }>;
-    expect(versions.map((row) => row.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    expect(versions.map((row) => row.version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    ]);
     expect(columns.map((column) => column.name)).toContain('profile_json');
     expect(
       verification
@@ -120,6 +122,15 @@ describe('SQLite migrations', () => {
         { name: 'task_contract_documents' },
         { name: 'task_contract_actions' },
       ]),
+    );
+    expect(
+      verification
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'portability_%'",
+        )
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([{ name: 'portability_state' }, { name: 'portability_transfers' }]),
     );
     expect(
       verification

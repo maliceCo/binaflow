@@ -220,7 +220,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** manifest valido/invalido, path traversal Windows/POSIX, duplicados/case collision, limites, JSON canonico y digest estable/sensible a DB, artefactos, Git, padre y destino. `pnpm exec vitest run test/portability-contracts.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: define portable dataset package contracts`
 
-- [ ] **Tarea 1.3: Persistir identidad, estado e intents de transferencia**
+- [x] **Tarea 1.3: Persistir identidad, estado e intents de transferencia**
   - **Archivo:** nuevo `src/storage/migrations/014-portability.ts`; `src/storage/migrations/index.ts`; `src/application/ports.ts`; `src/storage/sqlite-run-store.ts`; `test/migrations.test.ts`; nuevo `test/portability-persistence.test.ts`.
   - **Funciones:** portabilityMigration/currentSchemaVersion exportado; getPortabilityState, inspectPortabilityBlockers, begin/finalize/cancel export intent de ApplicationPortabilityStore; backupDatabaseTo; ledger de transferencias.
   - **Descripcion:** migracion aditiva 14 sin editar 001-013. Crear datasetId una vez y estado active. Mutaciones con `BEGIN IMMEDIATE`, CAS de estado/request/digest y ledger inmutable. `inspectPortabilityBlockers` implementa la matriz de elegibilidad mediante consultas acotadas; no carga transcripts/resultados. `backupDatabaseTo` usa la API backup de better-sqlite3 sobre la conexion poseida.
@@ -364,5 +364,8 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 1.2 completada: contratos, validadores y puertos en
   `src/application/portability.ts`, `src/application/ports.ts`; 5 tests especificos
   pasan y typecheck pasa.
-- Siguiente accion: implementar la migracion aditiva de schema 14 y persistencia
-  de estado/linaje.
+- Tarea 1.3 completada: migracion aditiva 14, estado/linaje CAS, blockers y backup
+  consistente en `src/storage/migrations/014-portability.ts` y
+  `src/storage/sqlite-run-store.ts`; 5 tests especificos pasan y typecheck pasa.
+- Siguiente accion: implementar el lease exclusivo del dataDir y conectarlo al
+  lifecycle del runtime.

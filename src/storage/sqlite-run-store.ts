@@ -45,6 +45,13 @@ import type {
   UpdatePreparationSynthesisRequest,
 } from '../application/preparation.js';
 import {
+  PortabilityContractError,
+  type PortabilityBlocker,
+  type PortabilityState,
+  type PortabilityTransfer,
+  validateUuidV4,
+} from '../application/portability.js';
+import {
   assertTaskContractTodoMatchesPlan,
   parseTaskContractBrief,
   parseTaskContractPlan,
@@ -80,6 +87,7 @@ import {
   type PreparationReviewReport,
 } from '../application/preparation-review.js';
 import type {
+  ApplicationPortabilityStore,
   ApplicationPreparationStore,
   ApplicationTaskContractStore,
   GuidedExecutionStore,
@@ -115,6 +123,7 @@ const PROCESS_STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOS
 export class SqliteRunStore
   implements
     RunStore,
+    ApplicationPortabilityStore,
     ApplicationPreparationStore,
     ApplicationTaskContractStore,
     GuidedExecutionStore
@@ -140,6 +149,200 @@ export class SqliteRunStore
     this.executionClaims.clear();
     this.preparationClaims.clear();
     this.database.close();
+  }
+
+  async getPortabilityState(): Promise<PortabilityState> {
+    return this.requirePortabilityState();
+  }
+
+  async inspectPortabilityBlockers(): Promise<PortabilityBlocker[]> {
+    const blockers: PortabilityBlocker[] = [];
+    const ownerCount =
+      this.scalarCount('SELECT COUNT(*) AS count FROM run_execution_owners') +
+      this.scalarCount('SELECT COUNT(*) AS count FROM preparation_owners');
+    if (ownerCount > 0) {
+      blockers.push({
+        code: 'active-execution',
+        detail: `${ownerCount} active execution owner(s)`,
+      });
+    }
+    const pendingRequests = this.scalarCount(
+      "SELECT COUNT(*) AS count FROM preparation_requests WHERE status = 'pending'",
+    );
+    const pendingMessages = this.scalarCount(
+      "SELECT COUNT(*) AS count FROM preparation_messages WHERE generation_status = 'pending'",
+    );
+    if (pendingRequests + pendingMessages > 0) {
+      blockers.push({
+        code: 'active-execution',
+        detail: `${pendingRequests + pendingMessages} pending preparation operation(s)`,
+      });
+    }
+    const reusableRuns = this.scalarCount(
+      `SELECT COUNT(*) AS count FROM runs
+       WHERE status IN ('pending', 'running', 'failed', 'interrupted')
+          OR (status = 'waiting' AND NOT (
+            workflow_id = 'guided-task-build'
+            AND EXISTS (
+              SELECT 1 FROM guided_executions ge
+              WHERE ge.run_id = runs.id AND ge.stage = 'changes-review'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM guided_execution_phases gp
+              WHERE gp.run_id = runs.id AND gp.status <> 'completed'
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM guided_execution_phases gp
+              WHERE gp.run_id = runs.id AND gp.commit_intent_json IS NOT NULL
+            )
+          ))`,
+    );
+    if (reusableRuns > 0) {
+      blockers.push({ code: 'reusable-run', detail: `${reusableRuns} run(s) can be resumed` });
+    }
+    return blockers;
+  }
+
+  async beginExportIntent(request: {
+    requestId: string;
+    digest: string;
+    destination: string;
+    transferId: string;
+  }): Promise<PortabilityState> {
+    validateUuidV4(request.requestId, 'requestId');
+    validateUuidV4(request.transferId, 'transferId');
+    return this.withImmediateTransaction(() => {
+      const state = this.requirePortabilityState();
+      if (state.state === 'exporting') {
+        if (
+          state.pendingExport?.requestId === request.requestId &&
+          state.pendingExport.digest === request.digest &&
+          state.pendingExport.destination === request.destination &&
+          state.pendingExport.transferId === request.transferId
+        )
+          return state;
+        throw new PortabilityContractError(
+          'invalid-input',
+          'Another export intent is already active',
+        );
+      }
+      if (state.state === 'exported') {
+        throw new PortabilityContractError(
+          'invalid-input',
+          'Exported dataset cannot start another export',
+        );
+      }
+      this.database
+        .prepare(
+          `UPDATE portability_state SET state = 'exporting', pending_request_id = ?,
+           pending_digest = ?, pending_destination = ?, pending_transfer_id = ?, updated_at = ?
+           WHERE singleton_id = 1 AND state = 'active'`,
+        )
+        .run(
+          request.requestId,
+          request.digest,
+          request.destination,
+          request.transferId,
+          new Date().toISOString(),
+        );
+      return this.requirePortabilityState();
+    });
+  }
+
+  async finalizeExport(request: {
+    requestId: string;
+    transfer: PortabilityTransfer;
+  }): Promise<PortabilityState> {
+    validateUuidV4(request.requestId, 'requestId');
+    validateUuidV4(request.transfer.transferId, 'transferId');
+    return this.withImmediateTransaction(() => {
+      const state = this.requirePortabilityState();
+      if (state.state === 'exported' && state.lastTransferId === request.transfer.transferId) {
+        return state;
+      }
+      if (
+        state.state !== 'exporting' ||
+        !state.pendingExport ||
+        state.pendingExport.requestId !== request.requestId ||
+        state.pendingExport.transferId !== request.transfer.transferId
+      ) {
+        throw new PortabilityContractError(
+          'invalid-input',
+          'Export intent does not match current state',
+        );
+      }
+      if (
+        request.transfer.datasetId !== state.datasetId ||
+        request.transfer.requestId !== state.pendingExport.requestId ||
+        request.transfer.digest !== state.pendingExport.digest
+      ) {
+        throw new PortabilityContractError(
+          'invalid-input',
+          'Transfer does not match current dataset',
+        );
+      }
+      this.database
+        .prepare(
+          `INSERT INTO portability_transfers
+           (transfer_id, parent_transfer_id, dataset_id, request_id, digest, git_fingerprint,
+            state, created_at, completed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          request.transfer.transferId,
+          request.transfer.parentTransferId,
+          request.transfer.datasetId,
+          request.transfer.requestId,
+          request.transfer.digest,
+          request.transfer.gitFingerprint,
+          request.transfer.state,
+          request.transfer.createdAt,
+          request.transfer.completedAt,
+        );
+      this.database
+        .prepare(
+          `UPDATE portability_state SET state = 'exported', last_transfer_id = ?,
+           pending_request_id = NULL, pending_digest = NULL, pending_destination = NULL,
+           pending_transfer_id = NULL, updated_at = ? WHERE singleton_id = 1 AND state = 'exporting'`,
+        )
+        .run(request.transfer.transferId, new Date().toISOString());
+      return this.requirePortabilityState();
+    });
+  }
+
+  async cancelExportIntent(request: {
+    requestId: string;
+    digest: string;
+  }): Promise<PortabilityState> {
+    validateUuidV4(request.requestId, 'requestId');
+    return this.withImmediateTransaction(() => {
+      const state = this.requirePortabilityState();
+      if (
+        state.state !== 'exporting' ||
+        !state.pendingExport ||
+        state.pendingExport.requestId !== request.requestId ||
+        state.pendingExport.digest !== request.digest
+      ) {
+        throw new PortabilityContractError(
+          'invalid-input',
+          'Export intent does not match current state',
+        );
+      }
+      this.database
+        .prepare(
+          `UPDATE portability_state SET state = 'active', pending_request_id = NULL,
+           pending_digest = NULL, pending_destination = NULL, pending_transfer_id = NULL,
+           updated_at = ? WHERE singleton_id = 1 AND state = 'exporting'`,
+        )
+        .run(new Date().toISOString());
+      return this.requirePortabilityState();
+    });
+  }
+
+  async backupDatabaseTo(destination: string): Promise<void> {
+    if (!destination)
+      throw new PortabilityContractError('invalid-input', 'Backup destination is required');
+    await this.database.backup(destination);
   }
 
   async createGuidedExecution(
@@ -929,6 +1132,35 @@ export class SqliteRunStore
       this.updateTaskContract(request, 'current_block_id = ?', [null]);
       return this.requireTaskContractState(request.workspace, request.contractId);
     });
+  }
+
+  private requirePortabilityState(): PortabilityState {
+    const row = this.database
+      .prepare('SELECT * FROM portability_state WHERE singleton_id = 1')
+      .get() as PortabilityStateRow | undefined;
+    if (!row) throw new PortabilityContractError('invalid-input', 'Portability state is missing');
+    return {
+      datasetId: row.dataset_id,
+      state: row.state,
+      lastTransferId: row.last_transfer_id,
+      pendingExport:
+        row.pending_request_id &&
+        row.pending_digest &&
+        row.pending_destination &&
+        row.pending_transfer_id
+          ? {
+              requestId: row.pending_request_id,
+              digest: row.pending_digest,
+              destination: row.pending_destination,
+              transferId: row.pending_transfer_id,
+            }
+          : null,
+    };
+  }
+
+  private scalarCount(sql: string): number {
+    const row = this.database.prepare(sql).get() as { count: number };
+    return row.count;
   }
 
   private withImmediateTransaction<T>(action: () => T): T {
@@ -3451,6 +3683,18 @@ export class SqliteRunStore
     // this process distinguish its own stale owner; other processes fail closed.
     return owner.owner_pid !== process.pid || owner.owner_started_at === PROCESS_STARTED_AT;
   }
+}
+
+interface PortabilityStateRow {
+  singleton_id: number;
+  dataset_id: string;
+  state: PortabilityState['state'];
+  last_transfer_id: string | null;
+  pending_request_id: string | null;
+  pending_digest: string | null;
+  pending_destination: string | null;
+  pending_transfer_id: string | null;
+  updated_at: string;
 }
 
 interface RunRow {
