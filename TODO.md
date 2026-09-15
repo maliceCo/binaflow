@@ -272,7 +272,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** preview no muta; stale digest; doble request mismo resultado; request conflictivo; fallo en backup/copia/bundle/rename/finalize y replay de cada borde; cancel permitido/prohibido; fuente exported rechaza runtime normal. `pnpm exec vitest run test/portability-export.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: export resumable single-writer transfer packages`
 
-- [ ] **Tarea 3.2: Coordinar import no destructivo y deteccion de divergencia**
+- [x] **Tarea 3.2: Coordinar import no destructivo y deteccion de divergencia**
   - **Archivo:** `src/application/portability-operations.ts`; nuevo `test/portability-import.test.ts`.
   - **Funciones:** previewImport e importPackage.
   - **Descripcion:** inspeccionar package completo antes del baseline. Aceptar baseline vacio o exported con dataset/padre exactos; exigir Git actual exacto; digest liga package, baseline, workspace y output nuevo. Materializar staging, verificar hashes, activar DB importada, volver a verificar y rename. Devolver ruta nueva y pasos manuales para config, sin editarla. Replay solo devuelve mismo output si su identidad/hashes coinciden.
@@ -384,4 +384,7 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 3.1 completada: servicio de preview/export/replay/cancelacion en
   `src/application/portability-operations.ts`, expuesto por la fachada y runtime;
   2 tests especificos pasan, lint y typecheck pasan.
-- Siguiente accion: coordinar import no destructivo y deteccion de divergencia.
+- Tarea 3.2 completada: preview/import no destructivo, baseline/linaje, staging y
+  activacion en `src/application/portability-operations.ts`; 2 tests especificos
+  pasan, lint y typecheck pasan.
+- Siguiente accion: exponer comandos CLI humanos y JSON v1.
