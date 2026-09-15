@@ -1,0 +1,352 @@
+import { createHash, randomUUID } from 'node:crypto';
+import type { AgentDriver } from '../core/agent.js';
+import type { AgentProfile } from '../core/agent-profile.js';
+import type {
+  GuidedPreparationBeginRequest,
+  GuidedPreparationOperationRequest,
+  GuidedPreparationRequestRecord,
+  GuidedPreparationState,
+  GuidedPreparationSource,
+  PublicSourceResult,
+} from './guided-preparation.js';
+import {
+  buildGuidedPreparationPrompt,
+  parseGuidedPreparationOperation,
+  parseGuidedPlanOutput,
+  parseGuidedReplyOutput,
+  parseGuidedTodoOutput,
+  validateGuidedPlannerProfile,
+} from './guided-preparation.js';
+import type {
+  ApplicationTaskContractStore,
+  GuidedPreparationStore,
+  PublicSourceReader,
+} from './ports.js';
+
+export interface GuidedPreparationOperationsContext {
+  readonly store: GuidedPreparationStore;
+  readonly taskContracts: ApplicationTaskContractStore;
+  readonly sourceReader: PublicSourceReader;
+  readonly driver: AgentDriver;
+  readonly plannerProfile: AgentProfile;
+  readonly workspace: string;
+}
+
+export interface GuidedPreparationService {
+  execute(
+    request: GuidedPreparationOperationRequest,
+    options?: { signal?: AbortSignal; ownerToken?: string },
+  ): Promise<GuidedPreparationRequestRecord>;
+  confirmBrief(request: GuidedPreparationOperationRequest): Promise<GuidedPreparationState>;
+}
+
+export function createGuidedPreparationService(
+  context: GuidedPreparationOperationsContext,
+): GuidedPreparationService {
+  return {
+    execute: (request, options) => executeRequest(context, request, options),
+    confirmBrief: async (request) => {
+      const operation = parseGuidedPreparationOperation(request);
+      if (operation.kind !== 'confirm-brief') {
+        throw new Error('Expected a confirm-brief operation');
+      }
+      return context.store.confirmGuidedBrief({
+        workspace: context.workspace,
+        contractId: operation.contractId,
+        expectedPreparationRevision: operation.expectedPreparationRevision,
+        brief: operation.brief,
+        throughSequence: operation.throughSequence,
+        sourceIds: operation.sourceIds,
+      });
+    },
+  };
+}
+
+async function executeRequest(
+  context: GuidedPreparationOperationsContext,
+  input: GuidedPreparationOperationRequest,
+  options: { signal?: AbortSignal; ownerToken?: string } = {},
+): Promise<GuidedPreparationRequestRecord> {
+  const operation = parseGuidedPreparationOperation(input);
+  if (requiresPlanner(operation.kind)) validateGuidedPlannerProfile(context.plannerProfile);
+  const admissionRequest: GuidedPreparationBeginRequest = {
+    workspace: context.workspace,
+    operation,
+    operationId: randomUUID(),
+    requestHash: createHash('sha256').update(canonicalJson(operation)).digest('hex'),
+    ownerToken: options.ownerToken ?? randomUUID(),
+    ...(requiresPlanner(operation.kind) ? { profileSnapshot: context.plannerProfile } : {}),
+  };
+  const admitted = await context.store.beginGuidedPreparationRequest(admissionRequest);
+  if (isTerminal(admitted.status)) return admitted;
+
+  try {
+    const result = await performOperation(context, operation, options.signal);
+    return await context.store.finishGuidedPreparationRequest({
+      workspace: context.workspace,
+      operation,
+      operationId: admitted.operationId,
+      ownerToken: admissionRequest.ownerToken,
+      status: 'completed',
+      ...(result.result ? { result: result.result } : {}),
+      ...(result.publishedDocumentId ? { publishedDocumentId: result.publishedDocumentId } : {}),
+    });
+  } catch (error) {
+    await context.store
+      .finishGuidedPreparationRequest({
+        workspace: context.workspace,
+        operation,
+        operationId: admitted.operationId,
+        ownerToken: admissionRequest.ownerToken,
+        status: isAbort(error, options.signal) ? 'cancelled' : 'failed',
+        errorCode:
+          error instanceof Error && 'code' in error ? String(error.code) : 'operation-failed',
+      })
+      .catch(() => undefined);
+    throw error;
+  }
+}
+
+async function performOperation(
+  context: GuidedPreparationOperationsContext,
+  operation: GuidedPreparationOperationRequest,
+  signal?: AbortSignal,
+): Promise<{
+  result?:
+    | import('./guided-preparation.js').GuidedReplyOutput
+    | import('./guided-preparation.js').GuidedPlanOutput
+    | import('./guided-preparation.js').GuidedTodoOutput;
+  publishedDocumentId?: string;
+}> {
+  switch (operation.kind) {
+    case 'search': {
+      const results = await context.sourceReader.search(
+        operation.query,
+        signal ?? new AbortController().signal,
+      );
+      await saveSources(context, operation, results);
+      return {};
+    }
+    case 'fetch-source': {
+      const result = await context.sourceReader.readUrl(
+        operation.url,
+        signal ?? new AbortController().signal,
+      );
+      await saveSources(context, operation, [result]);
+      return {};
+    }
+    case 'confirm-brief':
+      await context.store.confirmGuidedBrief({
+        workspace: context.workspace,
+        contractId: operation.contractId,
+        expectedPreparationRevision: operation.expectedPreparationRevision,
+        brief: operation.brief,
+        throughSequence: operation.throughSequence,
+        sourceIds: operation.sourceIds,
+      });
+      return {};
+    case 'reply': {
+      const output = parseGuidedReplyOutput(await runPlanner(context, operation, signal));
+      assertCitations(output.citedSourceIds, operation.sourceIds);
+      await context.store.appendGuidedPreparationMessage({
+        workspace: context.workspace,
+        contractId: operation.contractId,
+        role: 'assistant',
+        content: output.message,
+        requestId: operation.requestId,
+      });
+      return { result: output };
+    }
+    case 'generate-plan': {
+      const output = parseGuidedPlanOutput(await runPlanner(context, operation, signal));
+      assertCitations(output.citedSourceIds, operation.sourceIds);
+      const state = await context.taskContracts.publishTaskContractPlan({
+        contractId: operation.contractId,
+        workspace: context.workspace,
+        expectedRevision: operation.expectedRevision,
+        plan: output.plan,
+      });
+      return {
+        result: output,
+        ...(state.currentPlan ? { publishedDocumentId: state.currentPlan.id } : {}),
+      };
+    }
+    case 'generate-todo': {
+      const output = parseGuidedTodoOutput(await runPlanner(context, operation, signal));
+      assertCitations(output.citedSourceIds, []);
+      const state = await context.taskContracts.publishTaskContractTodo({
+        contractId: operation.contractId,
+        workspace: context.workspace,
+        expectedRevision: operation.expectedRevision,
+        todo: output.todo,
+      });
+      return {
+        result: output,
+        ...(state.currentTodo ? { publishedDocumentId: state.currentTodo.id } : {}),
+      };
+    }
+    case 'comment-plan':
+      await context.taskContracts.commentTaskContractPlan({
+        contractId: operation.contractId,
+        workspace: context.workspace,
+        expectedRevision: operation.expectedRevision,
+        planVersion: operation.planVersion,
+        content: operation.content,
+      });
+      return {};
+    case 'approve-plan':
+      await context.taskContracts.approveTaskContractPlan({
+        contractId: operation.contractId,
+        workspace: context.workspace,
+        expectedRevision: operation.expectedRevision,
+        planVersion: operation.planVersion,
+      });
+      return {};
+    case 'recover-operation':
+      throw new Error('Recovery requires an owner check and is not automatic');
+  }
+}
+
+async function runPlanner(
+  context: GuidedPreparationOperationsContext,
+  operation: GuidedPreparationOperationRequest,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  validateGuidedPlannerProfile(context.plannerProfile);
+  const state = await context.taskContracts.getTaskContract(
+    context.workspace,
+    operation.contractId,
+  );
+  if (!state) throw new Error('Task contract does not exist');
+  const preparation = await context.store.getGuidedPreparation(
+    context.workspace,
+    operation.contractId,
+  );
+  if (!preparation) throw new Error('Guided preparation does not exist');
+  const messages = await context.store.listGuidedPreparationMessages({
+    workspace: context.workspace,
+    contractId: operation.contractId,
+    limit: 50,
+  });
+  const sources = await context.store.listGuidedPreparationSources({
+    workspace: context.workspace,
+    contractId: operation.contractId,
+    limit: 50,
+  });
+  const selectedIds = 'sourceIds' in operation ? operation.sourceIds : [];
+  const selectedSources = sources.items.filter((source) => selectedIds.includes(source.id));
+  if (selectedSources.length !== selectedIds.length) {
+    throw new Error('A selected source does not belong to the task');
+  }
+  if (
+    operation.kind === 'generate-plan' &&
+    preparation.briefConfirmedThroughSequence < preparation.lastSequence
+  ) {
+    throw new Error('The brief must be confirmed before generating a plan');
+  }
+  const prompt = buildGuidedPreparationPrompt({
+    brief: state.currentBrief.body,
+    messages: messages.items.map((message) => ({
+      id: message.id,
+      sequence: message.sequence,
+      role: message.role,
+      content: message.content,
+    })),
+    sources: selectedSources.map((source) => ({
+      id: source.id,
+      kind: source.kind,
+      url: source.url,
+      retrievedAt: source.retrievedAt,
+      excerpt: source.excerpt,
+      contentHash: source.contentHash,
+    })),
+    instruction: plannerInstruction(operation),
+  });
+  const response = await context.driver.execute(
+    {
+      runId: operation.requestId,
+      stepId: operation.kind,
+      profile: context.plannerProfile,
+      prompt,
+    },
+    () => undefined,
+    signal ?? new AbortController().signal,
+  );
+  try {
+    return JSON.parse(response.text) as unknown;
+  } catch {
+    throw new Error('Planner returned invalid JSON');
+  }
+}
+
+function plannerInstruction(operation: GuidedPreparationOperationRequest): string {
+  switch (operation.kind) {
+    case 'reply':
+      return `Answer the user's question: ${operation.message}`;
+    case 'generate-plan':
+      return 'Generate a plan from the confirmed brief and selected evidence.';
+    case 'generate-todo':
+      return `Generate a TODO for approved plan version ${operation.planVersion}.`;
+    default:
+      throw new Error(`Operation ${operation.kind} does not call the planner`);
+  }
+}
+
+async function saveSources(
+  context: GuidedPreparationOperationsContext,
+  operation: GuidedPreparationOperationRequest,
+  results: readonly PublicSourceResult[],
+): Promise<void> {
+  const state = await context.store.getGuidedPreparation(context.workspace, operation.contractId);
+  if (!state) throw new Error('Guided preparation does not exist');
+  const sources: GuidedPreparationSource[] = results.slice(0, 5).map((source, index) => ({
+    id: randomUUID(),
+    contractId: operation.contractId,
+    sequence: state.lastSequence + index + 1,
+    ...source,
+  }));
+  if (sources.length > 0) {
+    await context.store.saveGuidedPreparationSources({
+      workspace: context.workspace,
+      contractId: operation.contractId,
+      sources,
+    });
+  }
+}
+
+function assertCitations(citations: readonly string[], selected: readonly string[]): void {
+  const allowed = new Set(selected);
+  if (citations.some((citation) => !allowed.has(citation))) {
+    throw new Error('Planner cited a source that was not selected');
+  }
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map(
+        (key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function requiresPlanner(kind: GuidedPreparationOperationRequest['kind']): boolean {
+  return kind === 'reply' || kind === 'generate-plan' || kind === 'generate-todo';
+}
+
+function isTerminal(status: GuidedPreparationRequestRecord['status']): boolean {
+  return (
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'interrupted'
+  );
+}
+
+function isAbort(error: unknown, signal?: AbortSignal): boolean {
+  return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError');
+}

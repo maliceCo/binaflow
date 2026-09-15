@@ -421,7 +421,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 
 ### Fase 3: Aplicacion y owner
 
-- [ ] **Tarea 3.1: Coordinar chat, plan y TODO con el planner read-only**
+- [x] **Tarea 3.1: Coordinar chat, plan y TODO con el planner read-only**
   - **Archivo:** nuevo `src/application/guided-preparation-operations.ts`; `src/workflows/guided-preparation.ts`, `src/application/guided-execution-operations.ts`, `src/storage/sqlite-run-store.ts`; nuevo `test/guided-preparation-operations.test.ts`; `test/guided-execution-operations.test.ts`.
   - **Funciones:** createGuidedPreparationService, ejecucion de request, confirmacion de brief, publicacion de plan/TODO y guard de handoff con preparacion.
   - **Descripcion:** usar AgentDriver y puertos sin importar adapters. Una llamada por operacion, perfil validado/snapshot y contexto acotado. Fuentes y chat no aprueban. Hand-off exige preparacion confirmada tambien por servicio y transaccion, sin afectar contratos legacy sin chat. Filtrar/enforzar resume permitido de changes-review.
@@ -575,5 +575,11 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   mensajes, fuentes y requests idempotentes con CAS; 7 tests enfocados pasan.
 - Tarea 2.2 completada: manifiestos y copias SQLite aceptan schema 14 y 15, las
   exportaciones nuevas emiten 15 y se comprueba que el manifiesto coincide con DB;
-  12 tests de portabilidad pasan.
-- Siguiente accion: ejecutar la Tarea 2.3, implementando fuentes públicas acotadas.
+  13 tests de portabilidad pasan.
+- Tarea 2.3 completada: lector HTTPS de fuentes con DNS/IP fijados, protección SSRF,
+  sin redirecciones, límites de tamaño, identidad de codificación y extracción HTML
+  con parse5; 6 tests sin red real pasan.
+- Tarea 3.1 completada: servicio guiado coordina chat, fuentes, confirmación, plan,
+  aprobación y TODO con perfil planner read-only; el preflight de ejecución bloquea
+  preparaciones sin brief confirmado.
+- Siguiente accion: ejecutar la Tarea 3.2, unificando la ranura de ownership del host.

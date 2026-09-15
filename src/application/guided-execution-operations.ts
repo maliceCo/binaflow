@@ -9,6 +9,7 @@ import type {
   ApplicationTaskContractStore,
   GitWorkspace,
   GuidedExecutionStore,
+  GuidedPreparationStore,
   WorkspaceExecutionLock,
 } from './ports.js';
 import {
@@ -44,6 +45,7 @@ export interface GuidedExecutionOperationsContext {
   readonly lock: WorkspaceExecutionLock;
   readonly workspace: string;
   readonly profiles: Record<string, AgentProfile>;
+  readonly preparation?: GuidedPreparationStore;
 }
 
 export function createGuidedExecutionRunner(
@@ -125,6 +127,19 @@ export async function previewStart(
   assertPositiveInteger(request.todoVersion, 'todoVersion');
   const state = await context.taskContracts.getTaskContract(context.workspace, request.contractId);
   if (!state) throw new Error(`Unknown task contract: ${request.contractId}`);
+  if (context.preparation) {
+    const preparation = await context.preparation.getGuidedPreparation(
+      context.workspace,
+      request.contractId,
+    );
+    if (
+      preparation &&
+      (preparation.activeRequestId !== null ||
+        preparation.briefConfirmedThroughSequence < preparation.lastSequence)
+    ) {
+      throw new Error('Guided preparation is not confirmed for execution');
+    }
+  }
   if (state.contract.revision !== request.expectedRevision)
     throw new Error('Task contract revision is stale');
   const readiness = getTaskContractReadiness({
