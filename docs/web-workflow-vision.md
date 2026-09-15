@@ -134,8 +134,13 @@ integracion Git. Siguen pendientes la web, la revision de codigo y las
 decisiones selectivas de QA; no hay recuperacion automatica tras una caida
 abrupta.
 
-Siguiente paso: preparar el plan de implementacion del **Hito 4**. No asumir que
-los Hitos 1-3.5 cubren autenticacion o despliegue remoto.
+El `TODO.md` del **Hito 4** esta aprobado para implementacion tarea por tarea.
+El plan propone React, servidor Node en primer plano, acceso por codigo de sesion,
+HTTPS para LAN, fuentes publicas por URL y busqueda Brave opcional. La Tarea 1.1
+verifico el baseline completo: format, lint, typecheck, 407 tests (1 omitido) y
+build pasan; schema vigente 14 y schema 15 esta libre. Incluye conectar la
+preparacion al contrato guiado y conservar la portabilidad de los datos nuevos.
+No asumir que los Hitos 1-3.5 cubren autenticacion o despliegue remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).
