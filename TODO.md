@@ -1,37 +1,45 @@
-# PLAN DE EJECUCION: Hito 4 - Web personal y preparacion guiada
+# PLAN DE EJECUCION: Hito 4 y extension 5.x - Web personal, launcher y handoff
 
 > **ATENCION SUB-AGENTE:** Seguir las tareas en orden, solo tras autorizacion de
 > implementacion. Cada tarea exige verificacion y commit propio. Ante una
-> desviacion, detenerse y pedir un ajuste del plan. La orden actual es redactar
-> este TODO: NO implementar, instalar paquetes/navegadores, arrancar servidores,
-> invocar modelos ni modificar datos, configuracion o certificados del usuario.
+> desviacion, detenerse y pedir un ajuste del plan. El Hito 4 base esta cerrado;
+> la orden vigente es implementar la extension 5.x desde la Tarea 5.4. No invocar
+> modelos ni modificar datos, configuracion o certificados reales del usuario.
 
 ## Lectura rapida para aprobar
 
-**Estado:** Hitos 1, 2, 3 y 3.5 completados segun el propietario y la documentacion.
-Este hito esta pendiente. El TODO anterior de portabilidad permanece en Git;
-no se reabren sus tareas por sustituir este archivo.
+**Estado:** Hitos 1, 2, 3 y 3.5, y el Hito 4 web base estan completados. Una prueba
+manual del Hito 4 hizo visible una friccion de producto nueva: arrancar la web
+exige preparar JSON y cada proceso queda ligado a un workspace. Esa observacion
+se promueve como extension 5.x; no reabre ni invalida los contratos ya verificados.
 
-**Objetivo:** entrar desde un navegador de la red interna, explorar una tarea,
-aprobar un plan y un TODO concreto, iniciar su ejecucion y recuperar el progreso
-al cerrar la pestana o abrir otro navegador.
+**Objetivo base completado:** entrar desde un navegador, explorar una tarea,
+aprobar plan/TODO, iniciar ejecucion y recuperar progreso entre navegadores.
+
+**Objetivo nuevo:** arrancar con `binaflow web`, configurar desde la propia web,
+registrar proyectos locales y transferir el ownership de un proyecto entre dos
+servidores personales sin sincronizacion bidireccional.
 
 ### Decisiones ya acordadas
 
-- Un usuario y un workspace configurado por proceso. Acceso inicial en LAN,
-  sin VPN ni publicacion en internet.
+- Un usuario y un solo proyecto activo por proceso. El launcher puede catalogar
+  varios proyectos, pero solo abre un ApplicationContext/dataDir a la vez.
+- El modo actual por proyecto se conserva como compatibilidad; el launcher es la
+  entrada normal sin JSON manual y nunca escanea libremente el filesystem.
 - La web llama a aplicacion; no envuelve CLI/TUI ni abre SQLite por peticion.
 - El servidor posee el trabajo, no la conexion HTTP. Cerrar una pestana o hacer
   logout no cancela un agente.
+- Git sincroniza codigo. El estado Binaflow cambia de propietario mediante handoff
+  A -> B o B -> A; no hay merge de SQLite ni dos owners activos.
 - Los hitos 5 y 6 conservan diffs editables, comentarios por linea, QA y cierre.
-  Aqui la implementacion acaba en `waiting/changes-review`.
+  La ejecucion guiada sigue acabando en `waiting/changes-review`.
 
 ### Propuestas tecnicas que se aprueban junto con este TODO
 
 - **Interfaz:** React existente + react-dom; build pequeno con esbuild. Sin
   Next.js, SSR, router externo, framework CSS, WebSockets ni service worker.
 - **Servidor:** HTTP/HTTPS nativo de Node y rutas explicitas; Ajv existente para
-  validar. `binaflow serve` permanece en primer plano, sin daemon ni servicio OS.
+  validar. `binaflow web` permanece en primer plano, sin daemon ni servicio OS.
 - **Acceso:** codigo aleatorio de acceso generado al arrancar, introducido en un
   formulario y canjeado por cookie de sesion. Para LAN se exige HTTPS con
   certificado/clave aportados por el operador; HTTP solo en loopback.
@@ -479,7 +487,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** signal durante chat/builder/request breve; segundo signal espera; EADDRINUSE libera recursos; cliente desconectado no para; export concurrente busy y tras close permitido. `pnpm exec vitest run test/web-lifecycle.test.ts test/cli-protocol.test.ts test/portability-process.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: run the personal web server with ordered shutdown`
 
-### Fase 5: Validacion y cierre
+### Fase 5A: Aceptacion del Hito 4 base
 
 - [x] **Tarea 5.1: Probar el recorrido con navegador y limites de arquitectura**
   - **Archivo:** nuevos `playwright.config.ts`, `test/web/browser.e2e.ts`, `test/web/fixture-server.ts`, `test/web/fixtures/localhost-cert.pem`, `test/web/fixtures/localhost-key.pem`; `test/architecture-boundaries.test.ts`; `package.json` script test:web definitivo.
@@ -497,13 +505,20 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion:** `pnpm exec prettier --check docs/personal-web.md docs/web-workflow-vision.md docs/task-contract.md docs/data-portability.md README.md AGENTS.md`; revisar comandos contra help/test:web. Registrar prueba real LAN como pendiente si solo se probaron dos contextos locales; no presentar eso como prueba desde otro equipo.
   - **Commit Msg:** `docs: describe personal web access and preparation guarantees`
 
-- [ ] **Tarea 5.3: Pasar regresion y entregar evidencia de cierre**
-  - **Archivo:** `TODO.md` y `docs/web-workflow-vision.md` para resultados; correcciones solo en archivos previamente autorizados, con commit funcional separado si hiciera falta.
+- [x] **Tarea 5.3: Registrar el hallazgo manual como extension separada**
+  - **Archivo:** `TODO.md`.
   - **Funciones:** ninguna nueva.
-  - **Descripcion:** checks finales, inspeccion del diff y recorrido LAN por el operador antes de declarar acceso LAN comprobado. Mantener visible cualquier limite de plataforma/red/modelo. No ejecutar builds de distribucion.
-  - **Evitar:** arreglos ajenos, silenciar tests, incrementar timeouts sin causa, marcar el hito entero hecho si falta la aceptacion requerida o esconder regresion de portabilidad/CLI/TUI.
-  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; `git diff --check`; `git status --short`. Probar old CLI JSON/JSONL y roundtrip 14/15 mediante tests existentes/extendidos, no datos reales. Registrar resultados exactos.
-  - **Commit Msg:** `docs: record verified personal web milestone results`
+  - **Descripcion:** conservar 5.1/5.2 como cierre verificable del Hito 4 y convertir la friccion observada al crear `binaweb.json` durante la prueba manual en una extension funcional posterior. El archivo local de prueba no es parte del producto, no se versiona, no se modifica y desaparece de la operacion normal al completar 5.5/5.6. Mover la regresion global al cierre 5.14 para que mida el producto extendido completo.
+  - **Evitar:** presentar el launcher/handoff como bug del Hito 4, mezclar el JSON local en un commit, reabrir tareas terminadas o empezar implementacion durante esta reorganizacion.
+  - **Verificacion:** `pnpm exec prettier --check TODO.md`; `git diff --check`.
+  - **Commit Msg:** `docs: promote manual web feedback into the launcher plan`
+
+### Fase 5B: Extension surgida de la prueba manual
+
+La extension empieza en 5.4. Hasta completar 5.5 sigue siendo valido arrancar el
+modo existente con `--web-config`; no importar, borrar ni depender del
+`binaweb.json` local usado durante la aceptacion. Las pruebas deben crear sus
+settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 
 - [ ] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
   - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
@@ -588,9 +603,9 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 - [ ] **Tarea 5.14: Documentar operacion sin JSON y cerrar regresion**
   - **Archivo:** `README.md`, `docs/personal-web.md`, `docs/data-portability.md`, `docs/web-workflow-vision.md`, `TODO.md`; `AGENTS.md` solo si el alcance vigente cambia.
   - **Funciones:** ninguna nueva.
-  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing LAN/VPN, TLS aportado, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Explicar que paths/config/credenciales no viajan; cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas y dejar LAN/VPN/plataformas reales pendientes si solo hay fixtures. Solicitar confirmacion antes de retirar TODO.
+  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing LAN/VPN, TLS aportado, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Explicar que paths/config/credenciales no viajan; cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas y dejar LAN/VPN/plataformas reales pendientes si solo hay fixtures. La regresion debe conservar CLI JSON/JSONL, TUI, modo web por proyecto y roundtrip de paquetes schema14/15. Solicitar confirmacion antes de retirar TODO.
   - **Evitar:** llamar sync al handoff, prometer NAT traversal/relay/cloud, afirmar garantia ante restaurar backups viejos, ocultar downtime tras export, afirmar auto Git/TLS, ejecutar bundles/releases o borrar TODO automaticamente.
-  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web` si Chromium esta disponible; `git diff --check`; `git status --short`. No corregir fallos ajenos fuera de tareas sin protocolo de desviacion.
+  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web` si Chromium esta disponible; pruebas enfocadas existentes de CLI protocol y portabilidad; `git diff --check`; `git status --short`. No corregir fallos ajenos fuera de tareas sin protocolo de desviacion.
   - **Commit Msg:** `docs: record verified launcher and project handoff guarantees`
 
 ## Criterios de aceptacion global
@@ -606,11 +621,21 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 ### Seguridad y compatibilidad
 
 - [ ] Sesion/Origin/Host/CSRF, SSRF y rendering seguro probados con casos negativos.
-- [ ] LAN usa TLS/codigo, un workspace fijo y ninguna API de terminal/config/FS.
-- [ ] CLI/TUI y claims/leases siguen protegidos; no segundo contexto durante serve.
+- [ ] LAN usa TLS/codigo, un proyecto activo y ninguna API de terminal o FS general.
+- [ ] Configuracion sensible y ampliacion de roots solo se admiten desde loopback.
+- [ ] CLI/TUI y claims/leases siguen protegidos; no segundo contexto durante web.
 - [ ] Paquetes schema14 siguen importables y schema15 conserva conversaciones/fuentes.
 - [ ] Suite completa y navegador pasan; aceptacion LAN/modelos/plataformas se describe
       segun evidencia real, sin confundir tests simulados con integracion live.
+
+### Launcher y handoff
+
+- [ ] `binaflow web` arranca en loopback sin exigir JSON, proyecto ni dataDir.
+- [ ] El catalogo guarda rutas localmente y el browser solo usa rootId/segmentos.
+- [ ] Cambiar proyecto falla con 409 si existe una operacion activa.
+- [ ] Pairing exige TLS, codigo efimero, fingerprint y firmas sin compartir sesiones.
+- [ ] Handoff conserva projectId/lineage, verifica Git y deja un solo owner activo.
+- [ ] Corte/replay se recupera por transferId sin duplicar exportacion ni importacion.
 
 ## Reglas de operacion
 
@@ -644,9 +669,11 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Orden actual: ejecutar la implementacion autorizada del Hito 4, una tarea cada vez.
-- Baseline observado: worktree con los cambios previstos en `TODO.md` y
-  `docs/web-workflow-vision.md`, sobre `945322c fix: harden portability process boundaries`.
+- Orden actual: Hito 4 base cerrado; ejecutar la extension desde 5.4 hasta 5.14,
+  una tarea y un commit a la vez.
+- Origen de la extension: una prueba manual necesito crear `binaweb.json` y pasar
+  `--web-config`; el archivo permanece local y ajeno a los commits. El producto
+  final debe arrancar sin ese paso.
 - El TODO anterior de Hito 3.5 era tracked y conserva su contenido en ese commit;
   blob `92165c2269bb7a02b7d4f0fe2101050ec75f9220`. Su estado real de completado esta
   documentado en `docs/data-portability.md` y el roadmap.
@@ -688,15 +715,14 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 4.4 completada: comando `web` compone runtime, host y listener, y ante SIGINT/
   SIGTERM cierra primero el listener y después el host/SQLite; build completo pasa.
 - Tarea 5.1 completada: `pnpm exec playwright install chromium` y `pnpm run
-  test:web` pasan; el recorrido usa dos contextos de navegador. También pasan
-  los boundaries y las pruebas web/CLI/portabilidad enfocadas. La regresión 5.3
-  queda bloqueada porque `pnpm run format:check` incluye el archivo sin
-  seguimiento `binaweb.json`, que no pertenece al plan y no se modificará.
+  test:web` pasan; el recorrido usa dos contextos de navegador. Tambien pasan
+  los boundaries y las pruebas web/CLI/portabilidad enfocadas.
 - Tarea 5.2 completada: `docs/personal-web.md`, README y visión web documentan
   configuración loopback/LAN, TLS, código efímero, límites, contratos y evidencias
   sin afirmar validación remota.
-- Regresión local: `format:check`, `lint`, `typecheck`, `build` y `pnpm run test`
-  pasan (70 archivos, 428 tests, 1 omitido). `pnpm run test:web` sigue bloqueado
-  únicamente por el ejecutable Chromium ausente.
-- Siguiente accion: instalar Chromium con aprobación y ejecutar `pnpm run test:web`;
-  después registrar la regresión final como Tarea 5.3.
+- Regresion previa del Hito 4: `format:check`, `lint`, `typecheck`, `build` y
+  `pnpm run test` pasaron (70 archivos, 428 tests, 1 omitido). Tras instalar
+  Chromium, `pnpm run test:web` tambien pasa.
+- Tarea 5.3 completada: el feedback manual queda separado como extension 5.x y la
+  regresion completa se ejecutara en 5.14, sin incluir configuracion local real.
+- Siguiente accion: ejecutar Tarea 5.4, contratos puros del launcher/handoff.
