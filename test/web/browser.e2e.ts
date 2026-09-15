@@ -12,10 +12,19 @@ test.afterEach(async () => {
 
 test('logs in and renders the task workspace without interpreting task text as HTML', async ({
   page,
+  browser,
 }) => {
   await page.goto(fixture.url);
   await page.getByLabel('Access code').fill(fixture.accessCode);
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Tasks' })).toBeVisible();
   await expect(page.getByText('exploration: 123e4567')).toBeVisible();
+
+  const secondContext = await browser.newContext();
+  const secondPage = await secondContext.newPage();
+  await secondPage.goto(fixture.url);
+  await secondPage.getByLabel('Access code').fill(fixture.accessCode);
+  await secondPage.getByRole('button', { name: 'Continue' }).click();
+  await expect(secondPage.getByText('exploration: 123e4567')).toBeVisible();
+  await secondContext.close();
 });

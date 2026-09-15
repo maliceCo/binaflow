@@ -599,11 +599,15 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   pasan.
 - Tarea 4.4 completada: comando `web` compone runtime, host y listener, y ante SIGINT/
   SIGTERM cierra primero el listener y después el host/SQLite; build completo pasa.
-- Tarea 5.1 en progreso: se añadieron fixture Playwright, prueba de navegador y
-  boundaries; la aceptación Chromium queda bloqueada porque no está instalado el
-  ejecutable local (`pnpm exec playwright install` requiere aprobación explícita).
+- Tarea 5.1 en progreso: se añadieron fixture Playwright con dos contextos de
+  navegador, prueba de navegador y boundaries; la aceptación Chromium queda
+  bloqueada porque no está instalado el ejecutable local (`pnpm exec playwright
+  install` requiere aprobación explícita).
 - Tarea 5.2 completada: `docs/personal-web.md`, README y visión web documentan
   configuración loopback/LAN, TLS, código efímero, límites, contratos y evidencias
   sin afirmar validación remota.
+- Regresión local: `format:check`, `lint`, `typecheck`, `build` y `pnpm run test`
+  pasan (70 archivos, 428 tests, 1 omitido). `pnpm run test:web` sigue bloqueado
+  únicamente por el ejecutable Chromium ausente.
 - Siguiente accion: instalar Chromium con aprobación y ejecutar `pnpm run test:web`;
   después registrar la regresión final como Tarea 5.3.

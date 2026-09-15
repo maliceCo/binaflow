@@ -4,7 +4,9 @@ Estado: los Hitos 1, 2, 3 y 3.5 estan implementados y verificados localmente. El
 Hito 4 tiene listener, autenticacion de un usuario, API versionada, cliente React
 y composicion `web`; la prueba Chromium queda pendiente porque el ejecutable no
 esta instalado en este entorno. El acceso LAN real, certificados y modelos
-siguen siendo validaciones del operador.
+siguen siendo validaciones del operador. La regresion local de servidor, API,
+arquitectura, typecheck, build y suite Vitest pasa; Playwright no se pudo iniciar
+porque falta el ejecutable Chromium.
 El Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
 autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
 El Hito 3.5 agrega traslado portable con un solo equipo activo. La verificacion
