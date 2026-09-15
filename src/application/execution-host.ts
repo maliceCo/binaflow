@@ -40,7 +40,10 @@ export interface HostedGuidedPreparation {
   readonly service: GuidedPreparationService;
 }
 
+export type ExecutionHostLifecycleState = 'idle' | 'busy' | 'closing' | 'closed';
+
 export interface ExecutionHostClient {
+  getLifecycleState(): ExecutionHostLifecycleState;
   readonly guidedPreparation?: {
     execute(
       request: GuidedPreparationOperationRequest,
@@ -68,6 +71,7 @@ export interface ExecutionHostClient {
 
 export interface ExecutionHost {
   readonly client: ExecutionHostClient;
+  getLifecycleState(): ExecutionHostLifecycleState;
   close(): Promise<void>;
 }
 
@@ -288,7 +292,11 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     return closePromise;
   };
 
+  let closed = false;
+
   const client: ExecutionHostClient = {
+    getLifecycleState: () =>
+      closed ? 'closed' : closing ? 'closing' : activeOperation ? 'busy' : 'idle',
     start,
     cancel,
     ...(options.guidedPreparation ? { guidedPreparation: { execute: startPreparation } } : {}),
@@ -313,7 +321,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       admitQuery(() => options.application.listRunEvents(runId, query)),
   };
 
-  return { client, close };
+  return { client, getLifecycleState: client.getLifecycleState, close };
 
   async function execute(
     active: ActiveExecution,
@@ -505,6 +513,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     }
     await Promise.all([...admittedQueries]);
     await options.close();
+    closed = true;
     if (internalFailure) throw internalFailure;
   }
 

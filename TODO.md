@@ -552,7 +552,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** roots Linux/Windows simuladas, paginacion, path traversal y encoding, symlink fuera de root, config ausente/invalida, duplicado, remove no destructivo y ninguna apertura SQLite. `pnpm exec vitest run test/project-catalog.test.ts test/project-browser.test.ts test/web-project-routes.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: add guarded host project discovery and catalog`
 
-- [ ] **Tarea 5.8: Poseer un unico proyecto activo en el launcher**
+- [x] **Tarea 5.8: Poseer un unico proyecto activo en el launcher**
   - **Archivo:** nuevo `src/application/web-runtime.ts`; `src/application/runtime.ts`, `src/application/execution-host.ts`; `src/web/project-catalog.ts`; nuevos `test/web-project-lifecycle.test.ts`, `test/execution-host.test.ts`.
   - **Funciones:** createPersonalWebRuntime, selectProject, closeActiveProject y ExecutionHost.getLifecycleState.
   - **Descripcion:** el listener/auth/settings/catalogo viven sin ApplicationContext. Seleccionar un proyecto abre exactamente un ApplicationContext+ExecutionHost y adquiere su dataDir lease; publicar el proyecto activo solo tras apertura completa. Como maximo un proyecto activo por proceso y una operacion mutante global. Cambiar/cerrar exige host idle; busy devuelve estado tipado sin cancelar. Cierre ordenado: dejar de admitir HTTP, esperar queries, cerrar operacion/host, SQLite y lease. Dos sesiones observan el mismo proyecto activo. Fallar al abrir el destino deja el launcher utilizable y sin owner parcial; no reabre silenciosamente el anterior.
@@ -737,4 +737,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.7 completada: catalogo atomico local, registro no destructivo, explorador
   paginado de un nivel, containment con realpath y rutas rootId/segmentos sin paths;
   8 tests enfocados, lint y typecheck pasan.
-- Siguiente accion: ejecutar Tarea 5.8, ownership de un unico proyecto activo.
+- Tarea 5.8 completada: `ExecutionHost` expone lifecycle y el runtime web selecciona
+  un unico contexto, rechaza cambios busy y limpia destinos fallidos; 28 tests
+  enfocados y typecheck pasan. La composicion HTTP completa se conecta al catalogo
+  y la identidad del dispositivo en las tareas 5.9/5.10.
+- Siguiente accion: ejecutar Tarea 5.9, selector y estado de proyectos en la web.
