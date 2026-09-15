@@ -471,7 +471,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** `pnpm exec vitest run test/web-client.test.tsx`: cliente fetch conserva requestId ante respuesta perdida y render de texto malicioso queda escapado (react-dom/server solo en test). `pnpm run typecheck`; `pnpm run build`. Scripts/estilos externos compatibles con CSP, sin imports backend. La aceptacion interactiva completa se verifica en Tarea 5.1, no se declara probada por este test.
   - **Commit Msg:** `feat: add personal guided-task browser interface`
 
-- [ ] **Tarea 4.4: Agregar serve y shutdown ordenado**
+- [x] **Tarea 4.4: Agregar serve y shutdown ordenado**
   - **Archivo:** nuevo `src/application/web-runtime.ts` como composicion HTTP si necesario, nuevo `src/cli/commands/serve.ts`; `src/cli/index.ts`, `src/application/runtime.ts`; nuevo `test/web-lifecycle.test.ts`; `test/cli-protocol.test.ts`.
   - **Funciones:** openPersonalWebServer, registerServeCommand y lifecycle comun de arranque/fallo/senales.
   - **Descripcion:** serve usa root --config/--cwd y --web-config, abre una vez host/resources, imprime URL/codigo en stderr y espera cierre. Sin --json/--jsonl: rechazo antes de abrir/leer credenciales. Validar web config antes de dataDir; si falla listen, cerrar host. web-runtime es solo composition root, nunca use case; mantener la excepcion de boundaries limitada a este archivo si se crea.
@@ -597,4 +597,6 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 4.3 completada: cliente React con login, lista/hash de tareas, formulario de
   preparación, refresco acotado y manejo de errores como texto; typecheck y build web
   pasan.
-- Siguiente accion: ejecutar la Tarea 4.4, integrando la orden de arranque y cierre.
+- Tarea 4.4 completada: comando `web` compone runtime, host y listener, y ante SIGINT/
+  SIGTERM cierra primero el listener y después el host/SQLite; build completo pasa.
+- Siguiente accion: ejecutar la Tarea 5.1, añadiendo pruebas de aceptación web.

@@ -51,6 +51,8 @@ import {
 
 export interface ApplicationContext {
   readonly application: ApplicationService;
+  readonly guidedExecution?: import('./execution-host.js').HostedGuidedExecution;
+  readonly findRun?: (runId: string) => Promise<WorkflowRun | undefined>;
   close(): void;
 }
 
@@ -177,7 +179,12 @@ export async function openApplicationContext(
     options.onEvent,
     options.publicSourceReader,
   );
-  return { application: resources.application, close: resources.close };
+  return {
+    application: resources.application,
+    guidedExecution: resources.guidedExecution,
+    findRun: resources.findRun,
+    close: resources.close,
+  };
 }
 
 interface ApplicationResources {

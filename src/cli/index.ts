@@ -14,6 +14,7 @@ import { registerConfigurationCommands } from './commands/configuration.js';
 import { registerBugCommands } from './commands/bugs.js';
 import { registerReviewCommands } from './commands/review.js';
 import { registerPortabilityCommands } from './commands/portability.js';
+import { registerWebCommand } from './commands/web.js';
 import { VERSION } from '../version.js';
 import {
   exitCodeFor,
@@ -74,6 +75,7 @@ export function createCli(): Command {
   registerBugCommands(cli);
   registerReviewCommands(cli);
   registerPortabilityCommands(cli);
+  registerWebCommand(cli);
   registerTuiCommand(cli);
   registerWorkflowCommand(cli);
 
