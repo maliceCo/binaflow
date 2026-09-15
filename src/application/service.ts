@@ -1,5 +1,6 @@
 import type { BinaflowConfig } from '../config.js';
 import type { PortabilityService } from './ports.js';
+import type { GuidedPreparationService } from './guided-preparation-operations.js';
 import type {
   GuidedExecutionQueries,
   GuidedExecutionService,
@@ -223,6 +224,7 @@ export interface ApplicationCommands {
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
   readonly taskContracts?: TaskContractService;
   readonly portability?: PortabilityService;
+  readonly guidedPreparation?: GuidedPreparationService;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
@@ -246,6 +248,7 @@ export interface CreateApplicationServiceOptions {
   taskContractWorkspace?: string;
   guidedExecution?: GuidedExecutionService;
   portability?: PortabilityService;
+  guidedPreparation?: GuidedPreparationService;
   executionLock?: import('./ports.js').WorkspaceExecutionLock;
   workspace?: string;
   modelDiscovery: AgentModelDiscovery;
@@ -379,6 +382,7 @@ export function createApplicationService(
     ...(taskContext ? { taskContracts: createTaskContractService(taskContext) } : {}),
     ...(options.guidedExecution ? { taskExecutions: options.guidedExecution } : {}),
     ...(options.portability ? { portability: options.portability } : {}),
+    ...(options.guidedPreparation ? { guidedPreparation: options.guidedPreparation } : {}),
     subscribeEvents: options.subscribeEvents,
     runWorkflow: (request) => runWorkflow(internals, request),
     resumeWorkflow: (request) => resumeWorkflow(internals, request),

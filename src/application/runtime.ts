@@ -38,6 +38,9 @@ import {
   createGuidedExecutionService,
   type GuidedExecutionRunner,
 } from './guided-execution-operations.js';
+import { createGuidedPreparationService } from './guided-preparation-operations.js';
+import { createPublicSourceReader } from '../research/public-sources.js';
+import type { PublicSourceReader } from './ports.js';
 import { discoverAgentModels } from './config-operations.js';
 import {
   createApplicationService,
@@ -132,6 +135,7 @@ export interface OpenApplicationOptions {
   configPath?: string;
   cwd?: string;
   onEvent?: (event: NormalizedEvent) => void | Promise<void>;
+  publicSourceReader?: PublicSourceReader;
 }
 
 export function isApplicationEntrypoint(moduleUrl: string, argv1: string | undefined): boolean {
@@ -147,6 +151,9 @@ export async function openExecutionHost(
     return createExecutionHost({
       application: resources.application,
       guidedExecution: resources.guidedExecution,
+      ...(resources.application.guidedPreparation
+        ? { guidedPreparation: { service: resources.application.guidedPreparation } }
+        : {}),
       findRun: resources.findRun,
       close: resources.close,
     });
@@ -168,6 +175,7 @@ export async function openApplicationContext(
     options.configPath ?? '.binaflow/config.json',
     options.cwd ?? process.cwd(),
     options.onEvent,
+    options.publicSourceReader,
   );
   return { application: resources.application, close: resources.close };
 }
@@ -183,6 +191,7 @@ async function openApplicationResources(
   configPath: string,
   cwd: string,
   onEvent?: (event: NormalizedEvent) => void | Promise<void>,
+  publicSourceReader?: PublicSourceReader,
 ): Promise<ApplicationResources> {
   const config = await loadConfig(configPath, cwd);
   await mkdir(config.dataDir, { recursive: true });
@@ -234,6 +243,16 @@ async function openApplicationResources(
     guidedGit,
     createWorkspaceCommandRunner(),
   );
+  const guidedPreparation = config.profiles.planner
+    ? createGuidedPreparationService({
+        store,
+        taskContracts: store,
+        sourceReader: publicSourceReader ?? createPublicSourceReader(),
+        driver,
+        plannerProfile: config.profiles.planner,
+        workspace,
+      })
+    : undefined;
   const guidedExecution = createGuidedExecutionService({
     taskContracts: store,
     executions: store,
@@ -242,6 +261,7 @@ async function openApplicationResources(
     lock: guidedLock,
     workspace,
     profiles: config.profiles,
+    preparation: store,
   });
   const guidedExecutionRunner: GuidedExecutionRunner = createGuidedExecutionRunner(
     {
@@ -253,6 +273,7 @@ async function openApplicationResources(
       workspace,
       profiles: config.profiles,
       runStore: store,
+      preparation: store,
     },
     guidedCoordinator,
   );
@@ -275,6 +296,7 @@ async function openApplicationResources(
     taskContractStore: store,
     taskContractWorkspace: workspace,
     guidedExecution,
+    ...(guidedPreparation ? { guidedPreparation } : {}),
     portability: createPortabilityService({
       store,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },

@@ -25,6 +25,50 @@ const run = {
 } satisfies WorkflowRun;
 
 describe('execution host lifecycle', () => {
+  it('owns guided preparation in the same slot and waits for cleanup on close', async () => {
+    const operation =
+      deferred<import('../src/application/guided-preparation.js').GuidedPreparationRequestRecord>();
+    const execute = vi.fn(async (_request, options) => {
+      expect(options?.signal?.aborted).toBe(false);
+      return operation.promise;
+    });
+    const request = {
+      schemaVersion: 1 as const,
+      requestId: '123e4567-e89b-42d3-a456-426614174001',
+      contractId: '123e4567-e89b-42d3-a456-426614174002',
+      expectedRevision: 1,
+      expectedPreparationRevision: 1,
+      kind: 'search' as const,
+      query: 'bounded',
+    };
+    const host = createExecutionHost({
+      application: applicationWith(vi.fn(async () => run)),
+      guidedPreparation: {
+        service: { execute, confirmBrief: vi.fn() },
+      },
+      findRun: async () => undefined,
+      close: vi.fn(),
+    });
+
+    const receipt = host.client.guidedPreparation!.execute(request);
+    expect(execute).toHaveBeenCalledOnce();
+    const closing = host.close();
+    expect(execute.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    operation.resolve({
+      contractId: request.contractId,
+      requestId: request.requestId,
+      operationId: request.requestId,
+      kind: 'search',
+      requestHash: 'hash',
+      preparationRevision: 1,
+      contractRevision: 1,
+      status: 'cancelled',
+      ownerToken: null,
+    });
+    await expect(receipt).resolves.toMatchObject({ status: 'cancelled' });
+    await closing;
+  });
+
   it('returns the start receipt before the workflow completes', async () => {
     const operation = deferred<WorkflowRun>();
     const runWorkflow = vi.fn<ApplicationService['runWorkflow']>((input) => {

@@ -437,7 +437,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion:** ejecutar antes/despues `pnpm exec vitest run test/execution-host.test.ts test/execution-host-integration.test.ts`; `pnpm run typecheck`. No modificar expectativas para ocultar regresiones.
   - **Commit Msg:** `refactor: centralize hosted operation ownership`
 
-- [ ] **Tarea 3.3: Exponer preparacion y consultas bajo el mismo host**
+- [x] **Tarea 3.3: Exponer preparacion y consultas bajo el mismo host**
   - **Archivo:** `src/application/service.ts`, `src/application/runtime.ts`, `src/application/execution-host.ts`; `src/application/context.ts` solo dependencias necesarias; `test/application-runtime.test.ts`, `test/execution-host.test.ts`, `test/execution-host-integration.test.ts`; nuevo `test/guided-preparation-host.test.ts`.
   - **Funciones:** composition root y capacidad guidedPreparation; admission/receipts/cancel/recover; getters seguros de contratos/documentos vinculados.
   - **Descripcion:** una apertura de recursos y dataDir lease. Componer fuentes privadamente y proteger solicitudes breves con admitQuery. Extender la ranura con preparation; capturar requests antes de awaits. Recibo persistido temprano, operacion y cleanup retenidos hasta fin. Getters comprueban contrato/workspace y run vinculado.
@@ -585,4 +585,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 3.2 completada: el host usa una ranura discriminada única para ejecuciones
   legacy y guided, conservando replays, cancelación, consultas y cierre ordenado;
   22 tests enfocados pasan.
-- Siguiente accion: ejecutar la Tarea 3.3, exponiendo preparación y consultas bajo el mismo host.
+- Tarea 3.3 completada: runtime y fachada componen la preparación guiada, el lector
+  de fuentes y el mismo store/lease; el host admite preparación y espera su cleanup;
+  30 tests enfocados pasan.
+- Siguiente accion: ejecutar la Tarea 4.1, creando listener y sesiones seguras.

@@ -13,6 +13,11 @@ import type {
   GuidedStartRequest,
 } from './guided-execution.js';
 import type { GuidedExecutionRunner } from './guided-execution-operations.js';
+import type {
+  GuidedPreparationOperationRequest,
+  GuidedPreparationRequestRecord,
+} from './guided-preparation.js';
+import type { GuidedPreparationService } from './guided-preparation-operations.js';
 import type { ApplicationService } from './service.js';
 import type { RunView } from './run-view.js';
 
@@ -31,7 +36,17 @@ export interface HostedGuidedExecution {
   readonly runner: GuidedExecutionRunner;
 }
 
+export interface HostedGuidedPreparation {
+  readonly service: GuidedPreparationService;
+}
+
 export interface ExecutionHostClient {
+  readonly guidedPreparation?: {
+    execute(
+      request: GuidedPreparationOperationRequest,
+      options?: { signal?: AbortSignal },
+    ): Promise<GuidedPreparationRequestRecord>;
+  };
   start(request: ExecutionStartRequest): Promise<ExecutionStartResult>;
   readonly taskExecutions?: {
     previewStart: GuidedExecutionService['previewStart'];
@@ -62,6 +77,7 @@ export interface CreateExecutionHostOptions {
     'runWorkflow' | 'listRuns' | 'getRunView' | 'listRunEvents' | 'readArtifact'
   >;
   guidedExecution?: HostedGuidedExecution;
+  guidedPreparation?: HostedGuidedPreparation;
   findRun(runId: string): Promise<WorkflowRun | undefined>;
   close(): void | Promise<void>;
 }
@@ -87,8 +103,19 @@ interface ActiveGuidedExecution {
   cancelPromise?: Promise<void>;
 }
 
+interface ActivePreparation {
+  readonly request: GuidedPreparationOperationRequest;
+  readonly receipt: Deferred<GuidedPreparationRequestRecord>;
+  readonly receiptPromise: Promise<GuidedPreparationRequestRecord>;
+  readonly controller: AbortController;
+  readonly completion: Promise<void>;
+  readonly resolveCompletion: () => void;
+}
+
 type ActiveOperation =
-  { kind: 'legacy'; value: ActiveExecution } | { kind: 'guided'; value: ActiveGuidedExecution };
+  | { kind: 'legacy'; value: ActiveExecution }
+  | { kind: 'guided'; value: ActiveGuidedExecution }
+  | { kind: 'preparation'; value: ActivePreparation };
 
 export function createExecutionHost(options: CreateExecutionHostOptions): ExecutionHost {
   let activeOperation: ActiveOperation | undefined;
@@ -102,8 +129,8 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       assertCanStart();
       const captured = captureStartRequest(request);
       const current = activeOperation?.kind === 'legacy' ? activeOperation.value : undefined;
-      if (activeOperation?.kind === 'guided') {
-        throw new Error('Execution host is already running a guided task');
+      if (activeOperation && activeOperation.kind !== 'legacy') {
+        throw new Error('Execution host is already running another operation');
       }
       if (current) {
         if (sameStartRequest(current.request, captured)) return current.receiptPromise;
@@ -136,8 +163,8 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const guided = requireGuidedExecution();
-      if (activeOperation?.kind === 'legacy') {
-        throw new Error('Execution host is already running a legacy workflow');
+      if (activeOperation && activeOperation.kind !== 'guided') {
+        throw new Error('Execution host is already running another operation');
       }
       const current = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
       if (current) {
@@ -157,8 +184,8 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     try {
       assertCanStart();
       const guided = requireGuidedExecution();
-      if (activeOperation?.kind === 'legacy') {
-        throw new Error('Execution host is already running a legacy workflow');
+      if (activeOperation && activeOperation.kind !== 'guided') {
+        throw new Error('Execution host is already running another operation');
       }
       const current = activeOperation?.kind === 'guided' ? activeOperation.value : undefined;
       if (current) {
@@ -168,6 +195,40 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       const active = createActiveGuided(request, request.runId);
       activeOperation = { kind: 'guided', value: active };
       void executeGuided(active, guided, guided.service.resume(request));
+      return active.receiptPromise;
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  };
+
+  const startPreparation = (
+    request: GuidedPreparationOperationRequest,
+    requestOptions?: { signal?: AbortSignal },
+  ): Promise<GuidedPreparationRequestRecord> => {
+    try {
+      assertCanStart();
+      if (!options.guidedPreparation) throw new Error('Guided preparation is not configured');
+      if (activeOperation) {
+        if (
+          activeOperation.kind === 'preparation' &&
+          JSON.stringify(activeOperation.value.request) === JSON.stringify(request)
+        ) {
+          return activeOperation.value.receiptPromise;
+        }
+        throw new Error('Execution host is already running another operation');
+      }
+      const receipt = deferred<GuidedPreparationRequestRecord>();
+      const completion = deferred<void>();
+      const active: ActivePreparation = {
+        request,
+        receipt,
+        receiptPromise: receipt.promise,
+        controller: new AbortController(),
+        completion: completion.promise,
+        resolveCompletion: completion.resolve,
+      };
+      activeOperation = { kind: 'preparation', value: active };
+      void executePreparation(active, options.guidedPreparation, requestOptions?.signal);
       return active.receiptPromise;
     } catch (error) {
       return Promise.reject(error);
@@ -230,6 +291,7 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
   const client: ExecutionHostClient = {
     start,
     cancel,
+    ...(options.guidedPreparation ? { guidedPreparation: { execute: startPreparation } } : {}),
     ...(options.guidedExecution
       ? {
           taskExecutions: {
@@ -333,6 +395,31 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     };
   }
 
+  async function executePreparation(
+    active: ActivePreparation,
+    preparation: HostedGuidedPreparation,
+    externalSignal?: AbortSignal,
+  ): Promise<void> {
+    if (externalSignal) {
+      if (externalSignal.aborted) active.controller.abort();
+      else
+        externalSignal.addEventListener('abort', () => active.controller.abort(), { once: true });
+    }
+    try {
+      const result = await preparation.service.execute(active.request, {
+        signal: active.controller.signal,
+      });
+      active.receipt.resolve(result);
+    } catch (error) {
+      active.receipt.reject(error);
+    } finally {
+      active.resolveCompletion();
+      if (activeOperation?.kind === 'preparation' && activeOperation.value === active) {
+        activeOperation = undefined;
+      }
+    }
+  }
+
   async function executeGuided(
     active: ActiveGuidedExecution,
     guided: HostedGuidedExecution,
@@ -409,6 +496,12 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
     if (activeGuided) {
       activeGuided.controller.abort();
       await activeGuided.completion;
+    }
+    const activePreparation =
+      activeOperation?.kind === 'preparation' ? activeOperation.value : undefined;
+    if (activePreparation) {
+      activePreparation.controller.abort();
+      await activePreparation.completion;
     }
     await Promise.all([...admittedQueries]);
     await options.close();
