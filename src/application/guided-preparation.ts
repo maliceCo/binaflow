@@ -54,6 +54,17 @@ export interface GuidedPreparationMessage {
   createdAt: string;
 }
 
+export interface PublicSourceResult {
+  kind: GuidedPreparationSourceKind;
+  url: string;
+  title: string;
+  excerpt: string;
+  query?: string;
+  retrievedAt: string;
+  contentHash: string;
+  truncated: boolean;
+}
+
 export interface GuidedPreparationSource {
   id: string;
   contractId: string;
@@ -98,7 +109,10 @@ export interface GuidedPreparationFinishRequest {
   operation: GuidedPreparationOperationRequest;
   operationId: string;
   ownerToken: string;
-  status: Extract<GuidedPreparationRequestStatus, 'completed' | 'failed' | 'cancelled' | 'interrupted'>;
+  status: Extract<
+    GuidedPreparationRequestStatus,
+    'completed' | 'failed' | 'cancelled' | 'interrupted'
+  >;
   result?: GuidedReplyOutput | GuidedPlanOutput | GuidedTodoOutput;
   errorCode?: string;
   publishedDocumentId?: string;

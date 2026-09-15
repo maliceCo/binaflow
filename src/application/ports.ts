@@ -63,6 +63,7 @@ import type {
   GuidedPreparationRequestRecord,
   GuidedPreparationSource,
   GuidedPreparationState,
+  PublicSourceResult,
 } from './guided-preparation.js';
 import type {
   TaskContractActionPage,
@@ -224,8 +225,8 @@ export interface GuidedPreparationStore {
 }
 
 export interface PublicSourceReader {
-  search(query: string, signal: AbortSignal): Promise<readonly GuidedPreparationSource[]>;
-  readUrl(url: string, signal: AbortSignal): Promise<GuidedPreparationSource>;
+  search(query: string, signal: AbortSignal): Promise<readonly PublicSourceResult[]>;
+  readUrl(url: string, signal: AbortSignal): Promise<PublicSourceResult>;
 }
 
 export interface PortabilityService {
