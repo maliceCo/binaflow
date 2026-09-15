@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,6 +6,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
+import { directoryPackageStore } from '../src/portability/directory-package.js';
+import { gitTransfer } from '../src/portability/git-transfer.js';
 import { createPortabilityService } from '../src/application/portability-operations.js';
 import {
   activateImportedBackup,
@@ -87,6 +90,8 @@ describe('portable transfer round trip', () => {
     const serviceA = createPortabilityService({
       store: storeA,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: dataA,
       workspace: workspaceA,
     });
@@ -108,6 +113,8 @@ describe('portable transfer round trip', () => {
     const serviceBImport = createPortabilityService({
       store: newUnavailableStore(),
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: join(root, 'empty-baseline'),
       workspace: workspaceB,
     });
@@ -126,6 +133,13 @@ describe('portable transfer round trip', () => {
     expect(await storeB.getRun('run-a')).toMatchObject({ id: 'run-a', objective: 'run-a' });
     const artifactB = (await storeB.getArtifacts('run-a'))[0]!;
     expect(await new FileArtifactStore(join(dataB, 'artifacts')).read(artifactB)).toBe('from A\n');
+    const importedLedger = new Database(join(dataB, 'runs.db'), { readonly: true });
+    expect(
+      importedLedger
+        .prepare('SELECT transfer_id, state FROM portability_transfers ORDER BY created_at')
+        .all(),
+    ).toEqual([{ transfer_id: '11111111-1111-4111-8111-111111111111', state: 'imported' }]);
+    importedLedger.close();
 
     await createCompletedRun(
       storeB,
@@ -140,6 +154,8 @@ describe('portable transfer round trip', () => {
     const serviceB = createPortabilityService({
       store: storeB,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: dataB,
       workspace: workspaceB,
     });
@@ -169,6 +185,8 @@ describe('portable transfer round trip', () => {
     const serviceAReturn = createPortabilityService({
       store: newUnavailableStore(),
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: dataA,
       workspace: workspaceA,
     });
@@ -186,6 +204,13 @@ describe('portable transfer round trip', () => {
 
     const returned = new SqliteRunStore(join(dataAReturn, 'runs.db'));
     expect(await returned.getRun('run-a')).toBeDefined();
+    const returnedLedger = new Database(join(dataAReturn, 'runs.db'), { readonly: true });
+    expect(
+      returnedLedger.prepare('SELECT COUNT(*) AS count FROM portability_transfers').get(),
+    ).toEqual({
+      count: 2,
+    });
+    returnedLedger.close();
     expect(await returned.getRun('run-b')).toBeDefined();
     const returnedArtifacts = await returned.getArtifacts('run-b');
     expect(

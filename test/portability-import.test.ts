@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPortabilityService } from '../src/application/portability-operations.js';
+import { directoryPackageStore } from '../src/portability/directory-package.js';
+import { gitTransfer } from '../src/portability/git-transfer.js';
 import {
   activateImportedBackup,
   inspectPortableBackup,
@@ -49,6 +51,8 @@ describe('portability import operations', () => {
     const serviceA = createPortabilityService({
       store: storeA,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: dataA,
       workspace: workspaceA,
     });
@@ -66,6 +70,8 @@ describe('portability import operations', () => {
     const serviceB = createPortabilityService({
       store: storeA,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: join(root, 'empty-baseline'),
       workspace: workspaceB,
     });
@@ -83,6 +89,60 @@ describe('portability import operations', () => {
     storeA.close();
   });
 
+  it('rejects package tampering after preview without creating the output', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'binaflow-portability-import-'));
+    directories.push(root);
+    const workspace = join(root, 'workspace');
+    const dataDir = join(root, 'data');
+    const packagePath = join(root, 'transfer');
+    const outputDataDir = join(root, 'imported');
+    await createRepository(workspace);
+    await mkdir(dataDir, { recursive: true });
+    const store = new SqliteRunStore(join(dataDir, 'runs.db'));
+    const service = createPortabilityService({
+      store,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
+      dataDir,
+      workspace,
+    });
+    const requestId = '55555555-5555-4555-8555-555555555555';
+    const exportPreview = await service.previewExport({ requestId, destination: packagePath });
+    await service.exportPackage({
+      requestId,
+      digest: exportPreview.digest,
+      destination: packagePath,
+    });
+    const importService = createPortabilityService({
+      store,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
+      dataDir: join(root, 'empty-baseline'),
+      workspace,
+    });
+    const importPreview = await importService.previewImport({ packagePath, outputDataDir });
+    const databasePath = join(packagePath, 'runs.db');
+    await writeFile(
+      databasePath,
+      Buffer.concat([await readFile(databasePath), Buffer.from('tamper')]),
+    );
+
+    await expect(
+      importService.importPackage({
+        requestId: '66666666-6666-4666-8666-666666666666',
+        digest: importPreview.digest,
+        packagePath,
+        outputDataDir,
+      }),
+    ).rejects.toThrow(/match|hash|manifest/i);
+    await expect(readFile(join(outputDataDir, 'runs.db'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    store.close();
+  });
+
   it('rejects an existing import output without modifying it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'binaflow-portability-import-'));
     directories.push(root);
@@ -94,6 +154,8 @@ describe('portability import operations', () => {
     const service = createPortabilityService({
       store,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir: join(root, 'empty'),
       workspace,
     });

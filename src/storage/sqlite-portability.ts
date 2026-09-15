@@ -23,7 +23,17 @@ export interface NormalizePortableBackupOptions {
 export interface ActivateImportedBackupOptions {
   destinationDataDir: string;
   destinationWorkspace: string;
-  transferId: string;
+  transfer: {
+    transferId: string;
+    parentTransferId: string | null;
+    datasetId: string;
+    requestId: string;
+    digest: string;
+    gitFingerprint: string;
+    state: 'imported';
+    createdAt: string;
+    completedAt: string | null;
+  };
 }
 
 export function normalizePortableBackup(
@@ -75,19 +85,9 @@ export function inspectPortableBackup(databasePath: string): PortableBackupInspe
 
 export function activateImportedBackup(
   databasePath: string,
-  options: ActivateImportedBackupOptions | string,
-  destinationWorkspace?: string,
-  transferId?: string,
+  input: ActivateImportedBackupOptions,
 ): PortableBackupInspection {
-  const input: ActivateImportedBackupOptions =
-    typeof options === 'string'
-      ? {
-          destinationDataDir: options,
-          destinationWorkspace: destinationWorkspace ?? '',
-          transferId: transferId ?? '',
-        }
-      : options;
-  if (!input.destinationWorkspace || !input.transferId) {
+  if (!input.destinationWorkspace || !input.transfer.transferId) {
     throw portabilityError(
       'invalid-input',
       'Imported backup activation requires destination identity',
@@ -101,23 +101,83 @@ export function activateImportedBackup(
       if (before.state !== 'exported') {
         throw portabilityError('invalid-input', 'Only an exported backup can be imported');
       }
+      if (input.transfer.datasetId !== before.datasetId) {
+        throw portabilityError('invalid-input', 'Imported transfer dataset does not match backup');
+      }
       rebaseArtifacts(database, input.destinationDataDir);
       rebaseWorkspaces(database, input.destinationWorkspace);
+      recordImportedTransfer(database, input.transfer);
       database
         .prepare(
           `UPDATE portability_state SET state = 'active', last_transfer_id = ?,
            pending_request_id = NULL, pending_digest = NULL, pending_destination = NULL,
            pending_transfer_id = NULL, updated_at = ? WHERE singleton_id = 1`,
         )
-        .run(input.transferId, new Date().toISOString());
-      database
-        .prepare("UPDATE portability_transfers SET state = 'imported' WHERE transfer_id = ?")
-        .run(input.transferId);
+        .run(input.transfer.transferId, new Date().toISOString());
       return inspectOpenDatabase(database);
     });
   } finally {
     database.close();
   }
+}
+
+function recordImportedTransfer(
+  database: Database.Database,
+  transfer: ActivateImportedBackupOptions['transfer'],
+): void {
+  const existing = database
+    .prepare(
+      `SELECT parent_transfer_id, dataset_id, request_id, digest, git_fingerprint,
+              state, created_at, completed_at
+       FROM portability_transfers WHERE transfer_id = ?`,
+    )
+    .get(transfer.transferId) as
+    | {
+        parent_transfer_id: string | null;
+        dataset_id: string;
+        request_id: string;
+        digest: string;
+        git_fingerprint: string;
+        state: 'exported' | 'imported';
+        created_at: string;
+        completed_at: string | null;
+      }
+    | undefined;
+  if (existing) {
+    if (
+      existing.parent_transfer_id !== transfer.parentTransferId ||
+      existing.dataset_id !== transfer.datasetId ||
+      existing.request_id !== transfer.requestId ||
+      existing.digest !== transfer.digest ||
+      existing.git_fingerprint !== transfer.gitFingerprint ||
+      existing.created_at !== transfer.createdAt
+    ) {
+      throw portabilityError('invalid-input', 'Imported transfer does not match ledger record');
+    }
+    database
+      .prepare(
+        "UPDATE portability_transfers SET state = 'imported', completed_at = ? WHERE transfer_id = ?",
+      )
+      .run(transfer.completedAt, transfer.transferId);
+    return;
+  }
+  database
+    .prepare(
+      `INSERT INTO portability_transfers
+       (transfer_id, parent_transfer_id, dataset_id, request_id, digest, git_fingerprint,
+        state, created_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'imported', ?, ?)`,
+    )
+    .run(
+      transfer.transferId,
+      transfer.parentTransferId,
+      transfer.datasetId,
+      transfer.requestId,
+      transfer.digest,
+      transfer.gitFingerprint,
+      transfer.createdAt,
+      transfer.completedAt,
+    );
 }
 
 function normalizeArtifacts(database: Database.Database, sourceDataDir: string): void {

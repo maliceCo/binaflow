@@ -316,11 +316,26 @@ export function validateTransferManifest(manifest: TransferManifest): void {
   if (manifest.files.artifacts.length > PORTABILITY_LIMITS.maxArtifacts) {
     throw new PortabilityContractError('limit-exceeded', 'Transfer package has too many artifacts');
   }
+  if (manifest.files.database.path !== 'runs.db') {
+    throw new PortabilityContractError('invalid-manifest', 'Database file must be named runs.db');
+  }
+  if (manifest.files.bundle.path !== 'repository.bundle') {
+    throw new PortabilityContractError(
+      'invalid-manifest',
+      'Repository bundle must be named repository.bundle',
+    );
+  }
   const paths = [manifest.files.database.path, manifest.files.bundle.path];
   let totalBytes = manifest.files.database.sizeBytes + manifest.files.bundle.sizeBytes;
   for (const artifact of manifest.files.artifacts) {
     validateFileHash(artifact);
     validatePortablePath(artifact.path);
+    if (!artifact.path.startsWith('artifacts/')) {
+      throw new PortabilityContractError(
+        'invalid-manifest',
+        'Artifact file must be inside the artifacts directory',
+      );
+    }
     paths.push(artifact.path);
     totalBytes += artifact.sizeBytes;
   }
@@ -331,7 +346,7 @@ export function validateTransferManifest(manifest: TransferManifest): void {
       'Artifact count does not match the manifest',
     );
   }
-  assertFileLimits(totalBytes, 'transfer package');
+  assertTotalFileLimits(totalBytes, 'transfer package');
 }
 
 export function canonicalTransferJson(value: unknown): string {
@@ -410,6 +425,12 @@ export function assertFileLimits(sizeBytes: number, name: string): void {
     sizeBytes > PORTABILITY_LIMITS.maxFileBytes
   ) {
     throw new PortabilityContractError('limit-exceeded', `${name} exceeds the per-file size limit`);
+  }
+}
+
+export function assertTotalFileLimits(sizeBytes: number, name: string): void {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
+    throw new PortabilityContractError('limit-exceeded', `${name} has an invalid total size`);
   }
   if (sizeBytes > PORTABILITY_LIMITS.maxTotalBytes) {
     throw new PortabilityContractError('limit-exceeded', `${name} exceeds the package size limit`);

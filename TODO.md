@@ -401,4 +401,9 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Checks globales completados: format:check, lint, typecheck, test (63 archivos,
   401 tests, 1 omitido), build y git diff --check; sin bundles de release,
   instalaciones ni Pi live.
-- Siguiente accion: comprometer la implementacion y revisar el estado final.
+- Correcciones QA ejecutadas: confirmacion CLI entre procesos, recovery de
+  intents exporting, primera importacion sin baseline, staging contra hashes,
+  ledger de transferencias, limites independientes y adapters inyectados.
+- Verificacion de correcciones: suites focalizadas y globales pasan; 64 archivos,
+  407 tests, 1 omitido. `format:check`, lint, typecheck, build y `git diff --check`
+  pasan. No se ejecutaron bundles de release, instalaciones ni Pi live.

@@ -85,7 +85,17 @@ describe('portable SQLite backups', () => {
     const imported = activateImportedBackup(importedDb, {
       destinationDataDir,
       destinationWorkspace,
-      transferId,
+      transfer: {
+        transferId,
+        parentTransferId: null,
+        datasetId: normalized.datasetId,
+        requestId: transferId,
+        digest: 'digest',
+        gitFingerprint: 'git-head',
+        state: 'imported',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T00:01:00.000Z',
+      },
     });
     expect(imported).toMatchObject({ state: 'active', datasetId: normalized.datasetId });
     expect(inspectPortableBackup(importedDb).state).toBe('active');

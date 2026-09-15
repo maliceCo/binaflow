@@ -3,6 +3,7 @@ import {
   PORTABILITY_LIMITS,
   PortabilityContractError,
   assertFileLimits,
+  assertTotalFileLimits,
   assertUniquePortablePaths,
   canonicalTransferJson,
   createTransferDigest,
@@ -92,17 +93,12 @@ describe('portable transfer contracts', () => {
     );
   });
 
-  it('enforces per-file and total package limits', () => {
+  it('enforces per-file and total package limits independently', () => {
     expect(() => assertFileLimits(PORTABILITY_LIMITS.maxFileBytes + 1, 'file')).toThrow(/limit/);
-    expect(() =>
-      parseTransferManifest({
-        ...manifest(),
-        files: {
-          ...manifest().files,
-          database: { ...manifest().files.database, sizeBytes: PORTABILITY_LIMITS.maxTotalBytes },
-          bundle: { ...manifest().files.bundle, sizeBytes: 1 },
-        },
-      }),
-    ).toThrow(PortabilityContractError);
+    expect(() => assertFileLimits(PORTABILITY_LIMITS.maxFileBytes, 'file')).not.toThrow();
+    expect(() => assertTotalFileLimits(PORTABILITY_LIMITS.maxTotalBytes + 1, 'package')).toThrow(
+      /limit/,
+    );
+    expect(() => assertTotalFileLimits(PORTABILITY_LIMITS.maxTotalBytes, 'package')).not.toThrow();
   });
 });

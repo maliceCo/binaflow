@@ -208,7 +208,11 @@ export interface PortabilityDatabase {
   inspectPortableBackup(databasePath: string): PortableBackupInspection;
   activateImportedBackup(
     databasePath: string,
-    options: { destinationDataDir: string; destinationWorkspace: string; transferId: string },
+    options: {
+      destinationDataDir: string;
+      destinationWorkspace: string;
+      transfer: PortabilityTransfer;
+    },
   ): PortableBackupInspection;
 }
 
@@ -238,6 +242,11 @@ export interface PortabilityPackageStore {
     transferId: string;
   }): Promise<string>;
   writeManifestLast(packagePath: string, manifest: TransferManifest): Promise<void>;
+  copyAndHashArtifact(request: {
+    sourcePath: string;
+    destinationPath: string;
+    expected?: { sha256: string; sizeBytes: number };
+  }): Promise<TransferFileResult>;
   finalizePackage(stagingPath: string, destination: string): Promise<string>;
   inspectPackage(packagePath: string): Promise<TransferManifest>;
   materializeImportStaging(packagePath: string, outputDataDir: string): Promise<string>;
@@ -246,6 +255,7 @@ export interface PortabilityPackageStore {
 
 export interface PortabilityGit {
   previewRepositoryTransfer(workspace: string): Promise<{
+    workspace: string;
     branch: string;
     ref: string;
     head: string;

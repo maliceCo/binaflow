@@ -69,8 +69,9 @@ ejecucion.
      --output-data-dir /ruta/binaflow-data-b
    ```
 
-   La importacion siempre usa un dataDir nuevo. El repositorio activo debe tener
-   el branch y HEAD exactos del manifest.
+   La importacion siempre usa un dataDir nuevo. `preview-import` e `import` no
+   inicializan SQLite en el dataDir configurado si aun no existe una base. El
+   repositorio activo debe tener el branch y HEAD exactos del manifest.
 
 6. Confirmar la importacion con el digest del preview:
 
@@ -101,7 +102,8 @@ borra ni se reemplaza el dataDir anterior.
 ## Recuperacion y limites
 
 Un export interrumpido conserva un intent `exporting`. Repetir el mismo request y
-digest puede terminarlo si el paquete final ya existe. Solo se puede cancelar
+digest puede reconstruirlo si no se publico el paquete, o terminarlo si el paquete
+final ya existe. Solo se puede cancelar
 un intent `exporting` cuando su directorio final aun no existe y coinciden el
 request ID y digest; un estado `exported` no se cancela.
 

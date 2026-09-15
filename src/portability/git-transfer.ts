@@ -11,11 +11,19 @@ import {
   type TransferFileHash,
   type TransferManifest,
 } from '../application/portability.js';
+import type { PortabilityGit } from '../application/ports.js';
 import { LocalGitWorkspace } from '../workspace/git-workspace.js';
 
 const execFileAsync = promisify(execFile);
 const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
 const MAX_TRACKED_FILES = 100_000;
+
+export const gitTransfer: PortabilityGit = {
+  previewRepositoryTransfer,
+  createRepositoryBundle,
+  inspectRepositoryBundle,
+  assertImportWorkspace,
+};
 
 export interface RepositoryTransferPreview {
   workspace: string;

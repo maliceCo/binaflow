@@ -16,7 +16,7 @@ export function registerPortabilityCommands(cli: Command): void {
     .action(async (options: { requestId: string; output: string }, command: Command) => {
       const root = rootOptions(command);
       rejectJsonl(root, 'preview-export');
-      const context = await openPortabilityContext(root);
+      const context = await openPortabilityContext(root, true);
       try {
         const preview = await context.portability.previewExport({
           requestId: options.requestId,
@@ -38,7 +38,7 @@ export function registerPortabilityCommands(cli: Command): void {
       async (options: { requestId: string; digest: string; output: string }, command: Command) => {
         const root = rootOptions(command);
         rejectJsonl(root, 'export');
-        const context = await openPortabilityContext(root);
+        const context = await openPortabilityContext(root, true);
         try {
           const result = await context.portability.exportPackage({
             requestId: options.requestId,
@@ -66,7 +66,7 @@ export function registerPortabilityCommands(cli: Command): void {
     .action(async (options: { requestId: string; digest: string }, command: Command) => {
       const root = rootOptions(command);
       rejectJsonl(root, 'cancel-export');
-      const context = await openPortabilityContext(root);
+      const context = await openPortabilityContext(root, true);
       try {
         const state = await context.portability.cancelExportIntent(options);
         if (root.json) writeJsonResult('cancel-export', { state: state.state });
@@ -96,7 +96,7 @@ export function registerPortabilityCommands(cli: Command): void {
     .action(async (options: { package: string; outputDataDir: string }, command: Command) => {
       const root = rootOptions(command);
       rejectJsonl(root, 'preview-import');
-      const context = await openPortabilityContext(root);
+      const context = await openPortabilityContext(root, false);
       try {
         const preview = await context.portability.previewImport({
           packagePath: options.package,
@@ -122,7 +122,7 @@ export function registerPortabilityCommands(cli: Command): void {
       ) => {
         const root = rootOptions(command);
         rejectJsonl(root, 'import');
-        const context = await openPortabilityContext(root);
+        const context = await openPortabilityContext(root, false);
         try {
           const result = await context.portability.importPackage({
             requestId: options.requestId,
@@ -244,7 +244,12 @@ function rejectJsonl(options: { json?: boolean; jsonl?: boolean }, command: stri
   }
 }
 
-async function openPortabilityContext(root: { config?: string; cwd?: string }) {
+async function openPortabilityContext(
+  root: { config?: string; cwd?: string },
+  createDatabase: boolean,
+) {
   const { openPortabilityContext } = await import('../../application/runtime.js');
-  return openPortabilityContext(root.config ?? '.binaflow/config.json', root.cwd ?? process.cwd());
+  return openPortabilityContext(root.config ?? '.binaflow/config.json', root.cwd ?? process.cwd(), {
+    createDatabase,
+  });
 }

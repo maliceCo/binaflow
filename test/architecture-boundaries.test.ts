@@ -107,7 +107,8 @@ describe('architecture boundaries', () => {
           specifier.includes('/storage/') ||
           specifier.includes('/artifacts/') ||
           specifier.includes('/drivers/') ||
-          specifier.includes('/process/')
+          specifier.includes('/process/') ||
+          specifier.includes('/portability/')
         ) {
           violations.push(`${relative(root, file)} -> ${specifier}`);
         }

@@ -2,10 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, lstatSync } from 'node:fs';
 import { lstat, mkdir, open, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
+import type { PortabilityPackageStore } from '../application/ports.js';
 import {
   PORTABILITY_LIMITS,
   PortabilityContractError,
   assertFileLimits,
+  assertTotalFileLimits,
   parseTransferManifest,
   type TransferFileHash,
   type TransferManifest,
@@ -14,6 +16,16 @@ import {
 
 const STAGING_METADATA = '.staging.json';
 const MANIFEST_FILE = 'manifest.json';
+
+export const directoryPackageStore: PortabilityPackageStore = {
+  createStagingPackage,
+  copyAndHashArtifact,
+  writeManifestLast,
+  finalizePackage,
+  inspectPackage,
+  materializeImportStaging,
+  cleanupOwnedStaging,
+};
 
 interface StagingMetadata {
   token: string;
@@ -196,9 +208,7 @@ export async function inspectPackage(packagePath: string): Promise<TransferManif
     }
     totalBytes += actual.sizeBytes;
   }
-  if (totalBytes > PORTABILITY_LIMITS.maxTotalBytes) {
-    throw packageError('limit-exceeded', 'Transfer package exceeds the total size limit');
-  }
+  assertTotalFileLimits(totalBytes, 'Transfer package');
   return manifest;
 }
 
@@ -207,7 +217,10 @@ export async function materializeImportStaging(
   outputDataDir: string,
 ): Promise<string> {
   const manifest = await inspectPackage(packagePath);
-  void manifest;
+  const expected = new Map<string, TransferFileHash>();
+  expected.set(manifest.files.database.path, manifest.files.database);
+  expected.set(manifest.files.bundle.path, manifest.files.bundle);
+  for (const artifact of manifest.files.artifacts) expected.set(artifact.path, artifact);
   const target = resolve(outputDataDir);
   assertPackageDestinationAvailable(target);
   const stagingPath = `${target}.staging-${randomUUID()}`;
@@ -224,9 +237,13 @@ export async function materializeImportStaging(
   );
   for (const path of await collectRegularFiles(resolve(packagePath))) {
     if (path === MANIFEST_FILE || path === STAGING_METADATA) continue;
+    const expectedFile = expected.get(path);
+    if (!expectedFile)
+      throw packageError('invalid-manifest', 'Package file is not in the manifest');
     await copyAndHashArtifact({
       sourcePath: join(resolve(packagePath), path),
       destinationPath: join(stagingPath, path),
+      expected: { sha256: expectedFile.sha256, sizeBytes: expectedFile.sizeBytes },
     });
   }
   await writePrivateFile(
@@ -235,6 +252,7 @@ export async function materializeImportStaging(
     true,
   );
   await syncDirectory(stagingPath);
+  await inspectPackage(stagingPath);
   return stagingPath;
 }
 

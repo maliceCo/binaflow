@@ -21,22 +21,10 @@ import {
 import type {
   ApplicationPortabilityStore,
   PortabilityDatabase,
+  PortabilityGit,
+  PortabilityPackageStore,
   PortabilityService,
 } from './ports.js';
-import {
-  cleanupOwnedStaging,
-  copyAndHashArtifact,
-  createStagingPackage,
-  finalizePackage,
-  inspectPackage,
-  materializeImportStaging,
-  writeManifestLast,
-} from '../portability/directory-package.js';
-import {
-  createRepositoryBundle,
-  previewRepositoryTransfer,
-  assertImportWorkspace,
-} from '../portability/git-transfer.js';
 import { VERSION } from '../version.js';
 
 const SENSITIVE_DATA_WARNING =
@@ -45,8 +33,11 @@ const SENSITIVE_DATA_WARNING =
 export interface PortabilityOperationsOptions {
   store: ApplicationPortabilityStore;
   database: PortabilityDatabase;
+  packageStore: PortabilityPackageStore;
+  git: PortabilityGit;
   dataDir: string;
   workspace: string;
+  baselineWasAbsent?: boolean;
 }
 
 export function createPortabilityService(
@@ -61,7 +52,7 @@ export function createPortabilityService(
     },
     exportPackage: (request) => exportPackage(options, request, previews.get(request.requestId)),
     cancelExportIntent: (request) => cancelExportIntent(options, request),
-    inspectTransfer: (packagePath) => inspectPackage(packagePath),
+    inspectTransfer: (packagePath) => options.packageStore.inspectPackage(packagePath),
     previewImport: (request) => previewImport(options, request),
     importPackage: (request) => importPackage(options, request),
   };
@@ -72,10 +63,11 @@ async function previewExport(
   request: { requestId: string; destination: string },
 ): Promise<PortabilityExportPreview> {
   const state = await options.store.getPortabilityState();
-  const blockers = await exportBlockers(options, state, request.destination);
-  const git = await previewRepositoryTransfer(options.workspace);
+  const previewState = resumableExportState(state, request);
+  const blockers = await exportBlockers(options, previewState, request.destination);
+  const git = await options.git.previewRepositoryTransfer(options.workspace);
   blockers.push(...git.blockers);
-  const manifest = emptyManifest(state, request.requestId, git);
+  const manifest = emptyManifest(previewState, request.requestId, git);
   if (blockers.length > 0) {
     return {
       transferId: request.requestId,
@@ -83,10 +75,10 @@ async function previewExport(
       datasetId: state.datasetId,
       requestId: request.requestId,
       destination: resolve(request.destination),
-      state: state.state,
+      state: previewState.state,
       blockers,
       manifest,
-      digest: createDigest(manifest, request.destination, state, blockers, git.fingerprint),
+      digest: createDigest(manifest, request.destination, previewState, blockers, git.fingerprint),
       sensitiveDataWarning: SENSITIVE_DATA_WARNING,
     };
   }
@@ -107,7 +99,7 @@ async function previewExport(
     const digest = createDigest(
       built.manifest,
       request.destination,
-      state,
+      previewState,
       blockers,
       git.fingerprint,
     );
@@ -117,14 +109,17 @@ async function previewExport(
       datasetId: state.datasetId,
       requestId: request.requestId,
       destination: resolve(request.destination),
-      state: state.state,
+      state: previewState.state,
       blockers,
       manifest: built.manifest,
       digest,
       sensitiveDataWarning: SENSITIVE_DATA_WARNING,
     };
   } finally {
-    if (staging) await cleanupOwnedStaging(staging, request.requestId).catch(() => undefined);
+    if (staging)
+      await options.packageStore
+        .cleanupOwnedStaging(staging, request.requestId)
+        .catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
@@ -158,7 +153,7 @@ async function exportPackage(
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'binaflow-export-'));
   let staging: string | undefined;
   try {
-    const git = await previewRepositoryTransfer(options.workspace);
+    const git = await options.git.previewRepositoryTransfer(options.workspace);
     const built = await buildPackage(
       options,
       request.requestId,
@@ -169,8 +164,8 @@ async function exportPackage(
       preview.parentTransferId,
     );
     staging = built.staging;
-    await inspectPackage(staging);
-    const packagePath = await finalizePackage(staging, request.destination);
+    await options.packageStore.inspectPackage(staging);
+    const packagePath = await options.packageStore.finalizePackage(staging, request.destination);
     staging = undefined;
     const transfer: PortabilityTransfer = {
       transferId: preview.transferId,
@@ -186,7 +181,10 @@ async function exportPackage(
     await options.store.finalizeExport({ requestId: request.requestId, transfer });
     return { transfer, packagePath };
   } finally {
-    if (staging) await cleanupOwnedStaging(staging, request.requestId).catch(() => undefined);
+    if (staging)
+      await options.packageStore
+        .cleanupOwnedStaging(staging, request.requestId)
+        .catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
@@ -214,17 +212,23 @@ async function replayCompletedExport(
   request: { requestId: string; digest: string; destination: string },
 ): Promise<{ transfer: PortabilityTransfer; packagePath: string } | undefined> {
   const state = await options.store.getPortabilityState();
-  if (state.state !== 'exported' || state.lastTransferId !== request.requestId) return undefined;
+  const exportedReplay = state.state === 'exported' && state.lastTransferId === request.requestId;
+  const exportingReplay =
+    state.state === 'exporting' &&
+    state.pendingExport?.requestId === request.requestId &&
+    state.pendingExport.digest === request.digest &&
+    state.pendingExport.destination === resolve(request.destination);
+  if (!exportedReplay && !exportingReplay) return undefined;
   const packagePath = resolve(request.destination);
   if (!(await pathExists(packagePath))) return undefined;
-  const manifest = await inspectPackage(packagePath);
+  const manifest = await options.packageStore.inspectPackage(packagePath);
   if (manifest.transferId !== request.requestId || manifest.datasetId !== state.datasetId) {
     throw new PortabilityContractError(
       'invalid-input',
       'Published export does not match its intent',
     );
   }
-  const git = await previewRepositoryTransfer(options.workspace);
+  const git = await options.git.previewRepositoryTransfer(options.workspace);
   const expectedDigest = createDigest(
     manifest,
     request.destination,
@@ -240,28 +244,30 @@ async function replayCompletedExport(
   if (expectedDigest !== request.digest) {
     throw new PortabilityContractError('invalid-digest', 'Export replay digest is stale');
   }
-  return {
-    packagePath,
-    transfer: {
-      transferId: manifest.transferId,
-      parentTransferId: manifest.parentTransferId,
-      datasetId: manifest.datasetId,
-      requestId: manifest.requestId,
-      digest: request.digest,
-      gitFingerprint: manifest.git.head,
-      state: 'exported',
-      createdAt: manifest.createdAt,
-      completedAt: new Date().toISOString(),
-    },
+  const transfer: PortabilityTransfer = {
+    transferId: manifest.transferId,
+    parentTransferId: manifest.parentTransferId,
+    datasetId: manifest.datasetId,
+    requestId: manifest.requestId,
+    digest: request.digest,
+    gitFingerprint: manifest.git.head,
+    state: 'exported',
+    createdAt: manifest.createdAt,
+    completedAt: new Date().toISOString(),
   };
+  if (exportingReplay)
+    await options.store.finalizeExport({ requestId: request.requestId, transfer });
+  return { packagePath, transfer };
 }
 
 async function previewImport(
   options: PortabilityOperationsOptions,
   request: { packagePath: string; outputDataDir: string },
 ): Promise<PortabilityImportPreview> {
-  const manifest = await inspectPackage(request.packagePath);
-  const baseline = await inspectBaseline(options.database, options.dataDir);
+  const manifest = await options.packageStore.inspectPackage(request.packagePath);
+  const baseline = options.baselineWasAbsent
+    ? undefined
+    : await inspectBaseline(options.database, options.dataDir);
   const blockers: PortabilityBlocker[] = [];
   if (await pathExists(request.outputDataDir)) {
     blockers.push({ code: 'output-exists', detail: 'Import output data directory already exists' });
@@ -280,14 +286,14 @@ async function previewImport(
     }
   }
   try {
-    await assertImportWorkspace(options.workspace, manifest);
+    await options.git.assertImportWorkspace(options.workspace, manifest);
   } catch (error) {
     blockers.push({
       code: 'invalid-repository',
       detail: error instanceof Error ? error.message : String(error),
     });
   }
-  const git = await previewRepositoryTransfer(options.workspace);
+  const git = await options.git.previewRepositoryTransfer(options.workspace);
   const digest = createDigest(
     manifest,
     request.outputDataDir,
@@ -320,15 +326,28 @@ async function importPackage(
       preview.blockers.map((item) => item.detail).join('; '),
     );
   }
-  const staging = await materializeImportStaging(request.packagePath, request.outputDataDir);
+  const staging = await options.packageStore.materializeImportStaging(
+    request.packagePath,
+    request.outputDataDir,
+  );
   try {
-    const manifest = await inspectPackage(request.packagePath);
+    const manifest = await options.packageStore.inspectPackage(request.packagePath);
     options.database.activateImportedBackup(join(staging, 'runs.db'), {
       destinationDataDir: request.outputDataDir,
       destinationWorkspace: options.workspace,
-      transferId: manifest.transferId,
+      transfer: {
+        transferId: manifest.transferId,
+        parentTransferId: manifest.parentTransferId,
+        datasetId: manifest.datasetId,
+        requestId: manifest.requestId,
+        digest: request.digest,
+        gitFingerprint: manifest.git.head,
+        state: 'imported',
+        createdAt: manifest.createdAt,
+        completedAt: new Date().toISOString(),
+      },
     });
-    const dataDir = await finalizePackage(staging, request.outputDataDir);
+    const dataDir = await options.packageStore.finalizePackage(staging, request.outputDataDir);
     const transfer: PortabilityTransfer = {
       transferId: manifest.transferId,
       parentTransferId: manifest.parentTransferId,
@@ -342,7 +361,7 @@ async function importPackage(
     };
     return { transfer, dataDir };
   } catch (error) {
-    await cleanupOwnedStaging(staging, 'import').catch(() => undefined);
+    await options.packageStore.cleanupOwnedStaging(staging, 'import').catch(() => undefined);
     throw error;
   }
 }
@@ -352,12 +371,12 @@ async function buildPackage(
   requestId: string,
   destination: string,
   stagingParent: string,
-  git: Awaited<ReturnType<typeof previewRepositoryTransfer>>,
+  git: Awaited<ReturnType<PortabilityGit['previewRepositoryTransfer']>>,
   expectedManifest?: TransferManifest,
   parentTransferId: string | null = null,
 ): Promise<{ staging: string; manifest: TransferManifest }> {
   await mkdir(stagingParent, { recursive: true });
-  const staging = await createStagingPackage({
+  const staging = await options.packageStore.createStagingPackage({
     destination: join(stagingParent, `.binaflow-${requestId}`),
     requestId,
     transferId: requestId,
@@ -369,7 +388,7 @@ async function buildPackage(
     transferId: requestId,
   });
   const databaseFile = await hashFile(databasePath);
-  const bundleFile = await createRepositoryBundle(
+  const bundleFile = await options.git.createRepositoryBundle(
     options.workspace,
     join(staging, 'repository.bundle'),
     git.ref,
@@ -378,7 +397,10 @@ async function buildPackage(
   const transferArtifacts: TransferArtifact[] = [];
   for (const artifact of artifacts) {
     const path = artifactPackagePath(artifact.path, options.dataDir);
-    const copied = await copyAndHashArtifact(artifact.path, join(staging, path));
+    const copied = await options.packageStore.copyAndHashArtifact({
+      sourcePath: artifact.path,
+      destinationPath: join(staging, path),
+    });
     transferArtifacts.push({
       path,
       sha256: copied.sha256,
@@ -427,9 +449,23 @@ async function buildPackage(
       );
     }
   }
-  await writeManifestLast(staging, manifest);
-  await inspectPackage(staging);
+  await options.packageStore.writeManifestLast(staging, manifest);
+  await options.packageStore.inspectPackage(staging);
   return { staging, manifest };
+}
+
+function resumableExportState(
+  state: PortabilityState,
+  request: { requestId: string; destination: string },
+): PortabilityState {
+  if (
+    state.state === 'exporting' &&
+    state.pendingExport?.requestId === request.requestId &&
+    state.pendingExport.destination === resolve(request.destination)
+  ) {
+    return { ...state, state: 'active', pendingExport: null };
+  }
+  return state;
 }
 
 async function exportBlockers(
@@ -494,7 +530,7 @@ function createDigest(
   gitFingerprint: unknown,
 ): string {
   return createTransferDigest({
-    manifest,
+    manifest: { ...manifest, createdAt: undefined },
     destination: resolve(destination),
     state,
     blockers,

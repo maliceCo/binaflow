@@ -2,6 +2,8 @@ import { mkdir } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FileArtifactStore } from '../artifacts/file-artifact-store.js';
+import { directoryPackageStore } from '../portability/directory-package.js';
+import { gitTransfer } from '../portability/git-transfer.js';
 import { createWorkspaceCommandRunner } from '../process/workspace-process.js';
 import { FileWorkspaceExecutionLock } from '../workspace/execution-lock.js';
 import { LocalGitWorkspace } from '../workspace/git-workspace.js';
@@ -65,6 +67,7 @@ export interface PortabilityContext {
 export async function openPortabilityContext(
   configPath = '.binaflow/config.json',
   cwd = process.cwd(),
+  options: { createDatabase?: boolean } = {},
 ): Promise<PortabilityContext> {
   const config = await loadConfig(configPath, cwd);
   await mkdir(config.dataDir, { recursive: true });
@@ -73,13 +76,18 @@ export async function openPortabilityContext(
   let store: SqliteRunStore | undefined;
   try {
     const state = inspectPortableDatabaseState(`${dataDir}/runs.db`);
-    if (!state || state.state === 'active') store = new SqliteRunStore(`${dataDir}/runs.db`);
+    if (state || options.createDatabase !== false) {
+      store = new SqliteRunStore(`${dataDir}/runs.db`);
+    }
     const portabilityStore = store ?? readOnlyPortabilityStore();
     const portability = createPortabilityService({
       store: portabilityStore,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir,
       workspace: realpathSync(cwd),
+      baselineWasAbsent: !state,
     });
     let closed = false;
     return {
@@ -270,6 +278,8 @@ async function openApplicationResources(
     portability: createPortabilityService({
       store,
       database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      packageStore: directoryPackageStore,
+      git: gitTransfer,
       dataDir,
       workspace,
     }),

@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPortabilityService } from '../src/application/portability-operations.js';
+import { directoryPackageStore } from '../src/portability/directory-package.js';
+import { gitTransfer } from '../src/portability/git-transfer.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import {
   activateImportedBackup,
@@ -38,6 +40,8 @@ async function fixture() {
   const service = createPortabilityService({
     store,
     database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+    packageStore: directoryPackageStore,
+    git: gitTransfer,
     dataDir,
     workspace,
   });
@@ -85,6 +89,63 @@ describe('portability export operations', () => {
     await expect(fixtureData.service.inspectTransfer(fixtureData.output)).resolves.toMatchObject({
       transferId: requestId,
     });
+    fixtureData.store.close();
+  });
+
+  it('recovers a published package when finalization was interrupted', async () => {
+    const fixtureData = await fixture();
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    const preview = await fixtureData.service.previewExport({
+      requestId,
+      destination: fixtureData.output,
+    });
+    const originalFinalizeExport = fixtureData.store.finalizeExport.bind(fixtureData.store);
+    fixtureData.store.finalizeExport = async () => {
+      throw new Error('simulated finalization interruption');
+    };
+
+    await expect(
+      fixtureData.service.exportPackage({
+        requestId,
+        digest: preview.digest,
+        destination: fixtureData.output,
+      }),
+    ).rejects.toThrow(/interruption/);
+    expect((await fixtureData.store.getPortabilityState()).state).toBe('exporting');
+    await expect(
+      fixtureData.service.cancelExportIntent({ requestId, digest: preview.digest }),
+    ).rejects.toThrow(/already been published/);
+
+    fixtureData.store.finalizeExport = originalFinalizeExport;
+    await expect(
+      fixtureData.service.exportPackage({
+        requestId,
+        digest: preview.digest,
+        destination: fixtureData.output,
+      }),
+    ).resolves.toMatchObject({ packagePath: fixtureData.output });
+    expect((await fixtureData.store.getPortabilityState()).state).toBe('exported');
+    fixtureData.store.close();
+  });
+
+  it('cancels an unpublished export intent without creating a package', async () => {
+    const fixtureData = await fixture();
+    const requestId = '44444444-4444-4444-8444-444444444444';
+    const preview = await fixtureData.service.previewExport({
+      requestId,
+      destination: fixtureData.output,
+    });
+    await fixtureData.store.beginExportIntent({
+      requestId,
+      digest: preview.digest,
+      destination: fixtureData.output,
+      transferId: preview.transferId,
+    });
+
+    await expect(
+      fixtureData.service.cancelExportIntent({ requestId, digest: preview.digest }),
+    ).resolves.toMatchObject({ state: 'active' });
+    expect((await fixtureData.store.getPortabilityState()).state).toBe('active');
     fixtureData.store.close();
   });
 
