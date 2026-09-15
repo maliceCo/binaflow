@@ -290,7 +290,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
 
 ### Fase 4: Viaje completo y documentacion
 
-- [ ] **Tarea 4.1: Probar A -> B -> A con SQLite, artefactos y Git reales**
+- [x] **Tarea 4.1: Probar A -> B -> A con SQLite, artefactos y Git reales**
   - **Archivo:** nuevo `test/portability-integration.test.ts`; correcciones minimas solo en archivos de Fases 1-3 si una prueba demuestra incumplimiento.
   - **Funciones:** fixture de dos HOME/config/dataDir/workspace temporales y driver/store existentes; no helper de produccion adicional salvo desviacion aprobada.
   - **Descripcion:** A contiene runs terminados, preparacion activa, TaskContract listo, ejecucion guiada changes-review y artefactos. Exportar T1; clonar bundle en B; importar a dataDir B nuevo; apuntar config fixture manualmente; consultar mismos IDs/documentos/artefactos; crear trabajo nuevo y commit en B; exportar T2; fetch/fast-forward manual en A; importar a dataDir A nuevo; verificar historia union y linaje. La prueba simula el cambio manual de config/Git, no lo atribuye a Binaflow.
@@ -391,5 +391,7 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
   DTOs JSON sanitizados en `src/cli/commands/portability.ts` y
   `src/application/runtime.ts`; 20 tests CLI/protocolo pasan, lint y typecheck
   pasan.
-- Siguiente accion: verificar el viaje completo A -> B -> A con fixtures
-  temporales, SQLite, artifacts y Git.
+- Tarea 4.1 completada: viaje A -> B -> A con SQLite, artifacts, bundles Git,
+  commits manuales y linaje padre en `test/portability-integration.test.ts`; 1
+  test de integracion pasa, lint y typecheck pasan.
+- Siguiente accion: documentar operacion, limites, recuperacion y evidencia final.
