@@ -1,14 +1,16 @@
 # Binaflow web: objetivo e hitos
 
 Estado: los Hitos 1, 2, 3 y 3.5 estan implementados y verificados localmente. El
-Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
+Hito 4 tiene listener, autenticacion de un usuario, API versionada, cliente React
+y composicion `web`; la prueba Chromium queda pendiente porque el ejecutable no
+esta instalado en este entorno. El acceso LAN real, certificados y modelos
+siguen siendo validaciones del operador.
+El Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
 autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
-El Hito 3.5 agrega traslado portable con un solo equipo activo. La web queda
-despues, inicialmente en red interna y sin VPN. Autenticacion y mecanismo de
-despliegue siguen pendientes de definir.
-La verificacion cubre el backend con SQLite, artifacts y agentes simulados; no
-cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
-continuidad para recuperar el proposito cuando falte contexto de la conversacion.
+El Hito 3.5 agrega traslado portable con un solo equipo activo. La verificacion
+local cubre backend, HTTP, DTOs, arquitectura y build; no confunde esos checks
+con navegador real o despliegue remoto. Documento de continuidad para recuperar
+el proposito cuando falte contexto de la conversacion.
 
 ## Objetivo
 
@@ -71,9 +73,11 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 ### Pendientes, en orden
 
-- [ ] **4. Web personal y preparacion:** acceso en red interna, autenticacion,
-      chat de exploracion, consulta de fuentes, plan con feedback/aprobacion e
-      inicio y seguimiento de la ejecucion. Sin VPN como requisito inicial.
+- [ ] **4. Web personal y preparacion:** la base local de listener, autenticacion,
+      API y cliente esta implementada; falta aceptar el recorrido en Chromium y
+      validar acceso desde otro equipo LAN. Incluye chat de exploracion, consulta
+      de fuentes, plan con feedback/aprobacion e inicio/seguimiento. Sin VPN como
+      requisito inicial.
 - [ ] **5. Revision de codigo:** diffs por archivo, comentarios, edicion manual
       y revision del parche sobre versiones concretas.
 - [ ] **6. QA y cierre:** tickets conversables, decisiones selectivas, QA_TODO

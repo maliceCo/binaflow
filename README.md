@@ -93,7 +93,10 @@ pnpm run cli -- tui
 ```
 
 These commands only compile and start the attached local TUI. They do not
-install Pi, authenticate a provider, or create a daemon. Terminal behavior,
+install Pi, authenticate a provider, or create a daemon. For the attached
+browser interface, see [docs/personal-web.md](docs/personal-web.md) and start
+`pnpm run cli -- web --web-config .binaflow/web.json` with an explicit local
+configuration. Terminal behavior,
 including Windows, narrow terminals, IME/CJK, unsafe unbracketed paste, resize,
 long-document navigation, and cancellation under real stream/render failures,
 still requires human validation. Automated tests and live Pi checks are also

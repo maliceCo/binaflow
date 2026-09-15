@@ -489,7 +489,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion:** tras instalacion aprobada, `pnpm run test:web`; `pnpm exec vitest run test/architecture-boundaries.test.ts test/web-server.test.ts test/web-api.test.ts test/web-lifecycle.test.ts`. Boundaries: browser no importa Node/aplicacion/adapters; HTTP no SQLite/Pi/artifacts; use cases no web; exceptions solo composition roots nombrados. Si no hay Chromium, reportar bloqueo, no declarar UI verificada.
   - **Commit Msg:** `test: verify the personal web journey across browser sessions`
 
-- [ ] **Tarea 5.2: Documentar configuracion LAN y limites comprobados**
+- [x] **Tarea 5.2: Documentar configuracion LAN y limites comprobados**
   - **Archivo:** nuevo `docs/personal-web.md`; `README.md` solo inicio/enlace; `docs/web-workflow-vision.md`, `docs/task-contract.md`, `docs/data-portability.md` solo contratos nuevos/compatibilidad; `AGENTS.md` solo reflejar el alcance aprobado de web y dependencias de presentacion.
   - **Funciones:** ninguna.
   - **Descripcion:** documentar token por arranque, cert/key y confianza TLS, red interna/firewall manual, perfil planner, clave Brave externa, caps, sesion, versiones, reintento y cierre antes de export. Actualizar Hito 4 solo con evidencia; aclarar chat nuevo vs legacy y paquete schemas14/15. Dar guia manual de otro equipo LAN sin abrirlo durante tests.
@@ -602,4 +602,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.1 en progreso: se añadieron fixture Playwright, prueba de navegador y
   boundaries; la aceptación Chromium queda bloqueada porque no está instalado el
   ejecutable local (`pnpm exec playwright install` requiere aprobación explícita).
-- Siguiente accion: instalar Chromium con aprobación y ejecutar `pnpm run test:web`.
+- Tarea 5.2 completada: `docs/personal-web.md`, README y visión web documentan
+  configuración loopback/LAN, TLS, código efímero, límites, contratos y evidencias
+  sin afirmar validación remota.
+- Siguiente accion: instalar Chromium con aprobación y ejecutar `pnpm run test:web`;
+  después registrar la regresión final como Tarea 5.3.
