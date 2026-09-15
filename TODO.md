@@ -520,7 +520,7 @@ modo existente con `--web-config`; no importar, borrar ni depender del
 `binaweb.json` local usado durante la aceptacion. Las pruebas deben crear sus
 settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 
-- [ ] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
+- [x] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
   - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
   - **Funciones:** parseLauncherSettings, parseProjectCatalog, parseDeviceRecord, parsePeerTransferRequest y DTOs publicos de proyecto/dispositivo/transferencia.
   - **Descripcion:** definir schemas version 1 cerrados para configuracion global, raices autorizadas, proyectos locales, identidad estable de proyecto, dispositivos emparejados, ownership `active/exporting/exported/importing` y recibos de transferencia. Las rutas locales, dataDir, claves, certificados y paths de paquetes permanecen en records privados y nunca entran en DTOs del browser o del peer. Fijar limites de nombres, entradas, tamanos y estados antes de implementar I/O. Un projectId viaja con la transferencia; cada equipo conserva workspace/configPath/dataDir propios.
@@ -725,4 +725,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   Chromium, `pnpm run test:web` tambien pasa.
 - Tarea 5.3 completada: el feedback manual queda separado como extension 5.x y la
   regresion completa se ejecutara en 5.14, sin incluir configuracion local real.
-- Siguiente accion: ejecutar Tarea 5.4, contratos puros del launcher/handoff.
+- Tarea 5.4 completada: contratos version 1 estrictos para settings, catalogo,
+  devices, ownership, transferencias y DTOs sin paths/secrets; 4 tests enfocados y
+  typecheck pasan.
+- Siguiente accion: ejecutar Tarea 5.5, bootstrap global sin JSON manual.
