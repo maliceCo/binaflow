@@ -246,7 +246,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** paquete valido; artefacto faltante/cambiado/symlink/hard-link/case collision; manifest tampered; limite; crash simulado antes/despues de manifest/rename; output existente intacto. Fixtures siempre temporales. `pnpm exec vitest run test/directory-package.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: create integrity-checked transfer directories`
 
-- [ ] **Tarea 2.2: Crear y verificar el Git bundle sin modificar repositorios**
+- [x] **Tarea 2.2: Crear y verificar el Git bundle sin modificar repositorios**
   - **Archivo:** nuevo `src/portability/git-transfer.ts`; `src/application/ports.ts`; nuevo `test/git-transfer.test.ts`.
   - **Funciones:** previewRepositoryTransfer, createRepositoryBundle, inspectRepositoryBundle y assertImportWorkspace.
   - **Descripcion:** reutilizar WorkspaceProcess para argv Git con `shell:false`. Preflight limpio compatible con LocalGitWorkspace, detectar gitlinks y `filter=lfs` mediante entrada NUL acotada. Crear bundle de la ref completa de rama actual, verificar ref/HEAD y hash. En import solo comparar; no ejecutar acciones mutantes sobre el repo.
@@ -374,4 +374,9 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
   fsync, validacion de contenido y rename atomico en
   `src/portability/directory-package.ts`; 4 tests especificos pasan, lint y
   typecheck pasan.
-- Siguiente accion: crear/verificar bundles Git sin modificar repositorios.
+- Tarea 2.2 completada: preview Git, rechazo de LFS/gitlinks, bundle de una sola
+  rama, verify/list-heads y comparacion no mutante en
+  `src/portability/git-transfer.ts`; 3 tests especificos pasan, lint y typecheck
+  pasan.
+- Siguiente accion: normalizar y restaurar la copia SQLite portable entre
+  workspaces/dataDirs.
