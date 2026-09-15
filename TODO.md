@@ -228,7 +228,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** v13 -> v14 preserva todas las tablas; datasetId estable al reabrir; CAS/replay/conflicto de request; matriz de runs/owners/pending/review/guided; integrity/FK; backup concurrentemente consistente. `pnpm exec vitest run test/migrations.test.ts test/portability-persistence.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: persist portable dataset lineage and export intents`
 
-- [ ] **Tarea 1.4: Bloquear el dataDir durante todo contexto de proceso**
+- [x] **Tarea 1.4: Bloquear el dataDir durante todo contexto de proceso**
   - **Archivo:** nuevo `src/storage/data-directory-lock.ts`; `src/application/runtime.ts`; `src/application/context.ts` si su lifecycle requiere tipo nuevo; `test/application-runtime.test.ts`; nuevo `test/data-directory-lock.test.ts`.
   - **Funciones:** FileDataDirectoryLock.acquire/release; inspectPortableDatabaseState read-only; openApplicationResources, openApplicationStorage y sus cierres.
   - **Descripcion:** lock canonico en `~/.binaflow/data-locks` por hash del dataDir, inyectable en tests. Adquirir antes de abrir SQLite y liberar despues de `store.close`, incluido error de apertura. Normal runtime rechaza exporting/exported antes de migrar. Mantener cierre ordenado del host; si se vuelve async, actualizar todos los consumidores para await real, sin liberar durante una operacion.
@@ -367,5 +367,8 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 1.3 completada: migracion aditiva 14, estado/linaje CAS, blockers y backup
   consistente en `src/storage/migrations/014-portability.ts` y
   `src/storage/sqlite-run-store.ts`; 5 tests especificos pasan y typecheck pasa.
-- Siguiente accion: implementar el lease exclusivo del dataDir y conectarlo al
-  lifecycle del runtime.
+- Tarea 1.4 completada: lease exclusivo fuera del dataDir, inspeccion read-only y
+  lifecycle de runtime/storage en `src/storage/data-directory-lock.ts` y
+  `src/application/runtime.ts`; 13 tests especificos pasan y typecheck pasa.
+- Siguiente accion: construir el directorio de transferencia con staging, hashes,
+  limites, fsync y publicacion atomica.

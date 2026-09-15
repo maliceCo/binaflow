@@ -10,6 +10,10 @@ import { createWorkflowRuntime, WorkflowEngine } from '../core/engine.js';
 import type { EventSink, NormalizedEvent } from '../core/events.js';
 import { PiDriver } from '../drivers/pi-rpc.js';
 import { PiModelDiscovery } from '../drivers/pi-discovery.js';
+import {
+  assertActivePortableDatabase,
+  FileDataDirectoryLock,
+} from '../storage/data-directory-lock.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { ApplicationRunStore } from './ports.js';
 import type { WorkflowRun } from '../core/run.js';
@@ -108,8 +112,17 @@ async function openApplicationResources(
 ): Promise<ApplicationResources> {
   const config = await loadConfig(configPath, cwd);
   await mkdir(config.dataDir, { recursive: true });
-  const store = new SqliteRunStore(`${config.dataDir}/runs.db`);
-  const artifacts = new FileArtifactStore(`${config.dataDir}/artifacts`);
+  const dataDir = realpathSync(config.dataDir);
+  const dataDirectoryLease = await new FileDataDirectoryLock().acquire(dataDir);
+  let store: SqliteRunStore | undefined;
+  try {
+    assertActivePortableDatabase(`${dataDir}/runs.db`);
+    store = new SqliteRunStore(`${dataDir}/runs.db`);
+  } catch (error) {
+    await dataDirectoryLease.release();
+    throw error;
+  }
+  const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
   const eventListeners = new Set<(event: NormalizedEvent) => void | Promise<void>>();
   if (onEvent) eventListeners.add(onEvent);
   const eventSink = createRuntimeEventSink(store, async (event) => {
@@ -198,11 +211,20 @@ async function openApplicationResources(
       };
     },
   });
+  let closed = false;
   return {
     application,
     guidedExecution: { service: guidedExecution, runner: guidedExecutionRunner },
-    findRun: (runId) => store.getRun(runId),
-    close: () => store.close(),
+    findRun: (runId) => store!.getRun(runId),
+    close: () => {
+      if (closed) return;
+      closed = true;
+      try {
+        store!.close();
+      } finally {
+        void dataDirectoryLease.release();
+      }
+    },
   };
 }
 
@@ -214,8 +236,17 @@ export async function openApplicationStorage(
   const dataDir = await loadDataDir(configPath, cwd);
   const qaHistory = await loadQaHistory(configPath, cwd);
   await mkdir(dataDir, { recursive: true });
-  const store = new SqliteRunStore(`${dataDir}/runs.db`);
-  const artifacts = new FileArtifactStore(`${dataDir}/artifacts`);
+  const canonicalDataDir = realpathSync(dataDir);
+  const dataDirectoryLease = await new FileDataDirectoryLock().acquire(canonicalDataDir);
+  let store: SqliteRunStore | undefined;
+  try {
+    assertActivePortableDatabase(`${canonicalDataDir}/runs.db`);
+    store = new SqliteRunStore(`${canonicalDataDir}/runs.db`);
+  } catch (error) {
+    await dataDirectoryLease.release();
+    throw error;
+  }
+  const artifacts = new FileArtifactStore(`${canonicalDataDir}/artifacts`);
   const queries = createApplicationQueries({
     config: { profiles: {}, qaHistory },
     store,
@@ -227,7 +258,19 @@ export async function openApplicationStorage(
     preparationStore: store,
     modelDiscovery: { discoverModels: async () => [] },
   });
-  return { application: queries, close: () => store.close() };
+  let closed = false;
+  return {
+    application: queries,
+    close: () => {
+      if (closed) return;
+      closed = true;
+      try {
+        store!.close();
+      } finally {
+        void dataDirectoryLease.release();
+      }
+    },
+  };
 }
 
 export function createRuntimeEventSink(
