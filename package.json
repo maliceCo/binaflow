@@ -11,10 +11,13 @@
     "binaflow": "dist/src/cli/index.js"
   },
   "files": [
-    "dist/src"
+    "dist/src",
+    "dist/web"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "pnpm run build:server && pnpm run build:web",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:web": "node scripts/build-web.mjs",
     "build:bundle": "pnpm run build && node scripts/build-linux-bundle.mjs",
     "build:testrelease": "pnpm run build && node scripts/build-testrelease.mjs",
     "format": "prettier --write .",
@@ -24,6 +27,7 @@
     "test": "vitest run",
     "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts",
     "test:integration": "pnpm run test:e2e",
+    "test:web": "playwright test",
     "build:windows-bundle": "npm run build && node scripts/build-windows-bundle.mjs",
     "cli": "tsx src/cli/index.ts",
     "prepack": "pnpm run build"
@@ -34,15 +38,21 @@
     "better-sqlite3": "^12.4.1",
     "commander": "^14.0.1",
     "ink": "7.1.1",
+    "ipaddr.js": "2.2.0",
     "marked": "18.0.11",
+    "parse5": "7.3.0",
     "react": "19.2.8",
+    "react-dom": "19.2.8",
     "string-width": "8.2.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "@playwright/test": "1.55.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.2.1",
     "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.3",
+    "esbuild": "0.25.9",
     "eslint": "^9.32.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.3",
