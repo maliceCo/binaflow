@@ -46,6 +46,14 @@ import type {
   WorkspaceExecutionLease,
 } from './guided-execution.js';
 import type {
+  PortabilityBlocker,
+  PortabilityExportPreview,
+  PortabilityImportPreview,
+  PortabilityState,
+  PortabilityTransfer,
+  TransferManifest,
+} from './portability.js';
+import type {
   TaskContractActionPage,
   TaskContractDocument,
   TaskContractDocumentPage,
@@ -165,6 +173,89 @@ export interface ApplicationTaskContractStore {
   resolveTaskContractBlock(
     request: TaskContractStoredResolveBlockRequest,
   ): Promise<TaskContractStoredState>;
+}
+
+export interface PortabilityService {
+  previewExport(request: {
+    requestId: string;
+    destination: string;
+  }): Promise<PortabilityExportPreview>;
+  exportPackage(request: {
+    requestId: string;
+    digest: string;
+    destination: string;
+  }): Promise<{ transfer: PortabilityTransfer; packagePath: string }>;
+  cancelExportIntent(request: { requestId: string; digest: string }): Promise<PortabilityState>;
+  inspectTransfer(packagePath: string): Promise<TransferManifest>;
+  previewImport(request: {
+    packagePath: string;
+    outputDataDir: string;
+  }): Promise<PortabilityImportPreview>;
+  importPackage(request: {
+    requestId: string;
+    digest: string;
+    packagePath: string;
+    outputDataDir: string;
+  }): Promise<{ transfer: PortabilityTransfer; dataDir: string }>;
+}
+
+export interface ApplicationPortabilityStore {
+  getPortabilityState(): Promise<PortabilityState>;
+  inspectPortabilityBlockers(): Promise<PortabilityBlocker[]>;
+  beginExportIntent(request: {
+    requestId: string;
+    digest: string;
+    destination: string;
+    transferId: string;
+  }): Promise<PortabilityState>;
+  finalizeExport(request: {
+    requestId: string;
+    transfer: PortabilityTransfer;
+  }): Promise<PortabilityState>;
+  cancelExportIntent(request: { requestId: string; digest: string }): Promise<PortabilityState>;
+  backupDatabaseTo(destination: string): Promise<void>;
+}
+
+export interface PortabilityPackageStore {
+  createStagingPackage(request: {
+    destination: string;
+    requestId: string;
+    transferId: string;
+  }): Promise<string>;
+  writeManifestLast(packagePath: string, manifest: TransferManifest): Promise<void>;
+  finalizePackage(stagingPath: string, destination: string): Promise<string>;
+  inspectPackage(packagePath: string): Promise<TransferManifest>;
+  materializeImportStaging(packagePath: string, outputDataDir: string): Promise<string>;
+  cleanupOwnedStaging(stagingPath: string, requestId: string): Promise<void>;
+}
+
+export interface PortabilityGit {
+  previewRepositoryTransfer(workspace: string): Promise<{
+    branch: string;
+    ref: string;
+    head: string;
+    fingerprint: string;
+    blockers: PortabilityBlocker[];
+  }>;
+  createRepositoryBundle(
+    workspace: string,
+    destination: string,
+    ref: string,
+  ): Promise<TransferFileResult>;
+  inspectRepositoryBundle(
+    bundlePath: string,
+  ): Promise<{ ref: string; head: string; sha256: string; sizeBytes: number }>;
+  assertImportWorkspace(workspace: string, manifest: TransferManifest): Promise<void>;
+}
+
+export interface TransferFileResult {
+  path: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export interface DataDirectoryLock {
+  acquire(dataDir: string): Promise<{ token: string; release(): Promise<void> }>;
 }
 
 export interface ApplicationArtifactStore {

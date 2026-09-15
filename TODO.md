@@ -212,7 +212,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion:** `git status --short`; `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`. Registrar cualquier fallo preexistente y detenerse; no repararlo dentro de esta tarea.
   - **Commit Msg:** `docs: plan single-writer data portability`
 
-- [ ] **Tarea 1.2: Definir contrato portable v1 y puertos estrechos**
+- [x] **Tarea 1.2: Definir contrato portable v1 y puertos estrechos**
   - **Archivo:** nuevo `src/application/portability.ts`; `src/application/ports.ts`; nuevo `test/portability-contracts.test.ts`.
   - **Funciones:** parseTransferManifest, canonicalTransferJson, hash/digest inputs, validadores de IDs/paths/limites; interfaces PortabilityService, ApplicationPortabilityStore, PortabilityPackageStore, PortabilityGit y DataDirectoryLock.
   - **Descripcion:** modelar previews, requests, resultados, blockers, state/ledger y manifest descritos arriba. Arrays mantienen orden; objetos canonicos ordenan claves. RequestId UUID v4 canonico. Errores de dominio usan codigos estables, sin paths sensibles en mensajes de maquina. Los puertos expresan backup/estado, package y Git necesarios; no crear APIs generales de filesystem/SQLite/Git.
@@ -359,6 +359,10 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
   decision aprobada del Hito 3.5 y no existia `TODO.md`. Ambos deben revisarse;
   no presentarlos como implementacion.
 - Pruebas, migracion 14, export/import, Git bundle y commits: no ejecutados.
-- Siguiente accion: revisar Lectura rapida, especialmente la restriccion de no
-  trasladar runs reanudables y la activacion manual de Git/config, y autorizar o
-  ajustar el plan antes de delegar su ejecucion.
+- Tarea 1.1 completada: baseline completo y autorizacion documentada en commit
+  `200e548`.
+- Tarea 1.2 completada: contratos, validadores y puertos en
+  `src/application/portability.ts`, `src/application/ports.ts`; 5 tests especificos
+  pasan y typecheck pasa.
+- Siguiente accion: implementar la migracion aditiva de schema 14 y persistencia
+  de estado/linaje.
