@@ -159,7 +159,7 @@ describe('guided execution persistence', () => {
     });
     expect(
       database.prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1').get(),
-    ).toEqual({ version: 13 });
+    ).toEqual({ version: 14 });
     database.close();
   });
 });

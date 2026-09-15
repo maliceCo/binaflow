@@ -254,7 +254,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** bundle clonable de rama normal y `git bundle verify`; repo sucio/detached/submodule/LFS rechazado; otra rama/HEAD en import rechazado; paths con espacios seguros. `pnpm exec vitest run test/git-transfer.test.ts test/git-workspace.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: package the active Git branch for manual transfer`
 
-- [ ] **Tarea 2.3: Normalizar y restaurar la copia SQLite portable**
+- [x] **Tarea 2.3: Normalizar y restaurar la copia SQLite portable**
   - **Archivo:** nuevo `src/storage/sqlite-portability.ts`; `src/application/ports.ts`; nuevo `test/sqlite-portability.test.ts`.
   - **Funciones:** normalizePortableBackup, inspectPortableBackup, activateImportedBackup; validacion de artifacts/workspace/progress y portability ledger.
   - **Descripcion:** operar solo sobre copias cerradas/staging. Normalizar paths tecnicos y workspaces conocidos, marcar la copia empaquetada exported y luego, al importar, rebasar al workspace/dataDir canonicos y marcarla active con el transferId actual. Verificar schema exacto soportado, integrity_check, foreign_key_check, JSON valido, IDs/refs y correspondencia manifest antes y despues. Preservar snapshots/autorizaciones historicas sin reinterpretarlos.
@@ -378,5 +378,7 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
   rama, verify/list-heads y comparacion no mutante en
   `src/portability/git-transfer.ts`; 3 tests especificos pasan, lint y typecheck
   pasan.
-- Siguiente accion: normalizar y restaurar la copia SQLite portable entre
-  workspaces/dataDirs.
+- Tarea 2.3 completada: normalizacion/inspeccion/activacion SQLite con integridad,
+  contratos, paths y workspaces portables en `src/storage/sqlite-portability.ts`;
+  7 tests especificos pasan, lint y typecheck pasan.
+- Siguiente accion: coordinar preview, export y recuperacion de intents.
