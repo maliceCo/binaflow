@@ -24,7 +24,7 @@ const requestId = '33333333-3333-4333-8333-333333333333';
 const transferId = '11111111-1111-4111-8111-111111111111';
 
 describe('portable dataset persistence', () => {
-  it('creates schema 14 identity once and preserves it on reopen', async () => {
+  it('creates schema 15 identity once and preserves it on reopen', async () => {
     const { databasePath } = setup();
     const first = new SqliteRunStore(databasePath);
     const initial = await first.getPortabilityState();
@@ -134,7 +134,7 @@ describe('portable dataset persistence', () => {
     const backup = new Database(backupPath, { readonly: true });
     expect(backup.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(backup.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({
-      version: 14,
+      version: 15,
     });
     backup.close();
   });

@@ -135,6 +135,6 @@ describe('portable SQLite backups', () => {
 
     const empty = join(root, 'empty.db');
     new Database(empty).close();
-    expect(() => inspectPortableBackup(empty)).toThrow(/schema version 14/);
+    expect(() => inspectPortableBackup(empty)).toThrow(/schema version/);
   });
 });

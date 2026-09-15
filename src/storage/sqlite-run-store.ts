@@ -191,10 +191,13 @@ export class SqliteRunStore
     const pendingMessages = this.scalarCount(
       "SELECT COUNT(*) AS count FROM preparation_messages WHERE generation_status = 'pending'",
     );
-    if (pendingRequests + pendingMessages > 0) {
+    const guidedPendingRequests = this.scalarCount(
+      "SELECT COUNT(*) AS count FROM guided_preparation_requests WHERE status IN ('pending', 'running')",
+    );
+    if (pendingRequests + pendingMessages + guidedPendingRequests > 0) {
       blockers.push({
         code: 'active-execution',
-        detail: `${pendingRequests + pendingMessages} pending preparation operation(s)`,
+        detail: `${pendingRequests + pendingMessages + guidedPendingRequests} pending preparation operation(s)`,
       });
     }
     const reusableRuns = this.scalarCount(

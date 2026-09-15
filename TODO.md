@@ -377,7 +377,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion:** `git status --short`; `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`. Reportar fallos previos sin arreglos laterales.
   - **Commit Msg:** `docs: approve personal web implementation scope`
 
-- [ ] **Tarea 1.2: Preparar build web y dependencias minimas**
+- [x] **Tarea 1.2: Preparar build web y dependencias minimas**
   - **Archivo:** `package.json`, `pnpm-lock.yaml`, `tsconfig.build.json`, `.gitignore`; nuevos `scripts/build-web.mjs`, `src/web/client/index.html`, `src/web/client/main.tsx`, `src/web/client/styles.css`, `src/web/client/assets.d.ts`.
   - **Funciones:** buildWeb, entrada React minima y scripts build:web/build:server/test:web.
   - **Descripcion:** runtime: react-dom en version compatible exacta con React actual, ipaddr.js y parse5. Dev: esbuild, @types/react-dom y @playwright/test. Verificar engines/peers Node >=22 antes de fijar versiones; no actualizar otros paquetes. Build cliente con esbuild browser/ESM, CSS separado, sin source maps publicos. build ejecuta tsc server y build:web; excluir cliente del emit Node, mantenerlo en typecheck. Assets en dist/web, no dist/src; incluirlos en package.files. No bundle Linux/Windows.
@@ -385,7 +385,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion:** `pnpm run typecheck`; `pnpm run build`; comprobar assets propios generados y que el bundle no incluye Node, Pi, SQLite ni config. No npm pack ni instalacion de release.
   - **Commit Msg:** `build: add a minimal React browser bundle`
 
-- [ ] **Tarea 1.3: Definir preparacion guiada y contrato HTTP**
+- [x] **Tarea 1.3: Definir preparacion guiada y contrato HTTP**
   - **Archivo:** nuevos `src/application/guided-preparation.ts`, `src/workflows/guided-preparation.ts`, `src/web/contracts.ts`; `src/application/ports.ts`; nuevo `test/guided-preparation-contracts.test.ts`.
   - **Funciones:** parsers/schemas de requests, respuestas planner y DTOs; operaciones permitidas; puertos GuidedPreparationStore/PublicSourceReader.
   - **Descripcion:** contratos B/C/G, refs de fuentes, CAS, recibos y prompts acotados. Reusar TaskContractBrief/Plan/Todo y sus parsers. Limites: usuario 4 KiB, respuesta conversacional 16 KiB, fuentes 16 KiB cada una, maximo 50 fuentes por tarea; candidatos plan/TODO usan limites Hito 2. No transformar keywords del chat en acciones aprobadas.
@@ -395,7 +395,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 
 ### Fase 2: Datos y fuentes
 
-- [ ] **Tarea 2.1: Persistir conversacion y publicaciones atomicas**
+- [x] **Tarea 2.1: Persistir conversacion y publicaciones atomicas**
   - **Archivo:** nuevo `src/storage/migrations/015-guided-preparation.ts`; `src/storage/migrations/index.ts`, `src/storage/sqlite-run-store.ts`, `src/application/ports.ts`, `test/migrations.test.ts`; nuevo `test/guided-preparation-persistence.test.ts`.
   - **Funciones:** createGuidedPreparation, begin/finishGuidedPreparationRequest, confirmGuidedBrief, decisiones cortas idempotentes, paginas de mensajes/fuentes y recuperacion CAS.
   - **Descripcion:** tablas C y transacciones de creacion, admision, cierre/publicacion. Reutilizar helpers de TaskContract sin transacciones anidadas. Guardar revisions/owner/profile. Cambio externo de contrato durante generacion registra conflicto sin publicar. No tener datos de preparacion sin contrato ni duplicar mensaje/aprobacion por replay.
@@ -403,7 +403,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** v14 -> v15 conserva datos; FK; CAS; doble solicitud; rollback de publicacion; comentario invalida aprobacion; brief cubre secuencia; contrato consumido inmutable; recuperacion sin owner vivo. `pnpm exec vitest run test/guided-preparation-persistence.test.ts test/task-contract-persistence.test.ts test/migrations.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: persist versioned guided conversations`
 
-- [ ] **Tarea 2.2: Mantener portabilidad de schema 14 y 15**
+- [x] **Tarea 2.2: Mantener portabilidad de schema 14 y 15**
   - **Archivo:** `src/application/portability.ts`, `src/application/portability-operations.ts`, `src/storage/sqlite-portability.ts`, `src/storage/sqlite-run-store.ts`; `src/portability/directory-package.ts` solo validacion manifest/schema; `test/portability-contracts.test.ts`, `test/portability-persistence.test.ts`, `test/sqlite-portability.test.ts`, `test/portability-integration.test.ts`.
   - **Funciones:** schema de manifest, assertSchema soportado, normalize/inspect/activatePortableBackup, inspectPortabilityBlockers y conteos/estado del backup real.
   - **Descripcion:** compatibilidad definida arriba. Import 14 sin migracion implicita; export 15 con schema real. Incluir nuevas tablas por backup SQL, bloquear operacion de preparacion pendiente y preservar IDs/fuentes/mensajes. Mantener retorno y rebasing de workspace existente.
@@ -566,4 +566,14 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   Chromium autorizadas para la implementacion. Schema vigente 14; schema 15 libre.
 - Verificacion Tarea 1.1: `format:check`, `lint`, `typecheck`, `test` (64 archivos,
   407 tests, 1 omitido) y `build` pasan. No se hicieron arreglos laterales.
-- Siguiente accion: ejecutar la Tarea 1.2, preparando el build web y sus dependencias minimas.
+- Tarea 1.2 completada: React/react-dom, ipaddr.js, parse5, esbuild, Playwright y
+  tipos declarados; build web separado en `dist/web` sin source maps ni imports de
+  Node, Pi o SQLite.
+- Tarea 1.3 completada: contratos estrictos de requests/respuestas, límites, perfil
+  planner read-only, prompt acotado, puertos y DTOs web; 10 tests enfocados pasan.
+- Tarea 2.1 completada: migración aditiva 015, persistencia de preparaciones,
+  mensajes, fuentes y requests idempotentes con CAS; 7 tests enfocados pasan.
+- Tarea 2.2 completada: manifiestos y copias SQLite aceptan schema 14 y 15, las
+  exportaciones nuevas emiten 15 y se comprueba que el manifiesto coincide con DB;
+  12 tests de portabilidad pasan.
+- Siguiente accion: ejecutar la Tarea 2.3, implementando fuentes públicas acotadas.

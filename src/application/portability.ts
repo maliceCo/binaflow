@@ -3,7 +3,9 @@ import { Ajv } from 'ajv';
 
 export const PORTABILITY_PROTOCOL = 'binaflow-transfer' as const;
 export const PORTABILITY_VERSION = 1 as const;
-export const PORTABILITY_SCHEMA_VERSION = 14 as const;
+export const PORTABILITY_SCHEMA_VERSIONS = [14, 15] as const;
+export const PORTABILITY_SCHEMA_VERSION = 15 as const;
+export type PortabilitySchemaVersion = (typeof PORTABILITY_SCHEMA_VERSIONS)[number];
 export const PORTABLE_WORKSPACE_MARKER = '$BINAFlow_WORKSPACE' as const;
 
 export const PORTABILITY_LIMITS = {
@@ -38,7 +40,7 @@ export interface TransferManifest {
   requestId: string;
   createdAt: string;
   binaflowVersion: string;
-  schemaVersion: typeof PORTABILITY_SCHEMA_VERSION;
+  schemaVersion: PortabilitySchemaVersion;
   counts: {
     runs: number;
     artifacts: number;
@@ -203,7 +205,7 @@ const manifestSchema = {
     requestId: { type: 'string', minLength: 1 },
     createdAt: { type: 'string', minLength: 1 },
     binaflowVersion: { type: 'string', minLength: 1 },
-    schemaVersion: { const: PORTABILITY_SCHEMA_VERSION },
+    schemaVersion: { enum: [...PORTABILITY_SCHEMA_VERSIONS] },
     counts: {
       type: 'object',
       additionalProperties: false,

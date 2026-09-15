@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   PORTABLE_WORKSPACE_MARKER,
   PortabilityContractError,
+  PORTABILITY_SCHEMA_VERSIONS,
   type PortableBackupInspection,
   validatePortablePath,
 } from '../application/portability.js';
@@ -43,7 +44,7 @@ export function normalizePortableBackup(
   const input = typeof options === 'string' ? { sourceDataDir: options } : options;
   const database = openWritableDatabase(databasePath);
   try {
-    assertSchema14(database);
+    assertSupportedSchema(database);
     withTransaction(database, () => {
       normalizeArtifacts(database, input.sourceDataDir);
       normalizeWorkspaces(database);
@@ -76,7 +77,7 @@ export function normalizePortableBackup(
 export function inspectPortableBackup(databasePath: string): PortableBackupInspection {
   const database = openReadonlyDatabase(databasePath);
   try {
-    assertSchema14(database);
+    assertSupportedSchema(database);
     return inspectOpenDatabase(database);
   } finally {
     database.close();
@@ -95,7 +96,7 @@ export function activateImportedBackup(
   }
   const database = openWritableDatabase(databasePath);
   try {
-    assertSchema14(database);
+    assertSupportedSchema(database);
     return withTransaction(database, () => {
       const before = inspectOpenDatabase(database);
       if (before.state !== 'exported') {
@@ -295,7 +296,7 @@ function inspectOpenDatabase(database: Database.Database): PortableBackupInspect
   validateTaskContractDocuments(database);
   validateJsonColumns(database);
   return {
-    schemaVersion: 14,
+    schemaVersion: readSchemaVersion(database),
     datasetId: state.dataset_id,
     state: state.state,
     lastTransferId: state.last_transfer_id,
@@ -324,6 +325,10 @@ function validateJsonColumns(database: Database.Database): void {
     ['guided_executions', 'initial_git_json'],
     ['guided_executions', 'progress_json'],
   ];
+  if (tableExists(database, 'guided_preparations')) {
+    checks.push(['guided_preparations', 'confirmed_source_ids_json']);
+    checks.push(['guided_preparation_requests', 'request_json']);
+  }
   for (const [table, column] of checks) {
     const invalid = database
       .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE json_valid(${column}) = 0`)
@@ -381,18 +386,35 @@ function validateRestoredArtifactPath(path: string): void {
   }
 }
 
-function assertSchema14(database: Database.Database): void {
+function tableExists(database: Database.Database, table: string): boolean {
+  return Boolean(
+    database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table),
+  );
+}
+
+function assertSupportedSchema(database: Database.Database): void {
+  const version = readSchemaVersion(database);
+  if (
+    !PORTABILITY_SCHEMA_VERSIONS.includes(version as (typeof PORTABILITY_SCHEMA_VERSIONS)[number])
+  ) {
+    throw portabilityError('invalid-input', 'Portable backup uses an unsupported schema version');
+  }
+}
+
+function readSchemaVersion(database: Database.Database): number {
   const hasMigrations = database
     .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
     .get();
   if (!hasMigrations)
-    throw portabilityError('invalid-input', 'Portable backup must use schema version 14');
+    throw portabilityError('invalid-input', 'Portable backup has no schema version');
   const version = database
     .prepare('SELECT MAX(version) AS version FROM schema_migrations')
     .get() as { version: number | null } | undefined;
-  if (version?.version !== 14) {
-    throw portabilityError('invalid-input', 'Portable backup must use schema version 14');
+  const value = version?.version;
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw portabilityError('invalid-input', 'Portable backup has an invalid schema version');
   }
+  return value;
 }
 
 function openReadonlyDatabase(path: string): Database.Database {

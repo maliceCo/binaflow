@@ -332,6 +332,13 @@ async function importPackage(
   );
   try {
     const manifest = await options.packageStore.inspectPackage(request.packagePath);
+    const backup = options.database.inspectPortableBackup(join(staging, 'runs.db'));
+    if (backup.schemaVersion !== manifest.schemaVersion) {
+      throw new PortabilityContractError(
+        'invalid-input',
+        'Transfer manifest schema does not match its database schema',
+      );
+    }
     options.database.activateImportedBackup(join(staging, 'runs.db'), {
       destinationDataDir: request.outputDataDir,
       destinationWorkspace: options.workspace,
@@ -422,7 +429,7 @@ async function buildPackage(
     requestId,
     createdAt: expectedManifest?.createdAt ?? new Date().toISOString(),
     binaflowVersion: VERSION,
-    schemaVersion: PORTABILITY_SCHEMA_VERSION,
+    schemaVersion: inspection.schemaVersion as TransferManifest['schemaVersion'],
     counts: {
       runs: inspection.runs,
       artifacts: transferArtifacts.length,

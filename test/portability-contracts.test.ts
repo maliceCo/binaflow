@@ -62,6 +62,13 @@ describe('portable transfer contracts', () => {
     ).toThrow(/Artifact count/);
   });
 
+  it('accepts schema 14 and 15 but rejects unknown future schemas', () => {
+    expect(parseTransferManifest({ ...manifest(), schemaVersion: 15 }).schemaVersion).toBe(15);
+    expect(() => parseTransferManifest({ ...manifest(), schemaVersion: 16 })).toThrow(
+      PortabilityContractError,
+    );
+  });
+
   it('rejects POSIX and Windows traversal paths and case collisions', () => {
     for (const path of ['/runs.db', '../runs.db', 'a/../runs.db', 'C:/runs.db', 'a\\runs.db']) {
       expect(() => validatePortablePath(path)).toThrow(PortabilityContractError);
