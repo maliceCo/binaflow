@@ -238,7 +238,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
 
 ### Fase 2: Paquete y adaptadores
 
-- [ ] **Tarea 2.1: Construir y validar directorios de transferencia**
+- [x] **Tarea 2.1: Construir y validar directorios de transferencia**
   - **Archivo:** nuevo `src/portability/directory-package.ts`; nuevo `test/directory-package.test.ts`.
   - **Funciones:** createStagingPackage, copyAndHashArtifact, writeManifestLast, finalizePackage, inspectPackage, materializeImportStaging y cleanupOwnedStaging.
   - **Descripcion:** implementar formato v1, permisos, streaming, limites, fsync y rename. Staging lleva metadata con token/request para que un replay solo limpie/reuse su propio directorio. Manifest se parsea con contratos de 1.2 antes de confiar en rutas. Copiar solo artefactos listados por SQLite; contar orfanos por recorrido seguro sin copiarlos.
@@ -370,5 +370,8 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 1.4 completada: lease exclusivo fuera del dataDir, inspeccion read-only y
   lifecycle de runtime/storage en `src/storage/data-directory-lock.ts` y
   `src/application/runtime.ts`; 13 tests especificos pasan y typecheck pasa.
-- Siguiente accion: construir el directorio de transferencia con staging, hashes,
-  limites, fsync y publicacion atomica.
+- Tarea 2.1 completada: staging, copias streaming exclusivas, hashes, limites,
+  fsync, validacion de contenido y rename atomico en
+  `src/portability/directory-package.ts`; 4 tests especificos pasan, lint y
+  typecheck pasan.
+- Siguiente accion: crear/verificar bundles Git sin modificar repositorios.
