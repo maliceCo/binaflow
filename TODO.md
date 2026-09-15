@@ -528,7 +528,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** casos validos y rechazo de campos extra, IDs invalidos, ownership imposible, limites excedidos y DTOs con secretos/paths. `pnpm exec vitest run test/web-launcher-contracts.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: define personal launcher and handoff contracts`
 
-- [ ] **Tarea 5.5: Arrancar la web sin JSON preparado por el usuario**
+- [x] **Tarea 5.5: Arrancar la web sin JSON preparado por el usuario**
   - **Archivo:** `src/web/config.ts`, nuevo `src/web/settings-store.ts`, `src/web/server.ts`, `src/cli/commands/web.ts`, `src/cli/index.ts`; nuevos `test/web-settings-store.test.ts`, `test/web-bootstrap.test.ts`; `test/cli-protocol.test.ts`.
   - **Funciones:** resolveDefaultWebSettingsPath, loadOrBootstrapWebSettings, saveWebSettingsAtomically y modo launcher de registerWebCommand.
   - **Descripcion:** `binaflow web` sin `--cwd`, `--config` ni `--web-config` arranca en `127.0.0.1:4317` con settings `setupRequired`, codigo efimero y sin abrir ningun proyecto/dataDir. Resolver la ruta global por plataforma (`XDG_CONFIG_HOME`/HOME en Linux y APPDATA en Windows) con dependencias inyectables en tests. Conservar `--web-config` como override avanzado y aceptar `--cwd`/`--config` solo como proyecto inicial explicito del mismo launcher. Persistir JSON estricto mediante temp+rename, permisos privados cuando sean soportados y last-known-good; un fallo de escritura no altera la configuracion activa. Rechazar `--json/--jsonl` antes de leer settings o abrir recursos.
@@ -728,4 +728,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.4 completada: contratos version 1 estrictos para settings, catalogo,
   devices, ownership, transferencias y DTOs sin paths/secrets; 4 tests enfocados y
   typecheck pasan.
-- Siguiente accion: ejecutar Tarea 5.5, bootstrap global sin JSON manual.
+- Tarea 5.5 completada: `binaflow web` sin override usa settings globales con
+  bootstrap loopback efimero, persistencia atomica/CAS/last-good y no abre contexto
+  de proyecto si no se solicita uno; 22 tests enfocados y typecheck pasan.
+- Siguiente accion: ejecutar Tarea 5.6, asistente web local/LAN.
