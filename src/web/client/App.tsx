@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { createApiClient, createRequestId, type Task } from './api.js';
+import { createApiClient, createRequestId, type LauncherSettings, type Task } from './api.js';
+import { Setup } from './Setup.js';
+import { Settings } from './Settings.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -9,6 +11,8 @@ export function App(): ReactElement {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [settings, setSettings] = useState<LauncherSettings>();
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedId, setSelectedId] = useState(() => getTaskFromHash());
 
   useEffect(() => {
@@ -17,7 +21,7 @@ export function App(): ReactElement {
       .then((session) => {
         setAuthenticated(session.authenticated);
         setChecking(false);
-        if (session.authenticated) void refreshTasks();
+        if (session.authenticated) void refreshWorkspace();
       })
       .catch((cause: unknown) => {
         setError(messageOf(cause));
@@ -40,6 +44,17 @@ export function App(): ReactElement {
     }
   }
 
+  async function refreshWorkspace(): Promise<void> {
+    try {
+      const nextSettings = await api.getSettings();
+      setSettings(nextSettings);
+      if (!nextSettings.setupRequired) await refreshTasks();
+    } catch {
+      setSettings(undefined);
+      await refreshTasks();
+    }
+  }
+
   if (checking)
     return (
       <main className="app-shell">
@@ -58,7 +73,7 @@ export function App(): ReactElement {
             setAuthenticated(session.authenticated);
             setCode('');
             setError(undefined);
-            await refreshTasks();
+            await refreshWorkspace();
           } catch (cause) {
             setError(messageOf(cause));
           }
@@ -80,6 +95,7 @@ export function App(): ReactElement {
           onClick={async () => {
             await api.logout();
             setAuthenticated(false);
+            setSettings(undefined);
           }}
         >
           Log out
@@ -90,14 +106,35 @@ export function App(): ReactElement {
           {error}
         </p>
       )}
-      <section className="workspace-grid">
-        <TaskList tasks={tasks} onRefresh={refreshTasks} />
-        {selected ? (
-          <TaskPanel task={selected} api={api} onRefresh={refreshTasks} />
-        ) : (
-          <p>Select a task to continue.</p>
-        )}
-      </section>
+      {settings?.setupRequired ? (
+        <Setup
+          api={api}
+          settings={settings}
+          onSaved={(next) => {
+            setSettings(next);
+            void refreshTasks();
+          }}
+        />
+      ) : (
+        <>
+          {settings && (
+            <button type="button" onClick={() => setShowSettings((visible) => !visible)}>
+              {showSettings ? 'Hide settings' : 'Settings'}
+            </button>
+          )}
+          {showSettings && settings && (
+            <Settings api={api} settings={settings} onSaved={setSettings} />
+          )}
+          <section className="workspace-grid">
+            <TaskList tasks={tasks} onRefresh={refreshTasks} />
+            {selected ? (
+              <TaskPanel task={selected} api={api} onRefresh={refreshTasks} />
+            ) : (
+              <p>Select a task to continue.</p>
+            )}
+          </section>
+        </>
+      )}
     </main>
   );
 }

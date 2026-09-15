@@ -536,7 +536,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** primer arranque sin archivos, segundo arranque reutilizable, override explicito, config corrupta, write/CAS fallido, permisos y compatibilidad del modo de proyecto existente. `pnpm exec vitest run test/web-settings-store.test.ts test/web-bootstrap.test.ts test/cli-protocol.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: bootstrap the personal web launcher without manual JSON`
 
-- [ ] **Tarea 5.6: Crear el asistente web de configuracion local y LAN**
+- [x] **Tarea 5.6: Crear el asistente web de configuracion local y LAN**
   - **Archivo:** `src/web/routes.ts`, `src/web/server.ts`, `src/web/config.ts`, `src/web/client/api.ts`; nuevos `src/web/client/Setup.tsx`, `src/web/client/Settings.tsx`; `src/web/client/App.tsx`, `styles.css`; nuevos `test/web-settings-api.test.ts`, `test/web-settings-client.test.tsx`.
   - **Funciones:** endpoints GET/PUT `/api/v1/settings`, validateWebSettingsPreview, importTlsMaterial y pantallas Setup/Settings.
   - **Descripcion:** tras login, `setupRequired` muestra un wizard para nombre del equipo, local/LAN, host, puerto, origin, raices de proyecto y TLS. Las operaciones que amplian roots o importan PEM solo se admiten desde socket loopback; el PEM se envia con limite estricto, se valida como cert/key coincidentes, se guarda fuera del JSON con 0600 y nunca se devuelve. HTTP solo loopback; LAN exige HTTPS. Mostrar preview, errores y `restartRequired`; guardar no reinicia el proceso ni derriba el listener actual. Tras reinicio cargar la nueva configuracion o volver a last-known-good si no es valida.
@@ -731,4 +731,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.5 completada: `binaflow web` sin override usa settings globales con
   bootstrap loopback efimero, persistencia atomica/CAS/last-good y no abre contexto
   de proyecto si no se solicita uno; 22 tests enfocados y typecheck pasan.
-- Siguiente accion: ejecutar Tarea 5.6, asistente web local/LAN.
+- Tarea 5.6 completada: API y pantallas de setup/settings, cambios sensibles solo
+  desde loopback, importacion de TLS fuera del JSON y compatibilidad legacy; 12
+  tests enfocados, typecheck, build:web y test:web pasan.
+- Siguiente accion: ejecutar Tarea 5.7, catalogo y explorador seguro de proyectos.

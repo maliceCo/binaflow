@@ -3,8 +3,10 @@ import { createExecutionHost } from '../../application/execution-host.js';
 import { openApplicationContext } from '../../application/runtime.js';
 import { loadWebConfig } from '../../web/config.js';
 import {
+  createWebSettingsController,
   launcherSettingsToWebConfig,
   loadOrBootstrapWebSettings,
+  readWebSettingsSourceHash,
   resolveDefaultWebSettingsPath,
 } from '../../web/settings-store.js';
 import { createWebServer } from '../../web/server.js';
@@ -26,11 +28,21 @@ export function registerWebCommand(cli: Command): void {
         }
 
         const launcherMode = !commandOptions.webConfig || commandOptions.launcher === true;
-        const webConfig = launcherMode
-          ? launcherSettingsToWebConfig(
-              await loadOrBootstrapWebSettings(resolveDefaultWebSettingsPath()),
-            )
+        const settingsPath = launcherMode ? resolveDefaultWebSettingsPath() : undefined;
+        const launcherSettings = settingsPath
+          ? await loadOrBootstrapWebSettings(settingsPath)
+          : undefined;
+        const webConfig = launcherSettings
+          ? launcherSettingsToWebConfig(launcherSettings)
           : await loadWebConfig(commandOptions.webConfig!);
+        const settingsController =
+          settingsPath && launcherSettings
+            ? createWebSettingsController(
+                settingsPath,
+                launcherSettings,
+                await readWebSettingsSourceHash(settingsPath),
+              )
+            : undefined;
         const context =
           launcherMode && !options.cwd && !options.config
             ? undefined
@@ -59,6 +71,7 @@ export function registerWebCommand(cli: Command): void {
           ...(context && host
             ? {
                 api: {
+                  ...(settingsController ? { settings: settingsController } : {}),
                   ...(context.application.taskContracts
                     ? { taskContracts: context.application.taskContracts }
                     : {}),
@@ -67,7 +80,9 @@ export function registerWebCommand(cli: Command): void {
                     : {}),
                 },
               }
-            : {}),
+            : settingsController
+              ? { api: { settings: settingsController } }
+              : {}),
         });
         const stop = async (): Promise<void> => {
           await server.close();

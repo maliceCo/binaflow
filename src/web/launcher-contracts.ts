@@ -48,6 +48,7 @@ export interface LauncherSettings {
     host: string;
     port: number;
     origin: string;
+    tls?: { certFile: string; keyFile: string };
   };
   projectRoots: LauncherProjectRoot[];
 }
@@ -131,6 +132,13 @@ export interface WebTransferSummaryDto {
   targetDeviceId: string;
   status: PeerTransferStatus;
   receivedBytes: number;
+}
+
+export interface WebLauncherSettingsDto {
+  setupRequired: boolean;
+  deviceName: string;
+  web: { host: string; port: number; origin: string; tlsConfigured: boolean };
+  projectRoots: Array<{ id: string; label: string }>;
 }
 
 export function parseLauncherSettings(value: unknown): LauncherSettings {
@@ -305,6 +313,20 @@ export function parsePeerTransferReceipt(value: unknown): PeerTransferReceipt {
   };
 }
 
+export function toWebLauncherSettingsDto(settings: LauncherSettings): WebLauncherSettingsDto {
+  return {
+    setupRequired: settings.setupRequired,
+    deviceName: settings.deviceName,
+    web: {
+      host: settings.web.host,
+      port: settings.web.port,
+      origin: settings.web.origin,
+      tlsConfigured: settings.web.tls !== undefined,
+    },
+    projectRoots: settings.projectRoots.map(({ rootId, label }) => ({ id: rootId, label })),
+  };
+}
+
 export function toWebProjectSummaryDto(project: ProjectCatalogEntry): WebProjectSummaryDto {
   return {
     id: project.projectId,
@@ -331,12 +353,22 @@ export function toWebTransferSummaryDto(receipt: PeerTransferReceipt): WebTransf
 
 function parseWebLauncherSettings(value: unknown): LauncherSettings['web'] {
   const record = asStrictRecord(value, 'web settings');
-  assertKeys(record, ['host', 'port', 'origin']);
+  assertKeys(record, ['host', 'port', 'origin', 'tls']);
   const host = parseBoundedString(record.host, 'host', 255);
   const port = parseSafeInteger(record.port, 'port');
   if (port < 1 || port > 65535) throw invalid('port must be between 1 and 65535');
   const origin = parseOrigin(record.origin);
-  return { host, port, origin };
+  const tls = record.tls === undefined ? undefined : parseTlsSettings(record.tls);
+  return { host, port, origin, ...(tls === undefined ? {} : { tls }) };
+}
+
+function parseTlsSettings(value: unknown): { certFile: string; keyFile: string } {
+  const record = asStrictRecord(value, 'TLS settings');
+  assertKeys(record, ['certFile', 'keyFile']);
+  return {
+    certFile: parseBoundedString(record.certFile, 'certFile', LAUNCHER_LIMITS.maxPathBytes),
+    keyFile: parseBoundedString(record.keyFile, 'keyFile', LAUNCHER_LIMITS.maxPathBytes),
+  };
 }
 
 function parseProjectRoot(value: unknown): LauncherProjectRoot {

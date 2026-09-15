@@ -125,7 +125,15 @@ export function createWebServer(options: WebServerOptions): WebServer {
           return;
         }
       }
-      const result = await handleWebApi({ method, path, body }, options.api ?? {});
+      const result = await handleWebApi(
+        {
+          method,
+          path,
+          body,
+          ...(request.socket.remoteAddress ? { remoteAddress: request.socket.remoteAddress } : {}),
+        },
+        options.api ?? {},
+      );
       sendJson(response, result.status, result.body);
       return;
     }

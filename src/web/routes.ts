@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { GuidedPreparationService } from '../application/guided-preparation-operations.js';
 import type { TaskContractBrief, TaskContractService } from '../application/task-contract.js';
 import {
@@ -10,9 +11,26 @@ import {
   type WebTaskDetailDto,
   WebContractError,
 } from './contracts.js';
+import {
+  parseLauncherSettings,
+  toWebLauncherSettingsDto,
+  type LauncherSettings,
+} from './launcher-contracts.js';
 import { toWebOperationDto, toWebTaskDto } from './dto.js';
 
+export interface WebSettingsCapabilities {
+  readonly get: () => LauncherSettings;
+  readonly update: (
+    value: unknown,
+  ) => Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+  readonly importTlsMaterial: (
+    certificatePem: string,
+    keyPem: string,
+  ) => Promise<{ certFile: string; keyFile: string }>;
+}
+
 export interface WebApiCapabilities {
+  readonly settings?: WebSettingsCapabilities;
   readonly taskContracts?: Pick<TaskContractService, 'list' | 'get' | 'create'>;
   readonly guidedPreparation?: Pick<GuidedPreparationService, 'execute'>;
   readonly getTaskDetail?: (contractId: string) => Promise<WebTaskDetailDto>;
@@ -30,6 +48,7 @@ export interface WebApiRequest {
   method: string;
   path: string;
   body?: unknown;
+  remoteAddress?: string;
 }
 
 export type WebApiResponse =
@@ -40,6 +59,40 @@ export async function handleWebApi(
   api: WebApiCapabilities,
 ): Promise<WebApiResponse> {
   try {
+    if (request.path === '/api/v1/settings' && request.method === 'GET') {
+      if (!api.settings) return unavailable();
+      return ok(200, toWebLauncherSettingsDto(api.settings.get()));
+    }
+    if (request.path === '/api/v1/settings' && request.method === 'PUT') {
+      if (!api.settings) return unavailable();
+      if (!isLoopbackSettingsRequest(request)) {
+        return error(403, 'forbidden', 'Settings changes require a local connection');
+      }
+      const result = await api.settings.update(
+        mergeSettingsUpdate(api.settings.get(), request.body),
+      );
+      return ok(200, {
+        settings: toWebLauncherSettingsDto(result.settings),
+        restartRequired: result.restartRequired,
+      });
+    }
+    if (request.path === '/api/v1/settings/tls' && request.method === 'POST') {
+      if (!api.settings) return unavailable();
+      if (!isLoopbackSettingsRequest(request)) {
+        return error(403, 'forbidden', 'Settings changes require a local connection');
+      }
+      const body = parseTlsUpload(request.body);
+      const files = await api.settings.importTlsMaterial(body.certificatePem, body.keyPem);
+      const current = api.settings.get();
+      const result = await api.settings.update({
+        ...current,
+        web: { ...current.web, tls: files },
+      });
+      return ok(200, {
+        settings: toWebLauncherSettingsDto(result.settings),
+        restartRequired: result.restartRequired,
+      });
+    }
     const taskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)$/)?.[1];
     const operationTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/operations$/)?.[1];
     if (request.method === 'GET' && request.path === '/api/v1/tasks') {
@@ -105,6 +158,65 @@ function error(status: number, code: string, message: string): WebApiResponse {
 
 function unavailable(): WebApiResponse {
   return error(503, 'unavailable', 'Operation is not available');
+}
+
+function isLoopbackSettingsRequest(request: WebApiRequest): boolean {
+  return request.remoteAddress === undefined || isLoopbackAddress(request.remoteAddress);
+}
+
+function mergeSettingsUpdate(current: LauncherSettings, value: unknown): LauncherSettings {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new WebContractError('invalid-input', 'Invalid settings update');
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    Object.keys(record).some(
+      (key) => !['deviceName', 'web', 'projectRoots', 'setupRequired'].includes(key),
+    )
+  ) {
+    throw new WebContractError('invalid-input', 'Unknown settings field');
+  }
+  const web = record.web;
+  if (web !== undefined && (typeof web !== 'object' || web === null || Array.isArray(web))) {
+    throw new WebContractError('invalid-input', 'Invalid web settings');
+  }
+  return parseLauncherSettings({
+    ...current,
+    ...(record.setupRequired === undefined ? {} : { setupRequired: record.setupRequired }),
+    ...(record.deviceName === undefined ? {} : { deviceName: record.deviceName }),
+    ...(web === undefined ? {} : { web: { ...current.web, ...(web as object) } }),
+    ...(record.projectRoots === undefined ? {} : { projectRoots: record.projectRoots }),
+  });
+}
+
+function isLoopbackAddress(address: string): boolean {
+  if (address === '::ffff:127.0.0.1') return true;
+  if (isIP(address) === 4) return address === '127.0.0.1';
+  return (
+    isIP(address) === 6 && (address === '::1' || address.toLowerCase().startsWith('::ffff:127.'))
+  );
+}
+
+function parseTlsUpload(value: unknown): { certificatePem: string; keyPem: string } {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).some((key) => key !== 'certificatePem' && key !== 'keyPem')
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid TLS upload');
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.certificatePem !== 'string' || typeof record.keyPem !== 'string') {
+    throw new WebContractError('invalid-input', 'Invalid TLS upload');
+  }
+  if (
+    new TextEncoder().encode(record.certificatePem).byteLength > 64 * 1024 ||
+    new TextEncoder().encode(record.keyPem).byteLength > 64 * 1024
+  ) {
+    throw new WebContractError('too-large', 'TLS material exceeds its size limit');
+  }
+  return { certificatePem: record.certificatePem, keyPem: record.keyPem };
 }
 
 function mapError(cause: unknown): WebApiResponse {

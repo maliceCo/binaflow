@@ -28,11 +28,21 @@ export interface Operation {
   errorCode?: string;
 }
 
+export interface LauncherSettings {
+  setupRequired: boolean;
+  deviceName: string;
+  web: { host: string; port: number; origin: string; tlsConfigured: boolean };
+  projectRoots: Array<{ id: string; label: string }>;
+}
+
 export interface ApiClient {
   session(): Promise<SessionData>;
   login(code: string): Promise<SessionData>;
   logout(): Promise<void>;
   listTasks(): Promise<Task[]>;
+  getSettings(): Promise<LauncherSettings>;
+  updateSettings(input: unknown): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+  uploadTls(certificatePem: string, keyPem: string): Promise<LauncherSettings>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
 }
 
@@ -57,6 +67,28 @@ export function createApiClient(): ApiClient {
     async listTasks() {
       const result = await request<{ items: Task[]; nextAfterId: string | null }>('/api/v1/tasks');
       return result.data.items;
+    },
+    async getSettings() {
+      const result = await request<LauncherSettings>('/api/v1/settings');
+      return result.data;
+    },
+    async updateSettings(input) {
+      const result = await request<{ settings: LauncherSettings; restartRequired: boolean }>(
+        '/api/v1/settings',
+        'PUT',
+        input,
+        csrfToken,
+      );
+      return result.data;
+    },
+    async uploadTls(certificatePem, keyPem) {
+      const result = await request<{ settings: LauncherSettings; restartRequired: boolean }>(
+        '/api/v1/settings/tls',
+        'POST',
+        { certificatePem, keyPem },
+        csrfToken,
+      );
+      return result.data.settings;
     },
     async execute(taskId, operation) {
       const result = await request<Operation>(

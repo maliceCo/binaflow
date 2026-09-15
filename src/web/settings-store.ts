@@ -1,4 +1,10 @@
-import { createHash } from 'node:crypto';
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  timingSafeEqual,
+  X509Certificate,
+} from 'node:crypto';
 import { access, chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -16,6 +22,15 @@ export interface WebSettingsEnvironment {
 export interface SaveWebSettingsOptions {
   path: string;
   expectedSourceHash?: string;
+}
+
+export interface WebSettingsController {
+  get(): LauncherSettings;
+  update(value: unknown): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+  importTlsMaterial(
+    certificatePem: string,
+    keyPem: string,
+  ): Promise<{ certFile: string; keyFile: string }>;
 }
 
 export const DEFAULT_WEB_SETTINGS_FILE = 'web.json';
@@ -108,6 +123,7 @@ export function launcherSettingsToWebConfig(settings: LauncherSettings): WebConf
       host: settings.web.host,
       port: settings.web.port,
       origin: settings.web.origin,
+      ...(settings.web.tls === undefined ? {} : { tls: settings.web.tls }),
     },
     'global-web-settings.json',
   );
@@ -152,6 +168,82 @@ export async function webSettingsExist(path: string): Promise<boolean> {
 export async function removeWebSettings(path: string): Promise<void> {
   await rm(path, { force: true });
   await rm(`${path}.last-good`, { force: true });
+}
+
+export function validateWebSettingsPreview(value: unknown): LauncherSettings {
+  return parseLauncherSettings(value);
+}
+
+export function createWebSettingsController(
+  path: string,
+  initial: LauncherSettings,
+  initialSourceHash?: string,
+): WebSettingsController {
+  let current = initial;
+  let sourceHash = initialSourceHash;
+  return {
+    get: () => current,
+    update: async (value) => {
+      const next = validateWebSettingsPreview(value);
+      const previous = current;
+      const nextHash = await saveWebSettingsAtomically(next, {
+        path,
+        ...(sourceHash === undefined ? {} : { expectedSourceHash: sourceHash }),
+      });
+      current = next;
+      sourceHash = nextHash;
+      return {
+        settings: current,
+        restartRequired:
+          previous.web.host !== next.web.host ||
+          previous.web.port !== next.web.port ||
+          previous.web.origin !== next.web.origin ||
+          JSON.stringify(previous.web.tls) !== JSON.stringify(next.web.tls),
+      };
+    },
+    importTlsMaterial: (certificatePem, keyPem) =>
+      importTlsMaterial({ certificatePem, keyPem, directory: dirname(path) }),
+  };
+}
+
+export async function importTlsMaterial(input: {
+  certificatePem: string;
+  keyPem: string;
+  directory: string;
+}): Promise<{ certFile: string; keyFile: string }> {
+  let certificate: X509Certificate;
+  try {
+    certificate = new X509Certificate(input.certificatePem);
+    const privateKey = createPrivateKey(input.keyPem);
+    const certificateKey = certificate.publicKey.export({ type: 'spki', format: 'der' });
+    const privateKeyPublic = createPublicKey(privateKey).export({ type: 'spki', format: 'der' });
+    if (
+      certificateKey.byteLength !== privateKeyPublic.byteLength ||
+      !timingSafeEqual(Buffer.from(certificateKey), Buffer.from(privateKeyPublic))
+    ) {
+      throw new Error('TLS certificate and key do not match');
+    }
+  } catch (error) {
+    throw new Error(
+      `Invalid TLS certificate or key: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!certificate.subject) throw new Error('TLS certificate is invalid');
+  await mkdir(input.directory, { recursive: true, mode: 0o700 });
+  const suffix = randomSuffix();
+  const certFile = join(input.directory, `tls-${suffix}.crt.pem`);
+  const keyFile = join(input.directory, `tls-${suffix}.key.pem`);
+  try {
+    await writeFile(certFile, input.certificatePem, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    await writeFile(keyFile, input.keyPem, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    await chmod(certFile, 0o600);
+    await chmod(keyFile, 0o600);
+    return { certFile, keyFile };
+  } catch (error) {
+    await rm(certFile, { force: true });
+    await rm(keyFile, { force: true });
+    throw error;
+  }
 }
 
 export async function copyWebSettings(path: string, destination: string): Promise<void> {
