@@ -148,6 +148,7 @@ export interface GuidedPreparationOperationBase {
   requestId: string;
   contractId: string;
   expectedRevision: number;
+  expectedPreparationRevision: number;
 }
 
 export interface GuidedReplyRequest extends GuidedPreparationOperationBase {
@@ -290,12 +291,20 @@ const briefSchema = {
 } as const;
 const baseSchema = {
   type: 'object',
-  required: ['schemaVersion', 'requestId', 'contractId', 'expectedRevision', 'kind'],
+  required: [
+    'schemaVersion',
+    'requestId',
+    'contractId',
+    'expectedRevision',
+    'expectedPreparationRevision',
+    'kind',
+  ],
   properties: {
     schemaVersion: { const: GUIDED_PREPARATION_SCHEMA_VERSION },
     requestId: { type: 'string', pattern: uuidPattern },
     contractId: { type: 'string', pattern: anyUuidPattern },
     expectedRevision: { type: 'integer', minimum: 1 },
+    expectedPreparationRevision: { type: 'integer', minimum: 1 },
     kind: { type: 'string' },
   },
 } as const;

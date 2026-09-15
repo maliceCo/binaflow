@@ -753,9 +753,6 @@ export class SqliteRunStore
       this.requireTaskContractForWrite(request.workspace, request.contractId);
       this.assertGuidedPreparationNotConsumed(request.contractId);
       const preparation = this.requireGuidedPreparationRow(request.contractId);
-      if (preparation.active_request_id) {
-        throw new GuidedPreparationError('busy', 'Cannot save sources while a request is active');
-      }
       const sourceCount = this.database
         .prepare('SELECT COUNT(*) AS count FROM guided_preparation_sources WHERE contract_id = ?')
         .get(request.contractId) as { count: number };
@@ -803,6 +800,40 @@ export class SqliteRunStore
           )
           .run(lastSequence, now, request.contractId, preparation.revision);
       }
+      return this.requireGuidedPreparationState(request.workspace, request.contractId);
+    });
+  }
+
+  async appendGuidedPreparationMessage(request: {
+    workspace: string;
+    contractId: string;
+    role: GuidedPreparationMessage['role'];
+    content: string;
+    requestId: string;
+  }): Promise<GuidedPreparationState> {
+    if (new TextEncoder().encode(request.content).byteLength > GUIDED_PREPARATION_LIMITS.assistantMessageBytes) {
+      throw new GuidedPreparationError('invalid-input', 'Preparation message exceeds its size limit');
+    }
+    return this.withImmediateTransaction(() => {
+      this.requireTaskContractForWrite(request.workspace, request.contractId);
+      this.assertGuidedPreparationNotConsumed(request.contractId);
+      const preparation = this.requireGuidedPreparationRow(request.contractId);
+      const now = new Date().toISOString();
+      const sequence = preparation.last_sequence + 1;
+      this.database
+        .prepare(
+          `INSERT INTO guided_preparation_messages
+             (id, contract_id, sequence, role, content, request_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(randomUUID(), request.contractId, sequence, request.role, request.content, request.requestId, now);
+      this.database
+        .prepare(
+          `UPDATE guided_preparations
+              SET revision = revision + 1, last_sequence = ?, updated_at = ?
+            WHERE contract_id = ? AND revision = ?`,
+        )
+        .run(sequence, now, request.contractId, preparation.revision);
       return this.requireGuidedPreparationState(request.workspace, request.contractId);
     });
   }
@@ -904,7 +935,7 @@ export class SqliteRunStore
       if (preparation.active_request_id) {
         throw new GuidedPreparationError('busy', 'Another guided preparation request is active');
       }
-      if (operation.expectedRevision !== preparation.revision) {
+      if (operation.expectedPreparationRevision !== preparation.revision) {
         throw new GuidedPreparationError('stale-revision', 'Guided preparation revision is stale');
       }
       if ('sourceIds' in operation)

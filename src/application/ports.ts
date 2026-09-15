@@ -198,6 +198,13 @@ export interface GuidedPreparationStore {
     contractId: string;
     sources: readonly GuidedPreparationSource[];
   }): Promise<GuidedPreparationState>;
+  appendGuidedPreparationMessage(request: {
+    workspace: string;
+    contractId: string;
+    role: GuidedPreparationMessage['role'];
+    content: string;
+    requestId: string;
+  }): Promise<GuidedPreparationState>;
   listGuidedPreparationMessages(request: {
     workspace: string;
     contractId: string;

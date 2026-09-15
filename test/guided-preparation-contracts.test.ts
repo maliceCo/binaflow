@@ -24,6 +24,7 @@ const validReplyRequest = {
   requestId,
   contractId,
   expectedRevision: 1,
+  expectedPreparationRevision: 1,
   kind: 'reply',
   message: 'Please clarify the acceptance criteria.',
   sourceIds: [sourceId],

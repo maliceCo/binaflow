@@ -46,6 +46,7 @@ describe('guided preparation persistence', () => {
       requestId,
       contractId,
       expectedRevision: 1,
+      expectedPreparationRevision: 1,
       kind: 'reply' as const,
       message: 'Please clarify the acceptance criteria.',
       sourceIds: [],
