@@ -214,6 +214,8 @@ export interface ApplicationPortabilityStore {
   }): Promise<PortabilityState>;
   cancelExportIntent(request: { requestId: string; digest: string }): Promise<PortabilityState>;
   backupDatabaseTo(destination: string): Promise<void>;
+  listPortabilityArtifacts?(): Promise<ArtifactReference[]>;
+  countPortabilityRuns?(): Promise<number>;
 }
 
 export interface PortabilityPackageStore {
@@ -437,6 +439,8 @@ export interface ApplicationRunStore {
   saveStepRun(stepRun: StepRun): Promise<void>;
   getStepRuns(runId: string, options?: { includeResult?: boolean | 'usage' }): Promise<StepRun[]>;
   getArtifacts(runId: string): Promise<ArtifactReference[]>;
+  listPortabilityArtifacts?(): Promise<ArtifactReference[]>;
+  countPortabilityRuns?(): Promise<number>;
   saveCoordinatorArtifacts(runId: string, artifacts: ArtifactReference[]): Promise<void>;
   completeStep(stepRun: StepRun, artifacts: ArtifactReference[]): Promise<void>;
   saveEvent(event: NormalizedEvent): Promise<void>;

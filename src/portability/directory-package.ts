@@ -234,7 +234,6 @@ export async function materializeImportStaging(
     await readFile(join(resolve(packagePath), MANIFEST_FILE), 'utf8'),
     true,
   );
-  await rm(join(stagingPath, STAGING_METADATA), { force: false });
   await syncDirectory(stagingPath);
   return stagingPath;
 }

@@ -1,4 +1,5 @@
 import type { BinaflowConfig } from '../config.js';
+import type { PortabilityService } from './ports.js';
 import type {
   GuidedExecutionQueries,
   GuidedExecutionService,
@@ -221,6 +222,7 @@ export interface ApplicationCommands {
 
 export interface ApplicationService extends ApplicationQueries, ApplicationCommands {
   readonly taskContracts?: TaskContractService;
+  readonly portability?: PortabilityService;
   subscribeEvents(listener: (event: NormalizedEvent) => void | Promise<void>): () => void;
 }
 
@@ -243,6 +245,7 @@ export interface CreateApplicationServiceOptions {
   taskContractStore?: ApplicationTaskContractStore;
   taskContractWorkspace?: string;
   guidedExecution?: GuidedExecutionService;
+  portability?: PortabilityService;
   executionLock?: import('./ports.js').WorkspaceExecutionLock;
   workspace?: string;
   modelDiscovery: AgentModelDiscovery;
@@ -375,6 +378,7 @@ export function createApplicationService(
     ...legacyQueries,
     ...(taskContext ? { taskContracts: createTaskContractService(taskContext) } : {}),
     ...(options.guidedExecution ? { taskExecutions: options.guidedExecution } : {}),
+    ...(options.portability ? { portability: options.portability } : {}),
     subscribeEvents: options.subscribeEvents,
     runWorkflow: (request) => runWorkflow(internals, request),
     resumeWorkflow: (request) => resumeWorkflow(internals, request),

@@ -24,6 +24,7 @@ import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
 import { InteractivePlanBuildQaCoordinator } from './interactive-plan-build-qa-coordinator.js';
 import { GuidedExecutionCoordinator } from './guided-execution-coordinator.js';
+import { createPortabilityService } from './portability-operations.js';
 import {
   createGuidedExecutionRunner,
   createGuidedExecutionService,
@@ -201,6 +202,7 @@ async function openApplicationResources(
     taskContractStore: store,
     taskContractWorkspace: workspace,
     guidedExecution,
+    portability: createPortabilityService({ store, dataDir, workspace }),
     executionLock: guidedLock,
     workspace,
     modelDiscovery: new PiModelDiscovery(),

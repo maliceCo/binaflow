@@ -12,10 +12,13 @@ import {
   parseTaskContractTodo,
 } from '../application/task-contract.js';
 
+const PORTABLE_NORMALIZED_TIMESTAMP = '1970-01-01T00:00:00.000Z';
+
 export interface PortableBackupInspection {
   schemaVersion: number;
   datasetId: string;
   state: 'active' | 'exporting' | 'exported';
+  lastTransferId: string | null;
   runs: number;
   artifacts: number;
   workspaces: string[];
@@ -40,7 +43,7 @@ export function normalizePortableBackup(
   const database = openWritableDatabase(databasePath);
   try {
     assertSchema14(database);
-    return withTransaction(database, () => {
+    withTransaction(database, () => {
       normalizeArtifacts(database, input.sourceDataDir);
       normalizeWorkspaces(database);
       if (input.transferId) {
@@ -50,7 +53,7 @@ export function normalizePortableBackup(
              pending_request_id = NULL, pending_digest = NULL, pending_destination = NULL,
              pending_transfer_id = NULL, updated_at = ? WHERE singleton_id = 1`,
           )
-          .run(input.transferId, new Date().toISOString());
+          .run(input.transferId, PORTABLE_NORMALIZED_TIMESTAMP);
       } else {
         database
           .prepare(
@@ -58,10 +61,12 @@ export function normalizePortableBackup(
              pending_digest = NULL, pending_destination = NULL, pending_transfer_id = NULL,
              updated_at = ? WHERE singleton_id = 1`,
           )
-          .run(new Date().toISOString());
+          .run(PORTABLE_NORMALIZED_TIMESTAMP);
       }
-      return inspectOpenDatabase(database);
+      return undefined;
     });
+    database.exec('VACUUM');
+    return inspectOpenDatabase(database);
   } finally {
     database.close();
   }
@@ -203,8 +208,16 @@ function inspectOpenDatabase(database: Database.Database): PortableBackupInspect
   if (foreignKeys.length > 0)
     throw portabilityError('invalid-input', 'Portable backup failed foreign_key_check');
   const state = database
-    .prepare('SELECT dataset_id, state FROM portability_state WHERE singleton_id = 1')
-    .get() as { dataset_id: string; state: PortableBackupInspection['state'] } | undefined;
+    .prepare(
+      'SELECT dataset_id, state, last_transfer_id FROM portability_state WHERE singleton_id = 1',
+    )
+    .get() as
+    | {
+        dataset_id: string;
+        state: PortableBackupInspection['state'];
+        last_transfer_id: string | null;
+      }
+    | undefined;
   if (!state) throw portabilityError('invalid-input', 'Portable backup has no portability state');
   const workspaces = new Set<string>();
   for (const table of ['preparation_drafts', 'task_contracts', 'guided_executions']) {
@@ -234,6 +247,7 @@ function inspectOpenDatabase(database: Database.Database): PortableBackupInspect
     schemaVersion: 14,
     datasetId: state.dataset_id,
     state: state.state,
+    lastTransferId: state.last_transfer_id,
     runs: (database.prepare('SELECT COUNT(*) AS count FROM runs').get() as { count: number }).count,
     artifacts: artifacts.length,
     workspaces: [...workspaces],

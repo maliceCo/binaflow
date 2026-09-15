@@ -264,7 +264,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
 
 ### Fase 3: Casos de uso y CLI
 
-- [ ] **Tarea 3.1: Coordinar preview, export y recuperacion de export**
+- [x] **Tarea 3.1: Coordinar preview, export y recuperacion de export**
   - **Archivo:** nuevo `src/application/portability-operations.ts`; `src/application/service.ts` solo tipos/capacidad si se expone por facade; nuevo `test/portability-export.test.ts`.
   - **Funciones:** createPortabilityService; previewExport, exportPackage, cancelExportIntent e inspectTransfer.
   - **Descripcion:** con dataDir lease, validar active + blockers + Git + output; generar digest. Export revalida todo antes de begin intent, crea backup/bundle/artefactos en staging, normaliza/verifica, publica paquete y finaliza source exported. Replays distinguen intent, paquete final y acuse faltante. Cancel solo bajo regla estricta. `inspectTransfer` no abre/muta DB configurada ni muestra contenido sensible.
@@ -381,4 +381,7 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 2.3 completada: normalizacion/inspeccion/activacion SQLite con integridad,
   contratos, paths y workspaces portables en `src/storage/sqlite-portability.ts`;
   7 tests especificos pasan, lint y typecheck pasan.
-- Siguiente accion: coordinar preview, export y recuperacion de intents.
+- Tarea 3.1 completada: servicio de preview/export/replay/cancelacion en
+  `src/application/portability-operations.ts`, expuesto por la fachada y runtime;
+  2 tests especificos pasan, lint y typecheck pasan.
+- Siguiente accion: coordinar import no destructivo y deteccion de divergencia.
