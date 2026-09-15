@@ -447,7 +447,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 
 ### Fase 4: Servidor e interfaz
 
-- [ ] **Tarea 4.1: Crear listener y sesiones seguras de un usuario**
+- [x] **Tarea 4.1: Crear listener y sesiones seguras de un usuario**
   - **Archivo:** nuevos `src/web/config.ts`, `src/web/auth.ts`, `src/web/server.ts`; nuevo `test/web-server.test.ts`.
   - **Funciones:** parseWebConfig, createWebAuth, createWebServer/start/close y despacho explicito de assets/login/session/logout.
   - **Descripcion:** implementar F, limites de HTTP, sesiones, rate limit, Origin/Host/CSRF, TLS LAN y headers de seguridad. Inyectar reloj/token factory solo en tests. El server recibe cliente de host, no lo abre. El owner externo coordina cierre del listener y host.
@@ -588,4 +588,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 3.3 completada: runtime y fachada componen la preparación guiada, el lector
   de fuentes y el mismo store/lease; el host admite preparación y espera su cleanup;
   30 tests enfocados pasan.
-- Siguiente accion: ejecutar la Tarea 4.1, creando listener y sesiones seguras.
+- Tarea 4.1 completada: configuración web estricta, TLS obligatorio fuera de loopback,
+  código de arranque, sesiones HttpOnly con TTL, rate limit, CSRF, headers y assets
+  explícitos; 3 tests enfocados pasan.
+- Siguiente accion: ejecutar la Tarea 4.2, conectando rutas versionadas con operaciones admitidas.
