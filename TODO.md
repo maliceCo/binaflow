@@ -481,7 +481,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 
 ### Fase 5: Validacion y cierre
 
-- [ ] **Tarea 5.1: Probar el recorrido con navegador y limites de arquitectura**
+- [x] **Tarea 5.1: Probar el recorrido con navegador y limites de arquitectura**
   - **Archivo:** nuevos `playwright.config.ts`, `test/web/browser.e2e.ts`, `test/web/fixture-server.ts`, `test/web/fixtures/localhost-cert.pem`, `test/web/fixtures/localhost-key.pem`; `test/architecture-boundaries.test.ts`; `package.json` script test:web definitivo.
   - **Funciones:** fixtures de host/driver/red falsos con SQLite/Git/artefactos reales temporales; tests en dos contextos de Chromium.
   - **Descripcion:** login -> chat con fuente -> confirmar -> plan -> comentar/regenerar -> aprobar -> TODO -> iniciar -> cerrar A -> consultar B -> waiting/changes-review. Testear reenvio y obsolescencia, texto malicioso, logout y error HTTP. Certificados son fixtures publicos exclusivos de tests, no los del usuario. Usar browser.e2e.ts fuera de test/e2e para que no se recoja por Vitest normal ni Pi e2e.
@@ -504,6 +504,94 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Evitar:** arreglos ajenos, silenciar tests, incrementar timeouts sin causa, marcar el hito entero hecho si falta la aceptacion requerida o esconder regresion de portabilidad/CLI/TUI.
   - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; `git diff --check`; `git status --short`. Probar old CLI JSON/JSONL y roundtrip 14/15 mediante tests existentes/extendidos, no datos reales. Registrar resultados exactos.
   - **Commit Msg:** `docs: record verified personal web milestone results`
+
+- [ ] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
+  - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
+  - **Funciones:** parseLauncherSettings, parseProjectCatalog, parseDeviceRecord, parsePeerTransferRequest y DTOs publicos de proyecto/dispositivo/transferencia.
+  - **Descripcion:** definir schemas version 1 cerrados para configuracion global, raices autorizadas, proyectos locales, identidad estable de proyecto, dispositivos emparejados, ownership `active/exporting/exported/importing` y recibos de transferencia. Las rutas locales, dataDir, claves, certificados y paths de paquetes permanecen en records privados y nunca entran en DTOs del browser o del peer. Fijar limites de nombres, entradas, tamanos y estados antes de implementar I/O. Un projectId viaja con la transferencia; cada equipo conserva workspace/configPath/dataDir propios.
+  - **Evitar:** migrar SQLite, reutilizar IDs de TaskContract como projectId, exponer paths absolutos, crear un protocolo generico de sincronizacion, permitir dos owners activos o aceptar campos futuros desconocidos.
+  - **Verificacion / TDD:** casos validos y rechazo de campos extra, IDs invalidos, ownership imposible, limites excedidos y DTOs con secretos/paths. `pnpm exec vitest run test/web-launcher-contracts.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: define personal launcher and handoff contracts`
+
+- [ ] **Tarea 5.5: Arrancar la web sin JSON preparado por el usuario**
+  - **Archivo:** `src/web/config.ts`, nuevo `src/web/settings-store.ts`, `src/web/server.ts`, `src/cli/commands/web.ts`, `src/cli/index.ts`; nuevos `test/web-settings-store.test.ts`, `test/web-bootstrap.test.ts`; `test/cli-protocol.test.ts`.
+  - **Funciones:** resolveDefaultWebSettingsPath, loadOrBootstrapWebSettings, saveWebSettingsAtomically y modo launcher de registerWebCommand.
+  - **Descripcion:** `binaflow web` sin `--cwd`, `--config` ni `--web-config` arranca en `127.0.0.1:4317` con settings `setupRequired`, codigo efimero y sin abrir ningun proyecto/dataDir. Resolver la ruta global por plataforma (`XDG_CONFIG_HOME`/HOME en Linux y APPDATA en Windows) con dependencias inyectables en tests. Conservar `--web-config` como override avanzado y aceptar `--cwd`/`--config` solo como proyecto inicial explicito del mismo launcher. Persistir JSON estricto mediante temp+rename, permisos privados cuando sean soportados y last-known-good; un fallo de escritura no altera la configuracion activa. Rechazar `--json/--jsonl` antes de leer settings o abrir recursos.
+  - **Evitar:** crear configuracion dentro del cwd por defecto, abrir SQLite durante bootstrap, autoabrir navegador, bind LAN inicial, inferir certificados, guardar codigo/sesion en disco o leer HOME real en tests.
+  - **Verificacion / TDD:** primer arranque sin archivos, segundo arranque reutilizable, override explicito, config corrupta, write/CAS fallido, permisos y compatibilidad del modo de proyecto existente. `pnpm exec vitest run test/web-settings-store.test.ts test/web-bootstrap.test.ts test/cli-protocol.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: bootstrap the personal web launcher without manual JSON`
+
+- [ ] **Tarea 5.6: Crear el asistente web de configuracion local y LAN**
+  - **Archivo:** `src/web/routes.ts`, `src/web/server.ts`, `src/web/config.ts`, `src/web/client/api.ts`; nuevos `src/web/client/Setup.tsx`, `src/web/client/Settings.tsx`; `src/web/client/App.tsx`, `styles.css`; nuevos `test/web-settings-api.test.ts`, `test/web-settings-client.test.tsx`.
+  - **Funciones:** endpoints GET/PUT `/api/v1/settings`, validateWebSettingsPreview, importTlsMaterial y pantallas Setup/Settings.
+  - **Descripcion:** tras login, `setupRequired` muestra un wizard para nombre del equipo, local/LAN, host, puerto, origin, raices de proyecto y TLS. Las operaciones que amplian roots o importan PEM solo se admiten desde socket loopback; el PEM se envia con limite estricto, se valida como cert/key coincidentes, se guarda fuera del JSON con 0600 y nunca se devuelve. HTTP solo loopback; LAN exige HTTPS. Mostrar preview, errores y `restartRequired`; guardar no reinicia el proceso ni derriba el listener actual. Tras reinicio cargar la nueva configuracion o volver a last-known-good si no es valida.
+  - **Evitar:** HTTP LAN, certificado autofirmado automatico, clave privada en DTO/log/localStorage, CORS, editar perfiles/agentes desde esta pantalla, aplicar cambios de red parcialmente o permitir configuracion sensible desde un cliente LAN.
+  - **Verificacion / TDD:** wizard local, CSRF/Origin, request remoto rechazado para roots/TLS, PEM invalido o demasiado grande, cert/key no coincidentes, settings desconocidos, rollback y render accesible sin HTML crudo. `pnpm exec vitest run test/web-settings-api.test.ts test/web-settings-client.test.tsx test/web-server.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: configure personal web access through a guarded wizard`
+
+- [ ] **Tarea 5.7: Persistir proyectos locales y navegar raices autorizadas**
+  - **Archivo:** nuevos `src/web/project-catalog.ts`, `src/web/project-browser.ts`; `src/web/settings-store.ts`, `src/web/routes.ts`, `src/web/dto.ts`; nuevos `test/project-catalog.test.ts`, `test/project-browser.test.ts`, `test/web-project-routes.test.ts`.
+  - **Funciones:** FileProjectCatalog list/add/remove, listProjectDirectory y registerProjectFromDirectory.
+  - **Descripcion:** catalogo global version 1 con escritura atomica y projectId estable. El explorador lista un nivel por request mediante rootId+segmentos relativos, solo directorios y marca si existe `.binaflow/config.json`; paginar y ordenar de forma determinista. En setup local puede elegir nuevas raices desde roots del sistema detectadas por plataforma; tras setup solo navega dentro de roots guardadas. Cada hop usa realpath y comprueba containment. Registrar valida config/workspace sin abrir SQLite, evita duplicados por path canonico/projectId y conserva rutas solo server-side. Eliminar del catalogo no borra repo, config, dataDir ni historial.
+  - **Evitar:** selector HTML de carpeta del equipo cliente, path absoluto aportado por HTTP, `..`, symlink escape, recorrido recursivo, lectura de archivos, scan de todo el disco, abrir dataDir al listar o devolver rutas locales al browser.
+  - **Verificacion / TDD:** roots Linux/Windows simuladas, paginacion, path traversal y encoding, symlink fuera de root, config ausente/invalida, duplicado, remove no destructivo y ninguna apertura SQLite. `pnpm exec vitest run test/project-catalog.test.ts test/project-browser.test.ts test/web-project-routes.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: add guarded host project discovery and catalog`
+
+- [ ] **Tarea 5.8: Poseer un unico proyecto activo en el launcher**
+  - **Archivo:** nuevo `src/application/web-runtime.ts`; `src/application/runtime.ts`, `src/application/execution-host.ts`; `src/web/project-catalog.ts`; nuevos `test/web-project-lifecycle.test.ts`, `test/execution-host.test.ts`.
+  - **Funciones:** createPersonalWebRuntime, selectProject, closeActiveProject y ExecutionHost.getLifecycleState.
+  - **Descripcion:** el listener/auth/settings/catalogo viven sin ApplicationContext. Seleccionar un proyecto abre exactamente un ApplicationContext+ExecutionHost y adquiere su dataDir lease; publicar el proyecto activo solo tras apertura completa. Como maximo un proyecto activo por proceso y una operacion mutante global. Cambiar/cerrar exige host idle; busy devuelve estado tipado sin cancelar. Cierre ordenado: dejar de admitir HTTP, esperar queries, cerrar operacion/host, SQLite y lease. Dos sesiones observan el mismo proyecto activo. Fallar al abrir el destino deja el launcher utilizable y sin owner parcial; no reabre silenciosamente el anterior.
+  - **Evitar:** cache de hosts por proyecto, agentes paralelos entre proyectos, SQLite por request, cerrar un proyecto con operacion activa, exponer ActiveOperation, robar leases o convertir el launcher en daemon.
+  - **Verificacion / TDD:** seleccionar A, consultar desde dos clientes, cambiar idle a B, rechazo busy, config invalida, dataDir ocupado, fallo de apertura y shutdown durante query/operacion. `pnpm exec vitest run test/web-project-lifecycle.test.ts test/execution-host.test.ts test/application-runtime.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: own one active project in the personal launcher`
+
+- [ ] **Tarea 5.9: Construir selector y estado de proyectos en la web**
+  - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`, `src/web/server.ts`; nuevos `src/web/client/Projects.tsx`, `src/web/client/ProjectBrowser.tsx`; `src/web/client/App.tsx`, `api.ts`, `styles.css`; nuevos `test/web-project-api.test.ts`, `test/web-project-client.test.tsx`.
+  - **Funciones:** GET `/api/v1/projects`, GET `/projects/current`, POST `/projects/:id/select`, POST `/projects/current/close` y flujo visual agregar/abrir/cambiar.
+  - **Descripcion:** despues de login/setup mostrar proyectos registrados, owner local/remoto, disponibilidad, version Git resumida y proyecto activo sin revelar paths. Agregar usa navegacion manual de 5.7. Seleccionar/cambiar requiere CSRF, projectId catalogado y confirmacion visible; 409 busy conserva la vista y explica la operacion activa. La cabecera muestra siempre equipo y proyecto activos. Si otra sesion cambia el proyecto, polling no solapado detecta activeProjectRevision y reconcilia la navegacion. Sin proyecto activo, las rutas de tareas devuelven estado tipado, no 500.
+  - **Evitar:** workspace/configPath en hash o localStorage, selector de archivos del cliente, IDs arbitrarios, cambio automatico por abrir una URL, ocultar busy, mezclar tareas de dos proyectos o mantener formularios del proyecto anterior tras un switch.
+  - **Verificacion / TDD:** agregar, seleccionar, dos navegadores, switch remoto, busy, proyecto invalido/eliminado, logout y render de nombres maliciosos como texto. `pnpm exec vitest run test/web-project-api.test.ts test/web-project-client.test.tsx test/web-project-routes.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: add the browser project launcher experience`
+
+- [ ] **Tarea 5.10: Emparejar servidores con identidad y revocacion explicitas**
+  - **Archivo:** nuevos `src/web/device-identity.ts`, `src/web/peer-auth.ts`; `src/web/settings-store.ts`, `src/web/server.ts`, `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/Devices.tsx`; `src/web/client/api.ts`, `Settings.tsx`; nuevos `test/device-identity.test.ts`, `test/peer-auth.test.ts`, `test/web-device-api.test.ts`.
+  - **Funciones:** loadOrCreateDeviceIdentity, beginPairing, answerPairingChallenge, confirmPeerFingerprint y revokePeer.
+  - **Descripcion:** generar una identidad Ed25519 por instalacion, guardar private key separada con 0600 y derivar deviceId de la public key. Emparejamiento manual por URL HTTPS, codigo aleatorio de un uso con TTL/intentos acotados y confirmacion de fingerprint/nombre en ambos equipos. Registrar public key, origin y certificado/fingerprint fijado; peticiones peer usan challenge, nonce, timestamp y firma, no cookie web. Revocar invalida nuevas solicitudes pero conserva historial. Solo LAN/VPN alcanzable; sin mDNS, relay, cuenta cloud ni sesiones compartidas.
+  - **Evitar:** enviar private key, codigo en URL/log, desactivar verificacion TLS global, confiar solo en IP/nombre, HTTP entre equipos, pairing permanente, aceptar replay/clock skew ilimitado o emparejar automaticamente por descubrimiento.
+  - **Verificacion / TDD:** handshake feliz entre dos servidores loopback TLS, codigo incorrecto/expirado/reusado, fingerprint cambiado, firma/replay invalido, revocacion y archivos privados. Usar reloj/crypto/rutas inyectados y certificados fixture. `pnpm exec vitest run test/device-identity.test.ts test/peer-auth.test.ts test/web-device-api.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: pair personal Binaflow servers securely`
+
+- [ ] **Tarea 5.11: Transferir ownership reutilizando portabilidad existente**
+  - **Archivo:** nuevos `src/application/project-transfer.ts`, `src/web/peer-transfer.ts`, `src/web/transfer-journal.ts`; `src/application/portability-operations.ts`, `src/config.ts`, `src/application/config-operations.ts`, `src/application/web-runtime.ts`, `src/web/server.ts`; nuevos `test/project-transfer.test.ts`, `test/peer-transfer.test.ts`, `test/transfer-journal.test.ts`; ampliar `test/portability-integration.test.ts`.
+  - **Funciones:** previewProjectTransfer, startProjectTransfer, resumeProjectTransfer, receiveProjectTransfer y generateUpdatedDataDirConfiguration.
+  - **Descripcion:** orquestar un handoff A->B, nunca sync. Preflight exige source activo/idle, Git limpio, branch+HEAD exactos, peer/version compatibles, target workspace catalogado y espacio/limites aceptables. Reusar preview/export/package/inspect/import y lineage actuales; no duplicar formato ni hashes. El source exporta con requestId/digest estable y queda `exported`; el target descarga por streaming/Range autenticado a temp, verifica paquete completo, importa a dataDir nuevo administrado y actualiza `dataDir` del config mediante sourceHash+replace atomico antes de abrirlo. Journal global por transferId conserva etapa, digests, bytes y recibos para replay/reanudacion; nunca contiene private keys ni contenido de artefactos. Un fallo tras export deja recovery/resend explicito, no reactiva A ni activa B parcialmente. Git se inspecciona pero no ejecuta fetch/pull/push/checkout/reset.
+  - **Evitar:** merge SQLite, dos owners activos, cargar paquete en memoria, confiar en Content-Length, endpoints de path arbitrario, modificar Git, importar sobre dataDir existente, reusar otro projectId, auto rollback de `exported` o crear schema 016 sin desviacion aprobada.
+  - **Verificacion / TDD:** A->B real con SQLite/Git/artifacts temporales, rangos y reconexion, lost response/replay, hash corrupto, HEAD distinto, target dirty, corte antes/despues de export, config CAS cambiada y lineage B->A. `pnpm exec vitest run test/project-transfer.test.ts test/peer-transfer.test.ts test/transfer-journal.test.ts test/portability-integration.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: hand off active projects between paired servers`
+
+- [ ] **Tarea 5.12: Guiar transferencia, progreso y recuperacion desde la web**
+  - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/TransferWizard.tsx`, `src/web/client/Transfers.tsx`; `src/web/client/Projects.tsx`, `App.tsx`, `api.ts`, `styles.css`; nuevos `test/web-transfer-api.test.ts`, `test/web-transfer-client.test.tsx`.
+  - **Funciones:** rutas preview/start/status/resume de transfer y wizard seleccionar equipo -> vincular clone target -> preflight -> confirmar -> progreso/recuperar.
+  - **Descripcion:** desde el proyecto activo elegir peer emparejado. En destino, notificacion pide seleccionar el clon local mediante el catalogo; nunca permite path remoto. Mostrar checks de version, Git, ejecuciones, tamano, TLS y destino. La confirmacion presenta que A quedara inutilizable y usa transferId/requestId/digest congelados. Progreso usa polling acotado y bytes reales, no porcentajes inventados sin total. Doble click/reload conserva IDs y no duplica export/import. Tras exito, A muestra `Transferido a <equipo>` solo lectura y B abre el proyecto activo. Estados recuperables ofrecen Reanudar o Descargar paquete offline existente; no ofrecen forzar activo.
+  - **Evitar:** empezar por seleccionar un peer, esconder blockers, generar IDs nuevos al reintentar, cancelar por cerrar pestana, exponer rutas/manifest sensible, activar target antes del recibo verificado, borrar paquete temporal antes de recovery o ofrecer sync simultaneo.
+  - **Verificacion / TDD:** flujo feliz, rechazo humano, doble submit, reload/segunda sesion, peer desconectado, mismatch Git, corte y resume, source exported/target pendiente, retorno B->A y contenido malicioso escapado. `pnpm exec vitest run test/web-transfer-api.test.ts test/web-transfer-client.test.tsx test/project-transfer.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: add guided project handoff to the web launcher`
+
+- [ ] **Tarea 5.13: Verificar launcher y handoff entre dos servidores completos**
+  - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`.
+  - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer TLS loopback.
+  - **Descripcion:** E2E: arrancar A/B sin JSON, configurar por wizard, registrar clones por explorador, emparejar, crear/consultar tarea en A, transferir a B, comprobar A read-only y B activo desde otro contexto, trabajar en B y devolver a A. Cubrir restart durante download, replay y revocacion. Todo en tmpdirs/listeners loopback; ninguna HOME, red, credencial, Pi o certificado del operador. Extender boundaries: browser no Node/fs; routes no storage concreto; peer adapter no importa UI; project-transfer no HTTP; solo web-runtime compone ambos lados.
+  - **Evitar:** mocks que omitan SQLite/Git/artefactos en el recorrido principal, bind LAN real, sleeps fijos, screenshots como unica asercion, instalar navegadores/OS sin permiso, compartir catalogo/dataDir entre fixtures o declarar red remota probada.
+  - **Verificacion:** `pnpm exec vitest run test/architecture-boundaries.test.ts test/web-bootstrap.test.ts test/web-project-lifecycle.test.ts test/peer-transfer.test.ts test/project-transfer.test.ts`; tras Chromium aprobado, `pnpm run test:web`. Registrar bloqueo si Chromium falta.
+  - **Commit Msg:** `test: verify project handoff across personal web servers`
+
+- [ ] **Tarea 5.14: Documentar operacion sin JSON y cerrar regresion**
+  - **Archivo:** `README.md`, `docs/personal-web.md`, `docs/data-portability.md`, `docs/web-workflow-vision.md`, `TODO.md`; `AGENTS.md` solo si el alcance vigente cambia.
+  - **Funciones:** ninguna nueva.
+  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing LAN/VPN, TLS aportado, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Explicar que paths/config/credenciales no viajan; cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas y dejar LAN/VPN/plataformas reales pendientes si solo hay fixtures. Solicitar confirmacion antes de retirar TODO.
+  - **Evitar:** llamar sync al handoff, prometer NAT traversal/relay/cloud, afirmar garantia ante restaurar backups viejos, ocultar downtime tras export, afirmar auto Git/TLS, ejecutar bundles/releases o borrar TODO automaticamente.
+  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web` si Chromium esta disponible; `git diff --check`; `git status --short`. No corregir fallos ajenos fuera de tareas sin protocolo de desviacion.
+  - **Commit Msg:** `docs: record verified launcher and project handoff guarantees`
 
 ## Criterios de aceptacion global
 
@@ -599,10 +687,11 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   pasan.
 - Tarea 4.4 completada: comando `web` compone runtime, host y listener, y ante SIGINT/
   SIGTERM cierra primero el listener y después el host/SQLite; build completo pasa.
-- Tarea 5.1 en progreso: se añadieron fixture Playwright con dos contextos de
-  navegador, prueba de navegador y boundaries; la aceptación Chromium queda
-  bloqueada porque no está instalado el ejecutable local (`pnpm exec playwright
-  install` requiere aprobación explícita).
+- Tarea 5.1 completada: `pnpm exec playwright install chromium` y `pnpm run
+  test:web` pasan; el recorrido usa dos contextos de navegador. También pasan
+  los boundaries y las pruebas web/CLI/portabilidad enfocadas. La regresión 5.3
+  queda bloqueada porque `pnpm run format:check` incluye el archivo sin
+  seguimiento `binaweb.json`, que no pertenece al plan y no se modificará.
 - Tarea 5.2 completada: `docs/personal-web.md`, README y visión web documentan
   configuración loopback/LAN, TLS, código efímero, límites, contratos y evidencias
   sin afirmar validación remota.
