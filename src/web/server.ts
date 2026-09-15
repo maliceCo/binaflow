@@ -105,7 +105,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
     if (path.startsWith('/api/v1/')) {
       const session = getSession(request);
       if (!session) {
-        sendJson(response, 401, { version: 1, error: { code: 'session-required', message: 'Session required' } });
+        sendJson(response, 401, {
+          version: 1,
+          error: { code: 'session-required', message: 'Session required' },
+        });
         return;
       }
       if (method !== 'GET' && !requireMutationSession(request, response)) return;
@@ -115,7 +118,10 @@ export function createWebServer(options: WebServerOptions): WebServer {
           body = await readJsonBody(request);
         } catch (error) {
           const tooLarge = error instanceof Error && /too large/i.test(error.message);
-          sendJson(response, tooLarge ? 413 : 400, { version: 1, error: { code: tooLarge ? 'too-large' : 'invalid-input', message: 'Invalid request' } });
+          sendJson(response, tooLarge ? 413 : 400, {
+            version: 1,
+            error: { code: tooLarge ? 'too-large' : 'invalid-input', message: 'Invalid request' },
+          });
           return;
         }
       }

@@ -811,8 +811,14 @@ export class SqliteRunStore
     content: string;
     requestId: string;
   }): Promise<GuidedPreparationState> {
-    if (new TextEncoder().encode(request.content).byteLength > GUIDED_PREPARATION_LIMITS.assistantMessageBytes) {
-      throw new GuidedPreparationError('invalid-input', 'Preparation message exceeds its size limit');
+    if (
+      new TextEncoder().encode(request.content).byteLength >
+      GUIDED_PREPARATION_LIMITS.assistantMessageBytes
+    ) {
+      throw new GuidedPreparationError(
+        'invalid-input',
+        'Preparation message exceeds its size limit',
+      );
     }
     return this.withImmediateTransaction(() => {
       this.requireTaskContractForWrite(request.workspace, request.contractId);
@@ -826,7 +832,15 @@ export class SqliteRunStore
              (id, contract_id, sequence, role, content, request_id, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(randomUUID(), request.contractId, sequence, request.role, request.content, request.requestId, now);
+        .run(
+          randomUUID(),
+          request.contractId,
+          sequence,
+          request.role,
+          request.content,
+          request.requestId,
+          now,
+        );
       this.database
         .prepare(
           `UPDATE guided_preparations
