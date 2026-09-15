@@ -15,8 +15,9 @@ import { preparationExperienceMigration } from './011-preparation-experience.js'
 import { taskContractsMigration } from './012-task-contracts.js';
 import { guidedExecutionMigration } from './013-guided-execution.js';
 import { portabilityMigration } from './014-portability.js';
+import { guidedPreparationMigration } from './015-guided-preparation.js';
 
-export const currentSchemaVersion = 14;
+export const currentSchemaVersion = 15;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -123,6 +124,11 @@ export function applyMigrations(database: Database.Database, databasePath: strin
       database.exec(portabilityMigration);
       ensurePortabilityState(database);
       recordMigration(database, 14);
+    }
+
+    if (version < 15) {
+      database.exec(guidedPreparationMigration);
+      recordMigration(database, 15);
     }
 
     const finalVersion = database

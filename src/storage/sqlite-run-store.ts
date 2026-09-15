@@ -91,7 +91,25 @@ import type {
   ApplicationPreparationStore,
   ApplicationTaskContractStore,
   GuidedExecutionStore,
+  GuidedPreparationStore,
 } from '../application/ports.js';
+import {
+  GUIDED_PREPARATION_LIMITS,
+  GuidedPreparationError,
+  parseGuidedPreparationOperation,
+  parseGuidedReplyOutput,
+  parseGuidedPlanOutput,
+  parseGuidedTodoOutput,
+  validateGuidedPreparationSource,
+  type GuidedBriefConfirmationRequest,
+  type GuidedPreparationBeginRequest,
+  type GuidedPreparationCreateRequest,
+  type GuidedPreparationFinishRequest,
+  type GuidedPreparationMessage,
+  type GuidedPreparationRequestRecord,
+  type GuidedPreparationSource,
+  type GuidedPreparationState,
+} from '../application/guided-preparation.js';
 import {
   canonicalizeJson,
   type GuidedExecutionCheckpoint,
@@ -126,7 +144,8 @@ export class SqliteRunStore
     ApplicationPortabilityStore,
     ApplicationPreparationStore,
     ApplicationTaskContractStore,
-    GuidedExecutionStore
+    GuidedExecutionStore,
+    GuidedPreparationStore
 {
   private readonly database: Database.Database;
   private readonly ownerId = randomUUID();
@@ -691,6 +710,369 @@ export class SqliteRunStore
     await this.releaseExecution(runId);
   }
 
+  async createGuidedPreparation(
+    request: GuidedPreparationCreateRequest,
+  ): Promise<GuidedPreparationState> {
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      this.assertGuidedPreparationNotConsumed(request.contractId);
+      const existing = this.getGuidedPreparationRow(request.contractId);
+      if (existing) return this.toGuidedPreparationState(existing);
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          `INSERT INTO guided_preparations
+             (contract_id, revision, last_sequence, brief_confirmed_through_sequence,
+              confirmed_source_ids_json, active_request_id, created_at, updated_at)
+           VALUES (?, 1, 0, 0, '[]', NULL, ?, ?)`,
+        )
+        .run(contract.id, now, now);
+      return this.requireGuidedPreparationState(request.workspace, request.contractId);
+    });
+  }
+
+  async getGuidedPreparation(
+    workspace: string,
+    contractId: string,
+  ): Promise<GuidedPreparationState | undefined> {
+    const contract = this.assertTaskContractWorkspace(workspace, contractId);
+    if (!contract) return undefined;
+    const row = this.getGuidedPreparationRow(contractId);
+    return row ? this.toGuidedPreparationState(row) : undefined;
+  }
+
+  async saveGuidedPreparationSources(request: {
+    workspace: string;
+    contractId: string;
+    sources: readonly GuidedPreparationSource[];
+  }): Promise<GuidedPreparationState> {
+    return this.withImmediateTransaction(() => {
+      this.requireTaskContractForWrite(request.workspace, request.contractId);
+      this.assertGuidedPreparationNotConsumed(request.contractId);
+      const preparation = this.requireGuidedPreparationRow(request.contractId);
+      if (preparation.active_request_id) {
+        throw new GuidedPreparationError('busy', 'Cannot save sources while a request is active');
+      }
+      const sourceCount = this.database
+        .prepare('SELECT COUNT(*) AS count FROM guided_preparation_sources WHERE contract_id = ?')
+        .get(request.contractId) as { count: number };
+      if (
+        sourceCount.count + request.sources.length >
+        GUIDED_PREPARATION_LIMITS.maxSourcesPerContract
+      ) {
+        throw new GuidedPreparationError('invalid-input', 'Too many sources for one task');
+      }
+      const now = new Date().toISOString();
+      let lastSequence = preparation.last_sequence;
+      for (const source of request.sources) {
+        validateGuidedPreparationSource(source);
+        if (source.contractId !== request.contractId) {
+          throw new GuidedPreparationError('source-invalid', 'Source belongs to another task');
+        }
+        lastSequence = Math.max(lastSequence, source.sequence);
+        this.database
+          .prepare(
+            `INSERT INTO guided_preparation_sources
+               (id, contract_id, sequence, kind, url, title, excerpt, query,
+                retrieved_at, content_hash, truncated)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            source.id,
+            source.contractId,
+            source.sequence,
+            source.kind,
+            source.url,
+            source.title,
+            source.excerpt,
+            source.query ?? null,
+            source.retrievedAt,
+            source.contentHash,
+            source.truncated ? 1 : 0,
+          );
+      }
+      if (request.sources.length > 0) {
+        this.database
+          .prepare(
+            `UPDATE guided_preparations
+                SET revision = revision + 1, last_sequence = ?, updated_at = ?
+              WHERE contract_id = ? AND revision = ?`,
+          )
+          .run(lastSequence, now, request.contractId, preparation.revision);
+      }
+      return this.requireGuidedPreparationState(request.workspace, request.contractId);
+    });
+  }
+
+  async listGuidedPreparationMessages(request: {
+    workspace: string;
+    contractId: string;
+    afterSequence?: number;
+    limit?: number;
+  }): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }> {
+    this.requireGuidedPreparationState(request.workspace, request.contractId);
+    const limit = validateGuidedPreparationLimit(request.limit);
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM guided_preparation_messages
+          WHERE contract_id = ? ${request.afterSequence === undefined ? '' : 'AND sequence > ?'}
+          ORDER BY sequence ASC LIMIT ?`,
+      )
+      .all(
+        request.contractId,
+        ...(request.afterSequence === undefined ? [] : [request.afterSequence]),
+        limit + 1,
+      ) as GuidedPreparationMessageRow[];
+    const hasNext = rows.length > limit;
+    const items = (hasNext ? rows.slice(0, limit) : rows).map(fromGuidedPreparationMessageRow);
+    return {
+      items,
+      ...(hasNext ? { nextCursor: items[items.length - 1]!.sequence } : {}),
+    };
+  }
+
+  async listGuidedPreparationSources(request: {
+    workspace: string;
+    contractId: string;
+    afterSequence?: number;
+    limit?: number;
+  }): Promise<{ items: GuidedPreparationSource[]; nextCursor?: number }> {
+    this.requireGuidedPreparationState(request.workspace, request.contractId);
+    const limit = validateGuidedPreparationLimit(request.limit);
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM guided_preparation_sources
+          WHERE contract_id = ? ${request.afterSequence === undefined ? '' : 'AND sequence > ?'}
+          ORDER BY sequence ASC LIMIT ?`,
+      )
+      .all(
+        request.contractId,
+        ...(request.afterSequence === undefined ? [] : [request.afterSequence]),
+        limit + 1,
+      ) as GuidedPreparationSourceRow[];
+    const hasNext = rows.length > limit;
+    const items = (hasNext ? rows.slice(0, limit) : rows).map(fromGuidedPreparationSourceRow);
+    return {
+      items,
+      ...(hasNext ? { nextCursor: items[items.length - 1]!.sequence } : {}),
+    };
+  }
+
+  async getGuidedPreparationRequest(request: {
+    workspace: string;
+    contractId: string;
+    requestId: string;
+  }): Promise<GuidedPreparationRequestRecord | undefined> {
+    this.assertTaskContractWorkspace(request.workspace, request.contractId);
+    const row = this.database
+      .prepare('SELECT * FROM guided_preparation_requests WHERE contract_id = ? AND request_id = ?')
+      .get(request.contractId, request.requestId) as GuidedPreparationRequestRow | undefined;
+    return row ? fromGuidedPreparationRequestRow(row) : undefined;
+  }
+
+  async beginGuidedPreparationRequest(
+    request: GuidedPreparationBeginRequest,
+  ): Promise<GuidedPreparationRequestRecord> {
+    const operation = parseGuidedPreparationOperation(request.operation);
+    if (!request.operationId || !request.requestHash || !request.ownerToken) {
+      throw new GuidedPreparationError(
+        'invalid-input',
+        'Request admission identifiers are required',
+      );
+    }
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, operation.contractId);
+      this.assertGuidedPreparationNotConsumed(operation.contractId);
+      const preparation = this.requireGuidedPreparationRow(operation.contractId);
+      const existing = this.database
+        .prepare(
+          'SELECT * FROM guided_preparation_requests WHERE contract_id = ? AND request_id = ?',
+        )
+        .get(operation.contractId, operation.requestId) as GuidedPreparationRequestRow | undefined;
+      if (existing) {
+        if (existing.request_hash !== request.requestHash) {
+          throw new GuidedPreparationError(
+            'invalid-input',
+            'Request ID was reused with a different body',
+          );
+        }
+        return fromGuidedPreparationRequestRow(existing);
+      }
+      if (preparation.active_request_id) {
+        throw new GuidedPreparationError('busy', 'Another guided preparation request is active');
+      }
+      if (operation.expectedRevision !== preparation.revision) {
+        throw new GuidedPreparationError('stale-revision', 'Guided preparation revision is stale');
+      }
+      if ('sourceIds' in operation)
+        this.assertGuidedSourceIds(operation.contractId, operation.sourceIds);
+      const now = new Date().toISOString();
+      const nextSequence =
+        operation.kind === 'reply' ? preparation.last_sequence + 1 : preparation.last_sequence;
+      if (operation.kind === 'reply') {
+        this.database
+          .prepare(
+            `INSERT INTO guided_preparation_messages
+               (id, contract_id, sequence, role, content, request_id, created_at)
+             VALUES (?, ?, ?, 'user', ?, ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            operation.contractId,
+            nextSequence,
+            operation.message,
+            operation.requestId,
+            now,
+          );
+      }
+      this.database
+        .prepare(
+          `INSERT INTO guided_preparation_requests
+             (contract_id, request_id, operation_id, kind, request_json, request_hash,
+              preparation_revision, contract_revision, status, owner_token,
+              profile_snapshot_json, result_json, error_code, published_document_id,
+              created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, ?, ?)`,
+        )
+        .run(
+          operation.contractId,
+          operation.requestId,
+          request.operationId,
+          operation.kind,
+          canonicalizeJson(operation),
+          request.requestHash,
+          preparation.revision,
+          contract.revision,
+          request.ownerToken,
+          request.profileSnapshot ? canonicalizeJson(request.profileSnapshot) : null,
+          now,
+          now,
+        );
+      this.database
+        .prepare(
+          `UPDATE guided_preparations
+              SET revision = revision + 1, last_sequence = ?, active_request_id = ?, updated_at = ?
+            WHERE contract_id = ? AND revision = ? AND active_request_id IS NULL`,
+        )
+        .run(nextSequence, operation.requestId, now, operation.contractId, preparation.revision);
+      return this.requireGuidedPreparationRequest(operation.contractId, operation.requestId);
+    });
+  }
+
+  async finishGuidedPreparationRequest(
+    request: GuidedPreparationFinishRequest,
+  ): Promise<GuidedPreparationRequestRecord> {
+    const operation = parseGuidedPreparationOperation(request.operation);
+    return this.withImmediateTransaction(() => {
+      this.requireTaskContractForWrite(request.workspace, operation.contractId);
+      const current = this.requireGuidedPreparationRequest(
+        operation.contractId,
+        operation.requestId,
+      );
+      if (current.status !== 'pending' && current.status !== 'running') {
+        return current;
+      }
+      const preparation = this.requireGuidedPreparationRow(operation.contractId);
+      if (preparation.active_request_id !== operation.requestId) {
+        throw new GuidedPreparationError(
+          'invalid-target',
+          'Guided preparation request is not active',
+        );
+      }
+      if (current.ownerToken !== request.ownerToken) {
+        throw new GuidedPreparationError('invalid-target', 'Guided preparation owner is invalid');
+      }
+      if (request.result !== undefined) {
+        if (operation.kind === 'reply') parseGuidedReplyOutput(request.result);
+        if (operation.kind === 'generate-plan') parseGuidedPlanOutput(request.result);
+        if (operation.kind === 'generate-todo') parseGuidedTodoOutput(request.result);
+      }
+      const now = new Date().toISOString();
+      this.database
+        .prepare(
+          `UPDATE guided_preparation_requests
+              SET status = ?, result_json = ?, error_code = ?, published_document_id = ?, updated_at = ?
+            WHERE contract_id = ? AND request_id = ?`,
+        )
+        .run(
+          request.status,
+          request.result === undefined ? null : canonicalizeJson(request.result),
+          request.errorCode ?? null,
+          request.publishedDocumentId ?? null,
+          now,
+          operation.contractId,
+          operation.requestId,
+        );
+      this.database
+        .prepare(
+          `UPDATE guided_preparations
+              SET revision = revision + 1, active_request_id = NULL, updated_at = ?
+            WHERE contract_id = ? AND revision = ? AND active_request_id = ?`,
+        )
+        .run(now, operation.contractId, preparation.revision, operation.requestId);
+      return this.requireGuidedPreparationRequest(operation.contractId, operation.requestId);
+    });
+  }
+
+  async confirmGuidedBrief(
+    request: GuidedBriefConfirmationRequest,
+  ): Promise<GuidedPreparationState> {
+    const brief = parseTaskContractBrief(request.brief);
+    return this.withImmediateTransaction(() => {
+      const contract = this.requireTaskContractForWrite(request.workspace, request.contractId);
+      this.assertGuidedPreparationNotConsumed(request.contractId);
+      const preparation = this.requireGuidedPreparationRow(request.contractId);
+      if (preparation.revision !== request.expectedPreparationRevision) {
+        throw new GuidedPreparationError('stale-revision', 'Guided preparation revision is stale');
+      }
+      if (preparation.active_request_id) {
+        throw new GuidedPreparationError(
+          'busy',
+          'Cannot confirm a brief while a request is active',
+        );
+      }
+      if (request.throughSequence > preparation.last_sequence) {
+        throw new GuidedPreparationError('stale-revision', 'Brief sequence is not available');
+      }
+      this.assertGuidedSourceIds(request.contractId, request.sourceIds);
+      const now = new Date().toISOString();
+      const briefId = randomUUID();
+      this.insertTaskContractDocument({
+        id: briefId,
+        contractId: request.contractId,
+        kind: 'brief',
+        version: this.latestTaskContractVersion(request.contractId, 'brief') + 1,
+        sourceDocumentId: null,
+        body: brief,
+        createdAt: now,
+      });
+      this.database
+        .prepare(
+          `UPDATE task_contracts
+              SET revision = revision + 1, current_brief_id = ?, current_plan_id = NULL,
+                  approved_plan_id = NULL, current_todo_id = NULL, current_block_id = NULL,
+                  phase = 'exploration', updated_at = ?
+            WHERE id = ? AND revision = ?`,
+        )
+        .run(briefId, now, request.contractId, contract.revision);
+      this.database
+        .prepare(
+          `UPDATE guided_preparations
+              SET revision = revision + 1, brief_confirmed_through_sequence = ?,
+                  confirmed_source_ids_json = ?, updated_at = ?
+            WHERE contract_id = ? AND revision = ? AND active_request_id IS NULL`,
+        )
+        .run(
+          request.throughSequence,
+          JSON.stringify(request.sourceIds),
+          now,
+          request.contractId,
+          preparation.revision,
+        );
+      return this.requireGuidedPreparationState(request.workspace, request.contractId);
+    });
+  }
+
   async createTaskContract(
     request: TaskContractStoredCreateRequest,
   ): Promise<TaskContractStoredState> {
@@ -1161,6 +1543,101 @@ export class SqliteRunStore
   private scalarCount(sql: string): number {
     const row = this.database.prepare(sql).get() as { count: number };
     return row.count;
+  }
+
+  private getGuidedPreparationRow(contractId: string): GuidedPreparationRow | undefined {
+    return this.database
+      .prepare('SELECT * FROM guided_preparations WHERE contract_id = ?')
+      .get(contractId) as GuidedPreparationRow | undefined;
+  }
+
+  private requireGuidedPreparationRow(contractId: string): GuidedPreparationRow {
+    const row = this.getGuidedPreparationRow(contractId);
+    if (!row) {
+      throw new GuidedPreparationError('invalid-target', 'Guided preparation does not exist');
+    }
+    return row;
+  }
+
+  private requireGuidedPreparationState(
+    workspace: string,
+    contractId: string,
+  ): GuidedPreparationState {
+    this.requireTaskContractForWrite(workspace, contractId);
+    const row = this.requireGuidedPreparationRow(contractId);
+    return this.toGuidedPreparationState(row);
+  }
+
+  private toGuidedPreparationState(row: GuidedPreparationRow): GuidedPreparationState {
+    const contract = this.getTaskContractRow(row.contract_id);
+    const planVersion = contract?.current_plan_id
+      ? ((
+          this.database
+            .prepare('SELECT version FROM task_contract_documents WHERE id = ? AND contract_id = ?')
+            .get(contract.current_plan_id, row.contract_id) as { version: number } | undefined
+        )?.version ?? null)
+      : null;
+    const todoVersion = contract?.current_todo_id
+      ? ((
+          this.database
+            .prepare('SELECT version FROM task_contract_documents WHERE id = ? AND contract_id = ?')
+            .get(contract.current_todo_id, row.contract_id) as { version: number } | undefined
+        )?.version ?? null)
+      : null;
+    return {
+      contractId: row.contract_id,
+      revision: row.revision,
+      lastSequence: row.last_sequence,
+      briefConfirmedThroughSequence: row.brief_confirmed_through_sequence,
+      confirmedSourceIds: parseStringArray(row.confirmed_source_ids_json),
+      activeRequestId: row.active_request_id,
+      planVersion,
+      todoVersion,
+    };
+  }
+
+  private requireGuidedPreparationRequest(
+    contractId: string,
+    requestId: string,
+  ): GuidedPreparationRequestRecord {
+    const row = this.database
+      .prepare('SELECT * FROM guided_preparation_requests WHERE contract_id = ? AND request_id = ?')
+      .get(contractId, requestId) as GuidedPreparationRequestRow | undefined;
+    if (!row)
+      throw new GuidedPreparationError('invalid-target', 'Guided preparation request is missing');
+    return fromGuidedPreparationRequestRow(row);
+  }
+
+  private assertGuidedPreparationNotConsumed(contractId: string): void {
+    const consumed = this.database
+      .prepare('SELECT 1 AS present FROM guided_executions WHERE contract_id = ? LIMIT 1')
+      .get(contractId) as { present: number } | undefined;
+    if (consumed?.present === 1) {
+      throw new GuidedPreparationError('invalid-target', 'The task contract has been consumed');
+    }
+  }
+
+  private assertGuidedSourceIds(contractId: string, sourceIds: readonly string[]): void {
+    if (sourceIds.length > GUIDED_PREPARATION_LIMITS.maxSelectedSources) {
+      throw new GuidedPreparationError('invalid-input', 'At most five sources may be selected');
+    }
+    if (new Set(sourceIds).size !== sourceIds.length) {
+      throw new GuidedPreparationError('invalid-input', 'Source IDs must be unique');
+    }
+    if (sourceIds.length === 0) return;
+    const placeholders = sourceIds.map(() => '?').join(', ');
+    const row = this.database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM guided_preparation_sources
+          WHERE contract_id = ? AND id IN (${placeholders})`,
+      )
+      .get(contractId, ...sourceIds) as { count: number };
+    if (row.count !== sourceIds.length) {
+      throw new GuidedPreparationError(
+        'invalid-input',
+        'A selected source does not belong to the task',
+      );
+    }
   }
 
   private withImmediateTransaction<T>(action: () => T): T {
@@ -3834,6 +4311,60 @@ interface TaskContractActionRow {
   created_at: string;
 }
 
+interface GuidedPreparationRow {
+  contract_id: string;
+  revision: number;
+  last_sequence: number;
+  brief_confirmed_through_sequence: number;
+  confirmed_source_ids_json: string;
+  active_request_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface GuidedPreparationMessageRow {
+  id: string;
+  contract_id: string;
+  sequence: number;
+  role: GuidedPreparationMessage['role'];
+  content: string;
+  request_id: string;
+  created_at: string;
+}
+
+interface GuidedPreparationSourceRow {
+  id: string;
+  contract_id: string;
+  sequence: number;
+  kind: GuidedPreparationSource['kind'];
+  url: string;
+  title: string;
+  excerpt: string;
+  query: string | null;
+  retrieved_at: string;
+  content_hash: string;
+  truncated: number;
+}
+
+interface GuidedPreparationRequestRow {
+  contract_id: string;
+  request_id: string;
+  operation_id: string;
+  kind: GuidedPreparationRequestRecord['kind'];
+  request_json: string;
+  request_hash: string;
+  preparation_revision: number;
+  contract_revision: number;
+  status: GuidedPreparationRequestRecord['status'];
+  owner_token: string | null;
+  profile_snapshot_json: string | null;
+  result_json: string | null;
+  error_code: string | null;
+  published_document_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface PreparationDraftRow {
   id: string;
   workspace: string;
@@ -4931,6 +5462,78 @@ function decodeCursor(value: string): RunCursor {
       `Invalid run cursor: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+function validateGuidedPreparationLimit(limit: number | undefined): number {
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 50)) {
+    throw new GuidedPreparationError(
+      'invalid-input',
+      'Guided preparation limit must be between 1 and 50',
+    );
+  }
+  return limit ?? 20;
+}
+
+function parseStringArray(value: string): string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+    throw new GuidedPreparationError('invalid-input', 'Stored source IDs are invalid');
+  }
+  return parsed;
+}
+
+function fromGuidedPreparationMessageRow(
+  row: GuidedPreparationMessageRow,
+): GuidedPreparationMessage {
+  return {
+    id: row.id,
+    contractId: row.contract_id,
+    sequence: row.sequence,
+    role: row.role,
+    content: row.content,
+    requestId: row.request_id,
+    createdAt: row.created_at,
+  };
+}
+
+function fromGuidedPreparationSourceRow(row: GuidedPreparationSourceRow): GuidedPreparationSource {
+  return {
+    id: row.id,
+    contractId: row.contract_id,
+    sequence: row.sequence,
+    kind: row.kind,
+    url: row.url,
+    title: row.title,
+    excerpt: row.excerpt,
+    ...(row.query === null ? {} : { query: row.query }),
+    retrievedAt: row.retrieved_at,
+    contentHash: row.content_hash,
+    truncated: row.truncated === 1,
+  };
+}
+
+function fromGuidedPreparationRequestRow(
+  row: GuidedPreparationRequestRow,
+): GuidedPreparationRequestRecord {
+  return {
+    contractId: row.contract_id,
+    requestId: row.request_id,
+    operationId: row.operation_id,
+    kind: row.kind,
+    requestHash: row.request_hash,
+    preparationRevision: row.preparation_revision,
+    contractRevision: row.contract_revision,
+    status: row.status,
+    ownerToken: row.owner_token,
+    ...(row.profile_snapshot_json === null
+      ? {}
+      : { profileSnapshot: JSON.parse(row.profile_snapshot_json) }),
+    ...(row.result_json === null ? {} : { result: JSON.parse(row.result_json) }),
+    ...(row.error_code === null ? {} : { errorCode: row.error_code }),
+    ...(row.published_document_id === null
+      ? {}
+      : { publishedDocumentId: row.published_document_id }),
+  };
 }
 
 const DEFAULT_RUN_LIMIT = 50;

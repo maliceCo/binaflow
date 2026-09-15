@@ -55,14 +55,14 @@ import type {
   TransferManifest,
 } from './portability.js';
 import type {
+  GuidedBriefConfirmationRequest,
+  GuidedPreparationBeginRequest,
+  GuidedPreparationCreateRequest,
+  GuidedPreparationFinishRequest,
   GuidedPreparationMessage,
-  GuidedPreparationOperationRequest,
   GuidedPreparationRequestRecord,
   GuidedPreparationSource,
   GuidedPreparationState,
-  GuidedPlanOutput,
-  GuidedReplyOutput,
-  GuidedTodoOutput,
 } from './guided-preparation.js';
 import type {
   TaskContractActionPage,
@@ -187,10 +187,16 @@ export interface ApplicationTaskContractStore {
 }
 
 export interface GuidedPreparationStore {
+  createGuidedPreparation(request: GuidedPreparationCreateRequest): Promise<GuidedPreparationState>;
   getGuidedPreparation(
     workspace: string,
     contractId: string,
   ): Promise<GuidedPreparationState | undefined>;
+  saveGuidedPreparationSources(request: {
+    workspace: string;
+    contractId: string;
+    sources: readonly GuidedPreparationSource[];
+  }): Promise<GuidedPreparationState>;
   listGuidedPreparationMessages(request: {
     workspace: string;
     contractId: string;
@@ -208,21 +214,13 @@ export interface GuidedPreparationStore {
     contractId: string;
     requestId: string;
   }): Promise<GuidedPreparationRequestRecord | undefined>;
-  beginGuidedPreparationRequest(request: {
-    workspace: string;
-    operation: GuidedPreparationOperationRequest;
-  }): Promise<GuidedPreparationRequestRecord>;
-  finishGuidedPreparationRequest(request: {
-    workspace: string;
-    operation: GuidedPreparationOperationRequest;
-    status: Extract<
-      GuidedPreparationRequestRecord['status'],
-      'completed' | 'failed' | 'cancelled' | 'interrupted'
-    >;
-    result?: GuidedReplyOutput | GuidedPlanOutput | GuidedTodoOutput;
-    errorCode?: string;
-    publishedDocumentId?: string;
-  }): Promise<GuidedPreparationRequestRecord>;
+  beginGuidedPreparationRequest(
+    request: GuidedPreparationBeginRequest,
+  ): Promise<GuidedPreparationRequestRecord>;
+  finishGuidedPreparationRequest(
+    request: GuidedPreparationFinishRequest,
+  ): Promise<GuidedPreparationRequestRecord>;
+  confirmGuidedBrief(request: GuidedBriefConfirmationRequest): Promise<GuidedPreparationState>;
 }
 
 export interface PublicSourceReader {

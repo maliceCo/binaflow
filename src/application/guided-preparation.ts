@@ -79,6 +79,40 @@ export interface GuidedPreparationState {
   todoVersion: number | null;
 }
 
+export interface GuidedPreparationCreateRequest {
+  workspace: string;
+  contractId: string;
+}
+
+export interface GuidedPreparationBeginRequest {
+  workspace: string;
+  operation: GuidedPreparationOperationRequest;
+  operationId: string;
+  requestHash: string;
+  ownerToken: string;
+  profileSnapshot?: AgentProfile;
+}
+
+export interface GuidedPreparationFinishRequest {
+  workspace: string;
+  operation: GuidedPreparationOperationRequest;
+  operationId: string;
+  ownerToken: string;
+  status: Extract<GuidedPreparationRequestStatus, 'completed' | 'failed' | 'cancelled' | 'interrupted'>;
+  result?: GuidedReplyOutput | GuidedPlanOutput | GuidedTodoOutput;
+  errorCode?: string;
+  publishedDocumentId?: string;
+}
+
+export interface GuidedBriefConfirmationRequest {
+  workspace: string;
+  contractId: string;
+  expectedPreparationRevision: number;
+  brief: TaskContractBrief;
+  throughSequence: number;
+  sourceIds: string[];
+}
+
 export interface GuidedPreparationRequestRecord {
   contractId: string;
   requestId: string;
@@ -209,7 +243,13 @@ export interface GuidedPreparationPromptInput {
 }
 
 export type GuidedPreparationErrorCode =
-  'invalid-input' | 'profile-invalid' | 'prompt-too-large' | 'source-invalid';
+  | 'invalid-input'
+  | 'invalid-target'
+  | 'stale-revision'
+  | 'busy'
+  | 'profile-invalid'
+  | 'prompt-too-large'
+  | 'source-invalid';
 
 export class GuidedPreparationError extends Error {
   readonly code: GuidedPreparationErrorCode;

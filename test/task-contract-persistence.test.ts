@@ -128,7 +128,7 @@ describe('SQLite task contract persistence', () => {
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(
       database.prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1').get(),
-    ).toEqual({ version: 14 });
+    ).toEqual({ version: 15 });
     database.close();
   });
 
