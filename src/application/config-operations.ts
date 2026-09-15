@@ -439,6 +439,20 @@ export async function generateUpdatedConfiguration(
   return { configPath, config };
 }
 
+export async function generateUpdatedDataDirConfiguration(input: {
+  configPath: string;
+  dataDir: string;
+  cwd?: string;
+}): Promise<GeneratedConfiguration> {
+  const configPath = resolve(input.cwd ?? process.cwd(), input.configPath);
+  const current = await readConfigurationDocument(configPath);
+  const sourceHash = await configurationSourceHash(configPath);
+  const dataDir = relative(dirname(configPath), resolve(input.dataDir)) || '.';
+  const config: ConfigurationDocument = { ...current, dataDir };
+  parseConfigValue(config, configPath);
+  return { configPath, config, sourceHash };
+}
+
 export async function generateUpdatedPreparationConfiguration(
   input: PreparationConfigurationGenerationInput,
 ): Promise<GeneratedConfiguration> {
@@ -523,7 +537,7 @@ export async function configurationExists(
   }
 }
 
-async function readConfigurationDocument(path: string): Promise<ConfigurationDocument> {
+export async function readConfigurationDocument(path: string): Promise<ConfigurationDocument> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(path, 'utf8'));

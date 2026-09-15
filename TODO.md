@@ -576,7 +576,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** handshake feliz entre dos servidores loopback TLS, codigo incorrecto/expirado/reusado, fingerprint cambiado, firma/replay invalido, revocacion y archivos privados. Usar reloj/crypto/rutas inyectados y certificados fixture. `pnpm exec vitest run test/device-identity.test.ts test/peer-auth.test.ts test/web-device-api.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: pair personal Binaflow servers securely`
 
-- [ ] **Tarea 5.11: Transferir ownership reutilizando portabilidad existente**
+- [x] **Tarea 5.11: Transferir ownership reutilizando portabilidad existente**
   - **Archivo:** nuevos `src/application/project-transfer.ts`, `src/web/peer-transfer.ts`, `src/web/transfer-journal.ts`; `src/application/portability-operations.ts`, `src/config.ts`, `src/application/config-operations.ts`, `src/application/web-runtime.ts`, `src/web/server.ts`; nuevos `test/project-transfer.test.ts`, `test/peer-transfer.test.ts`, `test/transfer-journal.test.ts`; ampliar `test/portability-integration.test.ts`.
   - **Funciones:** previewProjectTransfer, startProjectTransfer, resumeProjectTransfer, receiveProjectTransfer y generateUpdatedDataDirConfiguration.
   - **Descripcion:** orquestar un handoff A->B, nunca sync. Preflight exige source activo/idle, Git limpio, branch+HEAD exactos, peer/version compatibles, target workspace catalogado y espacio/limites aceptables. Reusar preview/export/package/inspect/import y lineage actuales; no duplicar formato ni hashes. El source exporta con requestId/digest estable y queda `exported`; el target descarga por streaming/Range autenticado a temp, verifica paquete completo, importa a dataDir nuevo administrado y actualiza `dataDir` del config mediante sourceHash+replace atomico antes de abrirlo. Journal global por transferId conserva etapa, digests, bytes y recibos para replay/reanudacion; nunca contiene private keys ni contenido de artefactos. Un fallo tras export deja recovery/resend explicito, no reactiva A ni activa B parcialmente. Git se inspecciona pero no ejecuta fetch/pull/push/checkout/reset.
@@ -747,4 +747,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.10 completada: identidad Ed25519 con archivos privados, pairing efimero,
   fingerprints, firmas nonceadas, replay/clock-skew/revocacion y API/UI de devices;
   11 tests enfocados, lint, typecheck y build:web pasan.
-- Siguiente accion: ejecutar Tarea 5.11, handoff de ownership reutilizando portabilidad.
+- Tarea 5.11 completada: journal atomico, transferencia por streaming/reanudacion,
+  preflight, importacion con lineage y CAS de configuracion sobre portabilidad
+  existente; 5 tests enfocados y typecheck pasan.
+- Siguiente accion: ejecutar Tarea 5.12, wizard web de transferencia y recovery.
