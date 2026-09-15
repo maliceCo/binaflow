@@ -463,7 +463,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** doble click; revision obsoleta; ID de otro contrato; auth antes de consultar; schema estricto; cancellation no se confunde con desconexion; no secretos/paths en DTO; recuperar lost response por requestId. `pnpm exec vitest run test/web-api.test.ts test/cli-protocol.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: expose guarded guided-task web endpoints`
 
-- [ ] **Tarea 4.3: Construir pantallas de tarea y seguimiento**
+- [x] **Tarea 4.3: Construir pantallas de tarea y seguimiento**
   - **Archivo:** nuevos `src/web/client/App.tsx`, `api.ts`, `Login.tsx`, `TaskList.tsx`, `Preparation.tsx`, `Execution.tsx`; `main.tsx`, `styles.css` y `assets.d.ts` de la Tarea 1.2; nuevo `test/web-client.test.tsx`.
   - **Funciones:** cliente fetch tipado, polling/cancel del fetch de vista, navegacion por hash/taskId, formularios y vistas A/G.
   - **Descripcion:** login, tareas, chat/fuentes/resumen, plan/TODO/preview y progreso. Hash sirve para recuperar tarea, no credenciales. Mostrar versiones y bloqueos; conservar requestId mientras se reconcilia un envio ambiguo. Poll acotado y accesible; pause/recarga de pagina no cancela backend. Contenido como texto o elementos React construidos, no HTML crudo.
@@ -594,4 +594,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 4.2 completada: rutas `/api/v1` autenticadas para tareas, detalle, mensajes,
   fuentes y operaciones; DTOs sin estado interno y errores tipados; 5 tests enfocados
   pasan.
-- Siguiente accion: ejecutar la Tarea 4.3, construyendo las pantallas web.
+- Tarea 4.3 completada: cliente React con login, lista/hash de tareas, formulario de
+  preparación, refresco acotado y manejo de errores como texto; typecheck y build web
+  pasan.
+- Siguiente accion: ejecutar la Tarea 4.4, integrando la orden de arranque y cierre.

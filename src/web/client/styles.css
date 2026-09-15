@@ -1,15 +1,123 @@
 :root {
-  color: #1f2937;
-  background: #f8fafc;
+  color: #172033;
+  background: #f6f8fb;
   font-family: system-ui, sans-serif;
 }
 
 body {
   margin: 0;
 }
-
+button,
+input,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
 .app-shell {
-  max-width: 60rem;
+  max-width: 72rem;
   margin: 0 auto;
-  padding: 3rem 1.5rem;
+  padding: 2rem 1.5rem;
+}
+.app-header,
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.app-header {
+  border-bottom: 1px solid #d8dee9;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+h1 {
+  margin-bottom: 0.25rem;
+}
+.eyebrow {
+  color: #52627a;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(15rem, 22rem) 1fr;
+  gap: 1.5rem;
+}
+.task-list,
+.task-panel,
+.login-card {
+  background: white;
+  border: 1px solid #d8dee9;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 8px 24px #1720330d;
+}
+.task-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+.task-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid #e8ecf2;
+  padding: 0.75rem 0;
+}
+a {
+  color: #1558a6;
+}
+.task-list span {
+  color: #52627a;
+  font-size: 0.85rem;
+}
+form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 34rem;
+}
+input,
+textarea {
+  border: 1px solid #aab6c8;
+  border-radius: 0.4rem;
+  padding: 0.65rem;
+}
+textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+button {
+  background: #1558a6;
+  color: white;
+  border: 0;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.9rem;
+}
+button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.error {
+  color: #a32828;
+  background: #fff0f0;
+  border: 1px solid #e7b4b4;
+  padding: 0.7rem;
+  border-radius: 0.4rem;
+}
+.login-card {
+  max-width: 28rem;
+  margin: 10vh auto;
+}
+@media (max-width: 45rem) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }
