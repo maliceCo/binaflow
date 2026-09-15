@@ -15,6 +15,11 @@ import {
   FileDataDirectoryLock,
   inspectPortableDatabaseState,
 } from '../storage/data-directory-lock.js';
+import {
+  activateImportedBackup,
+  inspectPortableBackup,
+  normalizePortableBackup,
+} from '../storage/sqlite-portability.js';
 import { SqliteRunStore } from '../storage/sqlite-run-store.js';
 import type { ApplicationPortabilityStore, ApplicationRunStore } from './ports.js';
 import type { WorkflowRun } from '../core/run.js';
@@ -72,6 +77,7 @@ export async function openPortabilityContext(
     const portabilityStore = store ?? readOnlyPortabilityStore();
     const portability = createPortabilityService({
       store: portabilityStore,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir,
       workspace: realpathSync(cwd),
     });
@@ -261,7 +267,12 @@ async function openApplicationResources(
     taskContractStore: store,
     taskContractWorkspace: workspace,
     guidedExecution,
-    portability: createPortabilityService({ store, dataDir, workspace }),
+    portability: createPortabilityService({
+      store,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      dataDir,
+      workspace,
+    }),
     executionLock: guidedLock,
     workspace,
     modelDiscovery: new PiModelDiscovery(),

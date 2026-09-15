@@ -6,7 +6,11 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
 import { createPortabilityService } from '../src/application/portability-operations.js';
-import { inspectPortableBackup } from '../src/storage/sqlite-portability.js';
+import {
+  activateImportedBackup,
+  inspectPortableBackup,
+  normalizePortableBackup,
+} from '../src/storage/sqlite-portability.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 import type { ArtifactReference, WorkflowRun } from '../src/core/run.js';
 
@@ -82,6 +86,7 @@ describe('portable transfer round trip', () => {
     );
     const serviceA = createPortabilityService({
       store: storeA,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: dataA,
       workspace: workspaceA,
     });
@@ -102,6 +107,7 @@ describe('portable transfer round trip', () => {
     const dataB = join(root, 'data-b');
     const serviceBImport = createPortabilityService({
       store: newUnavailableStore(),
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: join(root, 'empty-baseline'),
       workspace: workspaceB,
     });
@@ -133,6 +139,7 @@ describe('portable transfer round trip', () => {
     const packageT2 = join(root, 'transfer-t2');
     const serviceB = createPortabilityService({
       store: storeB,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: dataB,
       workspace: workspaceB,
     });
@@ -161,6 +168,7 @@ describe('portable transfer round trip', () => {
     const dataAReturn = join(root, 'data-a-return');
     const serviceAReturn = createPortabilityService({
       store: newUnavailableStore(),
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: dataA,
       workspace: workspaceA,
     });

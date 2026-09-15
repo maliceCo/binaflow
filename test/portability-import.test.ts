@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPortabilityService } from '../src/application/portability-operations.js';
-import { inspectPortableBackup } from '../src/storage/sqlite-portability.js';
+import {
+  activateImportedBackup,
+  inspectPortableBackup,
+  normalizePortableBackup,
+} from '../src/storage/sqlite-portability.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 
 const execFileAsync = promisify(execFile);
@@ -44,6 +48,7 @@ describe('portability import operations', () => {
     const storeA = new SqliteRunStore(join(dataA, 'runs.db'));
     const serviceA = createPortabilityService({
       store: storeA,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: dataA,
       workspace: workspaceA,
     });
@@ -60,6 +65,7 @@ describe('portability import operations', () => {
     const outputDataDir = join(root, 'data-b');
     const serviceB = createPortabilityService({
       store: storeA,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
       dataDir: join(root, 'empty-baseline'),
       workspace: workspaceB,
     });
@@ -85,7 +91,12 @@ describe('portability import operations', () => {
     const dataDir = join(root, 'data');
     await mkdir(dataDir, { recursive: true });
     const store = new SqliteRunStore(join(dataDir, 'runs.db'));
-    const service = createPortabilityService({ store, dataDir: join(root, 'empty'), workspace });
+    const service = createPortabilityService({
+      store,
+      database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+      dataDir: join(root, 'empty'),
+      workspace,
+    });
     const preview = await service.previewExport({
       requestId: '33333333-3333-4333-8333-333333333333',
       destination: join(root, 'transfer'),

@@ -119,6 +119,25 @@ Durable normalized events remain in SQLite and are retrieved through the paged
 timeline query. A future web interface would be another presentation adapter;
 there is no web server or web UI in this preview.
 
+### Dataset portability
+
+The implemented Hito 3.5 transfer flow moves one active dataset between
+machines without replacing an existing data directory. Preview and confirm an
+export, then inspect and import into a new directory:
+
+```bash
+binaflow preview-export --request-id <uuid-v4> --output /path/transfer
+binaflow export --request-id <uuid-v4> --digest <sha256> --output /path/transfer
+binaflow inspect /path/transfer
+binaflow preview-import --package /path/transfer --output-data-dir /path/data-new
+binaflow import --request-id <uuid-v4> --digest <sha256> --package /path/transfer --output-data-dir /path/data-new
+```
+
+Git clone/fetch, configuration changes, credentials, and cleanup of previous
+data directories remain manual. Packages are unencrypted and may contain
+sensitive historical content. See [data portability](docs/data-portability.md)
+for preflight blockers, lineage checks, recovery, and tested limits.
+
 This is an early preview. Keep backups of important workspaces and review the
 agent profiles before allowing a builder to edit files.
 

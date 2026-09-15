@@ -4,6 +4,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   PORTABLE_WORKSPACE_MARKER,
   PortabilityContractError,
+  type PortableBackupInspection,
   validatePortablePath,
 } from '../application/portability.js';
 import {
@@ -13,16 +14,6 @@ import {
 } from '../application/task-contract.js';
 
 const PORTABLE_NORMALIZED_TIMESTAMP = '1970-01-01T00:00:00.000Z';
-
-export interface PortableBackupInspection {
-  schemaVersion: number;
-  datasetId: string;
-  state: 'active' | 'exporting' | 'exported';
-  lastTransferId: string | null;
-  runs: number;
-  artifacts: number;
-  workspaces: string[];
-}
 
 export interface NormalizePortableBackupOptions {
   sourceDataDir: string;

@@ -13,11 +13,16 @@ import {
   type PortabilityExportPreview,
   type PortabilityImportPreview,
   type PortabilityState,
+  type PortableBackupInspection,
   type PortabilityTransfer,
   type TransferArtifact,
   type TransferManifest,
 } from './portability.js';
-import type { ApplicationPortabilityStore, PortabilityService } from './ports.js';
+import type {
+  ApplicationPortabilityStore,
+  PortabilityDatabase,
+  PortabilityService,
+} from './ports.js';
 import {
   cleanupOwnedStaging,
   copyAndHashArtifact,
@@ -32,12 +37,6 @@ import {
   previewRepositoryTransfer,
   assertImportWorkspace,
 } from '../portability/git-transfer.js';
-import {
-  inspectPortableBackup,
-  normalizePortableBackup,
-  activateImportedBackup,
-  type PortableBackupInspection,
-} from '../storage/sqlite-portability.js';
 import { VERSION } from '../version.js';
 
 const SENSITIVE_DATA_WARNING =
@@ -45,6 +44,7 @@ const SENSITIVE_DATA_WARNING =
 
 export interface PortabilityOperationsOptions {
   store: ApplicationPortabilityStore;
+  database: PortabilityDatabase;
   dataDir: string;
   workspace: string;
 }
@@ -261,7 +261,7 @@ async function previewImport(
   request: { packagePath: string; outputDataDir: string },
 ): Promise<PortabilityImportPreview> {
   const manifest = await inspectPackage(request.packagePath);
-  const baseline = await inspectBaseline(options.dataDir);
+  const baseline = await inspectBaseline(options.database, options.dataDir);
   const blockers: PortabilityBlocker[] = [];
   if (await pathExists(request.outputDataDir)) {
     blockers.push({ code: 'output-exists', detail: 'Import output data directory already exists' });
@@ -323,7 +323,7 @@ async function importPackage(
   const staging = await materializeImportStaging(request.packagePath, request.outputDataDir);
   try {
     const manifest = await inspectPackage(request.packagePath);
-    activateImportedBackup(join(staging, 'runs.db'), {
+    options.database.activateImportedBackup(join(staging, 'runs.db'), {
       destinationDataDir: request.outputDataDir,
       destinationWorkspace: options.workspace,
       transferId: manifest.transferId,
@@ -364,7 +364,10 @@ async function buildPackage(
   });
   const databasePath = join(staging, 'runs.db');
   await options.store.backupDatabaseTo(databasePath);
-  normalizePortableBackup(databasePath, { sourceDataDir: options.dataDir, transferId: requestId });
+  options.database.normalizePortableBackup(databasePath, {
+    sourceDataDir: options.dataDir,
+    transferId: requestId,
+  });
   const databaseFile = await hashFile(databasePath);
   const bundleFile = await createRepositoryBundle(
     options.workspace,
@@ -387,7 +390,7 @@ async function buildPackage(
       mediaType: artifact.mediaType,
     });
   }
-  const inspection = inspectPortableBackup(databasePath);
+  const inspection = options.database.inspectPortableBackup(databasePath);
   const manifest: TransferManifest = {
     protocol: PORTABILITY_PROTOCOL,
     version: PORTABILITY_VERSION,
@@ -443,9 +446,12 @@ async function exportBlockers(
   return blockers;
 }
 
-async function inspectBaseline(dataDir: string): Promise<PortableBackupInspection | undefined> {
+async function inspectBaseline(
+  database: PortabilityDatabase,
+  dataDir: string,
+): Promise<PortableBackupInspection | undefined> {
   try {
-    return inspectPortableBackup(join(resolve(dataDir), 'runs.db'));
+    return database.inspectPortableBackup(join(resolve(dataDir), 'runs.db'));
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
     if (error instanceof Error && /ENOENT|no such file/i.test(error.message)) return undefined;

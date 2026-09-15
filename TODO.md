@@ -299,7 +299,7 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
   - **Verificacion / TDD:** `pnpm exec vitest run test/portability-integration.test.ts test/portability-export.test.ts test/portability-import.test.ts`; demostrar IDs, hashes, parent T1, HEAD y lectura de artifacts, no solo existencia de archivos. `pnpm run typecheck`.
   - **Commit Msg:** `test: verify round-trip transfer between two computers`
 
-- [ ] **Tarea 4.2: Documentar operacion, limites y recuperacion**
+- [x] **Tarea 4.2: Documentar operacion, limites y recuperacion**
   - **Archivo:** nuevo `docs/data-portability.md`; `docs/web-workflow-vision.md`; `README.md` solo enlace/comandos esenciales; `TODO.md` para evidencia final.
   - **Funciones:** ninguna.
   - **Descripcion:** guia concreta A -> B -> A, preflight, clone/fetch manual, cambio manual de dataDir, comprobacion posterior y conservacion de directorios anteriores. Explicar exporting atascado/replay, locks, datos sensibles, ausencia de cifrado, no LFS/submodules, no runs reanudables, no sync/merge y que el FS/OS puede no conservar permisos. Marcar Hito 3.5 hecho solo tras checks reales.
@@ -309,14 +309,14 @@ acepta, aunque contenga cambios equivalentes, porque rompe la identidad autoriza
 
 ## Criterios de aceptacion global
 
-- [ ] Paquete consistente y verificable creado solo con fuente elegible.
-- [ ] Configuracion/credenciales no incluidas; advertencia de contenido sensible visible.
-- [ ] Repositorio regular trasladable por bundle y HEAD exacto comprobado.
-- [ ] Import siempre crea dataDir nuevo y deja intacto el anterior.
-- [ ] A -> B -> A conserva IDs, documentos, decisiones, artifacts y trabajo nuevo.
-- [ ] Copia activa, padre incorrecto, tamper o Git divergente detiene sin sobrescribir.
-- [ ] Fuente exported no admite runtime normal; replay recupera export incompleto.
-- [ ] CLI/TUI/workflows/protocolo v1 existentes conservan comportamiento.
+- [x] Paquete consistente y verificable creado solo con fuente elegible.
+- [x] Configuracion/credenciales no incluidas; advertencia de contenido sensible visible.
+- [x] Repositorio regular trasladable por bundle y HEAD exacto comprobado.
+- [x] Import siempre crea dataDir nuevo y deja intacto el anterior.
+- [x] A -> B -> A conserva IDs, documentos, decisiones, artifacts y trabajo nuevo.
+- [x] Copia activa, padre incorrecto, tamper o Git divergente detiene sin sobrescribir.
+- [x] Fuente exported no admite runtime normal; replay recupera export incompleto.
+- [x] CLI/TUI/workflows/protocolo v1 existentes conservan comportamiento.
 
 ## Reglas de operacion para el sub-modelo
 
@@ -358,7 +358,8 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Antes de crear este archivo, `docs/web-workflow-vision.md` tenia cambios de la
   decision aprobada del Hito 3.5 y no existia `TODO.md`. Ambos deben revisarse;
   no presentarlos como implementacion.
-- Pruebas, migracion 14, export/import, Git bundle y commits: no ejecutados.
+- Pruebas especificas, migracion 14, export/import, Git bundle, roundtrip y
+  commits ejecutados y registrados por tarea.
 - Tarea 1.1 completada: baseline completo y autorizacion documentada en commit
   `200e548`.
 - Tarea 1.2 completada: contratos, validadores y puertos en
@@ -394,4 +395,10 @@ o una regresion exige cambiar protocolo/compatibilidad persistida.
 - Tarea 4.1 completada: viaje A -> B -> A con SQLite, artifacts, bundles Git,
   commits manuales y linaje padre en `test/portability-integration.test.ts`; 1
   test de integracion pasa, lint y typecheck pasan.
-- Siguiente accion: documentar operacion, limites, recuperacion y evidencia final.
+- Tarea 4.2 completada: guia operativa en `docs/data-portability.md`, enlace y
+  comandos esenciales en `README.md`, y estado actualizado en
+  `docs/web-workflow-vision.md`.
+- Checks globales completados: format:check, lint, typecheck, test (63 archivos,
+  401 tests, 1 omitido), build y git diff --check; sin bundles de release,
+  instalaciones ni Pi live.
+- Siguiente accion: comprometer la implementacion y revisar el estado final.

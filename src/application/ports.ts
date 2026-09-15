@@ -49,6 +49,7 @@ import type {
   PortabilityBlocker,
   PortabilityExportPreview,
   PortabilityImportPreview,
+  PortableBackupInspection,
   PortabilityState,
   PortabilityTransfer,
   TransferManifest,
@@ -197,6 +198,18 @@ export interface PortabilityService {
     packagePath: string;
     outputDataDir: string;
   }): Promise<{ transfer: PortabilityTransfer; dataDir: string }>;
+}
+
+export interface PortabilityDatabase {
+  normalizePortableBackup(
+    databasePath: string,
+    options: { sourceDataDir: string; transferId?: string },
+  ): PortableBackupInspection;
+  inspectPortableBackup(databasePath: string): PortableBackupInspection;
+  activateImportedBackup(
+    databasePath: string,
+    options: { destinationDataDir: string; destinationWorkspace: string; transferId: string },
+  ): PortableBackupInspection;
 }
 
 export interface ApplicationPortabilityStore {

@@ -6,6 +6,11 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPortabilityService } from '../src/application/portability-operations.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
+import {
+  activateImportedBackup,
+  inspectPortableBackup,
+  normalizePortableBackup,
+} from '../src/storage/sqlite-portability.js';
 
 const execFileAsync = promisify(execFile);
 const directories: string[] = [];
@@ -30,7 +35,12 @@ async function fixture() {
   await git(workspace, 'add', '--', 'README.md');
   await git(workspace, 'commit', '-m', 'initial');
   const store = new SqliteRunStore(join(dataDir, 'runs.db'));
-  const service = createPortabilityService({ store, dataDir, workspace });
+  const service = createPortabilityService({
+    store,
+    database: { normalizePortableBackup, inspectPortableBackup, activateImportedBackup },
+    dataDir,
+    workspace,
+  });
   return { root, workspace, dataDir, output, store, service };
 }
 

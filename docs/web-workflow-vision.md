@@ -1,11 +1,11 @@
 # Binaflow web: objetivo e hitos
 
-Estado: los Hitos 1, 2 y 3 estan implementados y verificados localmente. El
+Estado: los Hitos 1, 2, 3 y 3.5 estan implementados y verificados localmente. El
 Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
 autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
-El siguiente paso es el Hito 3.5: portabilidad con un solo equipo activo.
-La web queda despues, inicialmente en red interna y sin VPN. Autenticacion y
-mecanismo de despliegue siguen pendientes de definir.
+El Hito 3.5 agrega traslado portable con un solo equipo activo. La web queda
+despues, inicialmente en red interna y sin VPN. Autenticacion y mecanismo de
+despliegue siguen pendientes de definir.
 La verificacion cubre el backend con SQLite, artifacts y agentes simulados; no
 cubre navegadores reales, autenticacion ni despliegue remoto. Documento de
 continuidad para recuperar el proposito cuando falte contexto de la conversacion.
@@ -64,12 +64,13 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
       no incluye chat, handoff ni ejecucion.
 - [x] **3. Ejecucion por fases y Git:** progreso verificable, commits controlados
       y recuperacion explicita. Ver [ejecucion guiada](guided-execution.md).
+- [x] **3.5. Portabilidad entre equipos:** exportar/importar datos de forma
+      consistente y volver del viaje sin perder historial ni pisar cambios.
+      Un solo equipo activo, sin sincronizacion bidireccional. Ver
+      [portabilidad de datos](data-portability.md).
 
 ### Pendientes, en orden
 
-- [ ] **3.5. Portabilidad entre equipos:** exportar/importar datos de forma
-      consistente y volver del viaje sin perder historial ni pisar cambios.
-      Un solo equipo activo, sin sincronizacion bidireccional.
 - [ ] **4. Web personal y preparacion:** acceso en red interna, autenticacion,
       chat de exploracion, consulta de fuentes, plan con feedback/aprobacion e
       inicio y seguimiento de la ejecucion. Sin VPN como requisito inicial.
@@ -102,12 +103,12 @@ Alcance que debe concretarse en el plan de implementacion:
    contener informacion sensible; no prometer una eliminacion total de secretos
    presentes en conversaciones o artefactos.
 
-Aceptacion objetivo: equipo A -> equipo B -> trabajo en B -> retorno a A,
-conservando IDs, documentos e historial; un cambio independiente en A debe
-impedir una importacion destructiva. Falta definir y probar la reautorizacion y
-recuperacion de runs trasladados; importar historial no autoriza ejecutarlo.
+Aceptacion verificada: equipo A -> equipo B -> trabajo en B -> retorno a A,
+conservando IDs, documentos, artifacts e historial; un cambio independiente en A
+impide una importacion destructiva. Importar historial no autoriza ejecutarlo.
 
-Estado: decision de alcance aprobada; implementacion no iniciada.
+Estado: implementado y verificado localmente; no implica sincronizacion, cifrado,
+portabilidad Windows ni despliegue remoto.
 
 ## Limites de arquitectura
 
@@ -129,12 +130,12 @@ La base actual ofrece preparacion conversacional, pasos persistidos, revisiones
 interactivas y un anfitrion de ejecucion independiente de sus clientes. El Hito 1
 verifica cambio de cliente, consultas persistidas, replay, cancelacion explicita
 y resume explicito con un agente simulado. El Hito 3 agrega control por fase e
-integracion Git. Siguen pendientes la portabilidad, la web, la revision de codigo
-y las decisiones selectivas de QA; no hay recuperacion automatica tras una caida
+integracion Git. Siguen pendientes la web, la revision de codigo y las
+decisiones selectivas de QA; no hay recuperacion automatica tras una caida
 abrupta.
 
-Siguiente paso: preparar el plan de implementacion del **hito 3.5**, antes del
-Hito 4. No asumir que los Hitos 1-3 cubren traslado de datos o despliegue remoto.
+Siguiente paso: preparar el plan de implementacion del **Hito 4**. No asumir que
+los Hitos 1-3.5 cubren autenticacion o despliegue remoto.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).

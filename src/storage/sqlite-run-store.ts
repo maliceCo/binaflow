@@ -1709,12 +1709,15 @@ export class SqliteRunStore
   }
 
   async listPortabilityArtifacts(): Promise<ArtifactReference[]> {
-    const rows = this.database.prepare('SELECT * FROM artifacts ORDER BY rowid').all() as ArtifactRow[];
+    const rows = this.database
+      .prepare('SELECT * FROM artifacts ORDER BY rowid')
+      .all() as ArtifactRow[];
     return rows.map(fromArtifactRow);
   }
 
   async countPortabilityRuns(): Promise<number> {
-    return (this.database.prepare('SELECT COUNT(*) AS count FROM runs').get() as { count: number }).count;
+    return (this.database.prepare('SELECT COUNT(*) AS count FROM runs').get() as { count: number })
+      .count;
   }
 
   async saveCoordinatorArtifacts(runId: string, artifacts: ArtifactReference[]): Promise<void> {

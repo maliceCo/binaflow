@@ -60,6 +60,16 @@ export interface TransferManifest {
   warnings: string[];
 }
 
+export interface PortableBackupInspection {
+  schemaVersion: number;
+  datasetId: string;
+  state: PortabilityDatasetState;
+  lastTransferId: string | null;
+  runs: number;
+  artifacts: number;
+  workspaces: string[];
+}
+
 export interface PortabilityState {
   datasetId: string;
   state: PortabilityDatasetState;
