@@ -145,6 +145,6 @@ describe('architecture boundaries', () => {
     for (const content of contents) {
       expect(content).not.toMatch(/better-sqlite|FileArtifactStore|PiDriver/);
     }
-    expect(contents.slice(0, 3).join('\\n')).not.toMatch(/from ['\"]node:/);
+    expect(contents.slice(0, 3).join('\\n')).not.toMatch(/from ['"]node:/);
   });
 });
