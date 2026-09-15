@@ -4,6 +4,7 @@ import { createApiClient, createRequestId, type LauncherSettings, type Task } fr
 import { Setup } from './Setup.js';
 import { Settings } from './Settings.js';
 import { Projects } from './Projects.js';
+import { Devices } from './Devices.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -127,6 +128,7 @@ export function App(): ReactElement {
             <Settings api={api} settings={settings} onSaved={setSettings} />
           )}
           {settings && <Projects api={api} onProjectChanged={refreshWorkspace} />}
+          {settings && <Devices api={api} />}
           <section className="workspace-grid">
             <TaskList tasks={tasks} onRefresh={refreshTasks} />
             {selected ? (

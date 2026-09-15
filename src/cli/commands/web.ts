@@ -1,7 +1,17 @@
+import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
+import { createPersonalWebRuntime } from '../../application/web-runtime.js';
 import { createExecutionHost } from '../../application/execution-host.js';
 import { openApplicationContext } from '../../application/runtime.js';
 import { loadWebConfig } from '../../web/config.js';
+import { loadOrCreateDeviceIdentity } from '../../web/device-identity.js';
+import {
+  FileProjectCatalog,
+  listProjectDirectory,
+  registerProjectFromDirectory,
+  resolveDefaultProjectCatalogPath,
+} from '../../web/project-catalog.js';
+import { PeerAuth } from '../../web/peer-auth.js';
 import {
   createWebSettingsController,
   launcherSettingsToWebConfig,
@@ -10,6 +20,7 @@ import {
   resolveDefaultWebSettingsPath,
 } from '../../web/settings-store.js';
 import { createWebServer } from '../../web/server.js';
+import type { WebApiCapabilities } from '../../web/routes.js';
 import { rootOptions } from './common.js';
 
 export function registerWebCommand(cli: Command): void {
@@ -66,26 +77,39 @@ export function registerWebCommand(cli: Command): void {
             close: context.close,
           });
         }
-        const server = createWebServer({
-          config: webConfig,
+        const launcherResources =
+          launcherMode &&
+          !options.cwd &&
+          !options.config &&
+          settingsPath &&
+          launcherSettings &&
+          settingsController
+            ? await createLauncherResources(settingsPath, settingsController)
+            : undefined;
+        const api: WebApiCapabilities = {
+          ...(settingsController ? { settings: settingsController } : {}),
+          ...(launcherResources
+            ? {
+                devices: launcherResources.devices,
+                projectCatalog: launcherResources.projectCatalog,
+                projectRuntime: launcherResources.runtime,
+              }
+            : {}),
           ...(context && host
             ? {
-                api: {
-                  ...(settingsController ? { settings: settingsController } : {}),
-                  ...(context.application.taskContracts
-                    ? { taskContracts: context.application.taskContracts }
-                    : {}),
-                  ...(host.client.guidedPreparation
-                    ? { guidedPreparation: { execute: host.client.guidedPreparation.execute } }
-                    : {}),
-                },
+                ...(context.application.taskContracts
+                  ? { taskContracts: context.application.taskContracts }
+                  : {}),
+                ...(host.client.guidedPreparation
+                  ? { guidedPreparation: { execute: host.client.guidedPreparation.execute } }
+                  : {}),
               }
-            : settingsController
-              ? { api: { settings: settingsController } }
-              : {}),
-        });
+            : {}),
+        };
+        const server = createWebServer({ config: webConfig, api });
         const stop = async (): Promise<void> => {
           await server.close();
+          await launcherResources?.runtime.close();
           await host?.close();
         };
         const waitForSignal = new Promise<void>((resolve) => {
@@ -105,4 +129,47 @@ export function registerWebCommand(cli: Command): void {
         }
       },
     );
+}
+
+async function createLauncherResources(
+  settingsPath: string,
+  settingsController: ReturnType<
+    typeof import('../../web/settings-store.js').createWebSettingsController
+  >,
+) {
+  const identity = await loadOrCreateDeviceIdentity({
+    directory: join(dirname(settingsPath), 'device'),
+  });
+  const peerAuth = new PeerAuth(identity);
+  const catalog = new FileProjectCatalog(resolveDefaultProjectCatalogPath());
+  const runtime = createPersonalWebRuntime({ catalog, ownerDeviceId: identity.deviceId });
+  const projectCatalog = {
+    getRoots: () =>
+      settingsController.get().projectRoots.map(({ rootId, label }) => ({ id: rootId, label })),
+    listProjects: async () => catalog.list().then((value) => value.projects),
+    listDirectory: (rootId: string, segments: string[], offset: number, limit: number) =>
+      listProjectDirectory(settingsController.get().projectRoots, rootId, segments, offset, limit),
+    register: (rootId: string, segments: string[], projectId?: string) =>
+      registerProjectFromDirectory(
+        catalog,
+        settingsController.get().projectRoots,
+        rootId,
+        segments,
+        identity.deviceId,
+        projectId,
+      ),
+  };
+  return {
+    runtime,
+    projectCatalog,
+    devices: {
+      list: () => peerAuth.listPeers(),
+      beginPairing: () => peerAuth.beginPairing(),
+      confirmPeer: (
+        record: import('../../web/launcher-contracts.js').DeviceRecord,
+        expectedFingerprint?: string,
+      ) => peerAuth.confirmPeerFingerprint(record, expectedFingerprint),
+      revokePeer: (deviceId: string) => peerAuth.revokePeer(deviceId),
+    },
+  };
 }

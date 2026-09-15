@@ -48,6 +48,12 @@ export interface ProjectDirectory {
   hasBinaflowConfig: boolean;
 }
 
+export interface DeviceSummary {
+  id: string;
+  name: string;
+  status: 'paired' | 'revoked';
+}
+
 export interface ApiClient {
   session(): Promise<SessionData>;
   login(code: string): Promise<SessionData>;
@@ -67,6 +73,9 @@ export interface ApiClient {
   getActiveProject(): Promise<ProjectSummary | null>;
   selectProject(projectId: string): Promise<ProjectSummary>;
   closeActiveProject(): Promise<void>;
+  listDevices(): Promise<DeviceSummary[]>;
+  beginPairing(): Promise<{ pairingId: string; code: string; deviceId: string; expiresAt: number }>;
+  revokeDevice(deviceId: string): Promise<void>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
 }
 
@@ -156,6 +165,22 @@ export function createApiClient(): ApiClient {
     },
     async closeActiveProject() {
       await request('/api/v1/projects/current/close', 'POST', {}, csrfToken);
+    },
+    async listDevices() {
+      const result = await request<{ items: DeviceSummary[] }>('/api/v1/devices');
+      return result.data.items;
+    },
+    async beginPairing() {
+      const result = await request<{
+        pairingId: string;
+        code: string;
+        deviceId: string;
+        expiresAt: number;
+      }>('/api/v1/devices/pairing', 'POST', {}, csrfToken);
+      return result.data;
+    },
+    async revokeDevice(deviceId) {
+      await request('/api/v1/devices/revoke', 'POST', { deviceId }, csrfToken);
     },
     async execute(taskId, operation) {
       const result = await request<Operation>(

@@ -12,12 +12,16 @@ import {
   WebContractError,
 } from './contracts.js';
 import {
+  parseDeviceRecord,
   parseLauncherSettings,
+  toWebDeviceSummaryDto,
   toWebLauncherSettingsDto,
   toWebProjectSummaryDto,
+  type DeviceRecord,
   type LauncherSettings,
   type ProjectCatalogEntry,
 } from './launcher-contracts.js';
+import type { PairingOffer } from './peer-auth.js';
 import type { ProjectDirectoryListing } from './project-catalog.js';
 import { toWebOperationDto, toWebTaskDto } from './dto.js';
 
@@ -32,6 +36,13 @@ export interface WebSettingsCapabilities {
   ) => Promise<{ certFile: string; keyFile: string }>;
 }
 
+export interface WebDeviceCapabilities {
+  readonly list: () => DeviceRecord[];
+  readonly beginPairing: () => PairingOffer;
+  readonly confirmPeer: (record: DeviceRecord, expectedFingerprint?: string) => DeviceRecord;
+  readonly revokePeer: (deviceId: string) => void;
+}
+
 export interface WebProjectRuntimeCapabilities {
   readonly getActiveProject: () => ProjectCatalogEntry | undefined;
   readonly selectProject: (projectId: string) => Promise<ProjectCatalogEntry>;
@@ -40,6 +51,7 @@ export interface WebProjectRuntimeCapabilities {
 
 export interface WebApiCapabilities {
   readonly settings?: WebSettingsCapabilities;
+  readonly devices?: WebDeviceCapabilities;
   readonly projectRuntime?: WebProjectRuntimeCapabilities;
   readonly projectCatalog?: {
     getRoots: () => Array<{ id: string; label: string }>;
@@ -85,6 +97,31 @@ export async function handleWebApi(
   api: WebApiCapabilities,
 ): Promise<WebApiResponse> {
   try {
+    if (request.path === '/api/v1/devices' && request.method === 'GET') {
+      if (!api.devices) return unavailable();
+      return ok(200, { items: api.devices.list().map(toWebDeviceSummaryDto) });
+    }
+    if (request.path === '/api/v1/devices/pairing' && request.method === 'POST') {
+      if (!api.devices) return unavailable();
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Pairing start does not accept a body');
+      }
+      return ok(200, api.devices.beginPairing());
+    }
+    if (request.path === '/api/v1/devices/pairing/confirm' && request.method === 'POST') {
+      if (!api.devices) return unavailable();
+      const input = parseDeviceConfirmation(request.body);
+      return ok(
+        200,
+        toWebDeviceSummaryDto(api.devices.confirmPeer(input.record, input.expectedFingerprint)),
+      );
+    }
+    if (request.path === '/api/v1/devices/revoke' && request.method === 'POST') {
+      if (!api.devices) return unavailable();
+      const deviceId = parseDeviceIdBody(request.body);
+      api.devices.revokePeer(deviceId);
+      return ok(200, { revoked: true });
+    }
     if (request.path === '/api/v1/project-roots' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
       return ok(200, { items: api.projectCatalog.getRoots() });
@@ -274,6 +311,46 @@ function isLoopbackAddress(address: string): boolean {
   return (
     isIP(address) === 6 && (address === '::1' || address.toLowerCase().startsWith('::ffff:127.'))
   );
+}
+
+function parseDeviceConfirmation(value: unknown): {
+  record: DeviceRecord;
+  expectedFingerprint?: string;
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new WebContractError('invalid-input', 'Invalid device confirmation');
+  }
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => !['record', 'expectedFingerprint'].includes(key))) {
+    throw new WebContractError('invalid-input', 'Unknown device confirmation field');
+  }
+  if (
+    record.expectedFingerprint !== undefined &&
+    (typeof record.expectedFingerprint !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(record.expectedFingerprint))
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid certificate fingerprint');
+  }
+  return {
+    record: parseDeviceRecord(record.record),
+    ...(record.expectedFingerprint === undefined
+      ? {}
+      : { expectedFingerprint: record.expectedFingerprint }),
+  };
+}
+
+function parseDeviceIdBody(value: unknown): string {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    typeof (value as Record<string, unknown>).deviceId !== 'string' ||
+    !/^[0-9a-f]{64}$/.test((value as Record<string, unknown>).deviceId as string)
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid device ID');
+  }
+  return (value as Record<string, unknown>).deviceId as string;
 }
 
 function parseProjectRegistration(value: unknown): {

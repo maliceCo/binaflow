@@ -568,7 +568,7 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
   - **Verificacion / TDD:** agregar, seleccionar, dos navegadores, switch remoto, busy, proyecto invalido/eliminado, logout y render de nombres maliciosos como texto. `pnpm exec vitest run test/web-project-api.test.ts test/web-project-client.test.tsx test/web-project-routes.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: add the browser project launcher experience`
 
-- [ ] **Tarea 5.10: Emparejar servidores con identidad y revocacion explicitas**
+- [x] **Tarea 5.10: Emparejar servidores con identidad y revocacion explicitas**
   - **Archivo:** nuevos `src/web/device-identity.ts`, `src/web/peer-auth.ts`; `src/web/settings-store.ts`, `src/web/server.ts`, `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/Devices.tsx`; `src/web/client/api.ts`, `Settings.tsx`; nuevos `test/device-identity.test.ts`, `test/peer-auth.test.ts`, `test/web-device-api.test.ts`.
   - **Funciones:** loadOrCreateDeviceIdentity, beginPairing, answerPairingChallenge, confirmPeerFingerprint y revokePeer.
   - **Descripcion:** generar una identidad Ed25519 por instalacion, guardar private key separada con 0600 y derivar deviceId de la public key. Emparejamiento manual por URL HTTPS, codigo aleatorio de un uso con TTL/intentos acotados y confirmacion de fingerprint/nombre en ambos equipos. Registrar public key, origin y certificado/fingerprint fijado; peticiones peer usan challenge, nonce, timestamp y firma, no cookie web. Revocar invalida nuevas solicitudes pero conserva historial. Solo LAN/VPN alcanzable; sin mDNS, relay, cuenta cloud ni sesiones compartidas.
@@ -744,4 +744,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.9 completada: rutas seguras de catalogo/directorios/seleccion y pantallas
   React de proyectos con referencias de servidor, busy tipado y sin paths en DTOs;
   10 tests enfocados, typecheck y build:web pasan.
-- Siguiente accion: ejecutar Tarea 5.10, identidad y pairing de dispositivos.
+- Tarea 5.10 completada: identidad Ed25519 con archivos privados, pairing efimero,
+  fingerprints, firmas nonceadas, replay/clock-skew/revocacion y API/UI de devices;
+  11 tests enfocados, lint, typecheck y build:web pasan.
+- Siguiente accion: ejecutar Tarea 5.11, handoff de ownership reutilizando portabilidad.
