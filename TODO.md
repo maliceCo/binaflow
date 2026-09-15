@@ -599,4 +599,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   pasan.
 - Tarea 4.4 completada: comando `web` compone runtime, host y listener, y ante SIGINT/
   SIGTERM cierra primero el listener y después el host/SQLite; build completo pasa.
-- Siguiente accion: ejecutar la Tarea 5.1, añadiendo pruebas de aceptación web.
+- Tarea 5.1 en progreso: se añadieron fixture Playwright, prueba de navegador y
+  boundaries; la aceptación Chromium queda bloqueada porque no está instalado el
+  ejecutable local (`pnpm exec playwright install` requiere aprobación explícita).
+- Siguiente accion: instalar Chromium con aprobación y ejecutar `pnpm run test:web`.

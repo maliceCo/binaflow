@@ -131,4 +131,20 @@ describe('architecture boundaries', () => {
     expect(storage).toBeTruthy();
     expect(storage![0]).not.toMatch(/WorkflowEngine|PiDriver|ResearchPlanBuildCoordinator/);
   });
+
+  it('keeps browser and HTTP adapters free of storage and Pi details', async () => {
+    const files = [
+      'src/web/client/App.tsx',
+      'src/web/client/api.ts',
+      'src/web/client/main.tsx',
+      'src/web/server.ts',
+      'src/web/routes.ts',
+      'src/web/dto.ts',
+    ];
+    const contents = await Promise.all(files.map((file) => readFile(join(root, file), 'utf8')));
+    for (const content of contents) {
+      expect(content).not.toMatch(/better-sqlite|FileArtifactStore|PiDriver/);
+    }
+    expect(contents.slice(0, 3).join('\\n')).not.toMatch(/from ['\"]node:/);
+  });
 });
