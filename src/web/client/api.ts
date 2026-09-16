@@ -8,6 +8,41 @@ export interface SessionData {
   csrfToken?: string;
 }
 
+export interface Message {
+  id: string;
+  sequence: number;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface Source {
+  id: string;
+  sequence: number;
+  kind: 'search-result' | 'page';
+  url: string;
+  title: string;
+  excerpt: string;
+  query?: string;
+  retrievedAt: string;
+  truncated: boolean;
+}
+
+export interface TaskDetail extends Task {
+  currentBrief: {
+    objective: string;
+    conclusions: string[];
+    constraints: string[];
+    outOfScope: string[];
+  };
+  messages: Message[];
+  sources: Source[];
+  preparationRevision: number;
+  lastSequence: number;
+  confirmedSourceIds: string[];
+  activeOperation: Operation | null;
+}
+
 export interface Task {
   id: string;
   revision: number;
@@ -81,6 +116,16 @@ export interface ApiClient {
   login(code: string): Promise<SessionData>;
   logout(): Promise<void>;
   listTasks(): Promise<Task[]>;
+  createTask(objective: string, contractId?: string): Promise<Task>;
+  getTaskDetail(taskId: string): Promise<TaskDetail>;
+  listMessages(
+    taskId: string,
+    afterSequence?: number,
+  ): Promise<{ items: Message[]; nextCursor?: number }>;
+  listSources(
+    taskId: string,
+    afterSequence?: number,
+  ): Promise<{ items: Source[]; nextCursor?: number }>;
   getSettings(): Promise<LauncherSettings>;
   updateSettings(input: unknown): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   uploadTls(certificatePem: string, keyPem: string): Promise<LauncherSettings>;
@@ -130,6 +175,33 @@ export function createApiClient(): ApiClient {
     async listTasks() {
       const result = await request<{ items: Task[]; nextAfterId: string | null }>('/api/v1/tasks');
       return result.data.items;
+    },
+    async createTask(objective, contractId = crypto.randomUUID()) {
+      const result = await request<Task>(
+        '/api/v1/tasks',
+        'POST',
+        { contractId, objective },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async getTaskDetail(taskId) {
+      const result = await request<TaskDetail>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+      return result.data;
+    },
+    async listMessages(taskId, afterSequence) {
+      const query = afterSequence === undefined ? '' : `?afterSequence=${afterSequence}`;
+      const result = await request<{ items: Message[]; nextCursor?: number }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/messages${query}`,
+      );
+      return result.data;
+    },
+    async listSources(taskId, afterSequence) {
+      const query = afterSequence === undefined ? '' : `?afterSequence=${afterSequence}`;
+      const result = await request<{ items: Source[]; nextCursor?: number }>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/sources${query}`,
+      );
+      return result.data;
     },
     async getSettings() {
       const result = await request<LauncherSettings>('/api/v1/settings');

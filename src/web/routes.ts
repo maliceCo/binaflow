@@ -85,8 +85,15 @@ export interface WebApiCapabilities {
       projectId?: string,
     ) => Promise<ProjectCatalogEntry>;
   };
-  readonly taskContracts?: Pick<TaskContractService, 'list' | 'get' | 'create'>;
-  readonly guidedPreparation?: Pick<GuidedPreparationService, 'execute'>;
+  readonly taskContracts?: Pick<TaskContractService, 'list' | 'get' | 'create'> &
+    Partial<Pick<TaskContractService, 'getDocument'>>;
+  readonly guidedPreparation?: {
+    execute: GuidedPreparationService['execute'];
+    create?: GuidedPreparationService['create'];
+    getState?: GuidedPreparationService['getState'];
+    listMessages?: GuidedPreparationService['listMessages'];
+    listSources?: GuidedPreparationService['listSources'];
+  };
   readonly getTaskDetail?: (contractId: string) => Promise<WebTaskDetailDto>;
   readonly listMessages?: (
     contractId: string,
@@ -292,20 +299,21 @@ export async function handleWebApi(
         constraints: [],
         outOfScope: [],
       };
-      return ok(
-        201,
-        toWebTaskDto(await api.taskContracts.create({ contractId: input.contractId, brief })),
-      );
+      const task = await api.taskContracts.create({ contractId: input.contractId, brief });
+      if (api.guidedPreparation?.create) await api.guidedPreparation.create(input.contractId);
+      return ok(201, toWebTaskDto(task));
     }
     const messagesTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/messages$/)?.[1];
     if (messagesTaskId && request.method === 'GET') {
       if (!api.listMessages) return unavailable();
-      return ok(200, await api.listMessages(messagesTaskId));
+      const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
+      return ok(200, await api.listMessages(messagesTaskId, afterSequence || undefined));
     }
     const sourcesTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/sources$/)?.[1];
     if (sourcesTaskId && request.method === 'GET') {
       if (!api.listSources) return unavailable();
-      return ok(200, await api.listSources(sourcesTaskId));
+      const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
+      return ok(200, await api.listSources(sourcesTaskId, afterSequence || undefined));
     }
     if (taskId && request.method === 'GET') {
       if (api.getTaskDetail) return ok(200, await api.getTaskDetail(taskId));

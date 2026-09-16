@@ -49,6 +49,12 @@ export interface ExecutionHostClient {
       request: GuidedPreparationOperationRequest,
       options?: { signal?: AbortSignal },
     ): Promise<GuidedPreparationRequestRecord>;
+    create(contractId: string): Promise<import('./guided-preparation.js').GuidedPreparationState>;
+    getState(
+      contractId: string,
+    ): Promise<import('./guided-preparation.js').GuidedPreparationState | undefined>;
+    listMessages: NonNullable<GuidedPreparationService['listMessages']>;
+    listSources: NonNullable<GuidedPreparationService['listSources']>;
   };
   start(request: ExecutionStartRequest): Promise<ExecutionStartResult>;
   readonly taskExecutions?: {
@@ -299,7 +305,25 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       closed ? 'closed' : closing ? 'closing' : activeOperation ? 'busy' : 'idle',
     start,
     cancel,
-    ...(options.guidedPreparation ? { guidedPreparation: { execute: startPreparation } } : {}),
+    ...(options.guidedPreparation
+      ? {
+          guidedPreparation: {
+            execute: startPreparation,
+            create: (contractId: string) =>
+              admitQuery(() => options.guidedPreparation!.service.create!(contractId)),
+            getState: (contractId: string) =>
+              admitQuery(() => options.guidedPreparation!.service.getState!(contractId)),
+            listMessages: (contractId: string, afterSequence?: number) =>
+              admitQuery(() =>
+                options.guidedPreparation!.service.listMessages!(contractId, afterSequence),
+              ),
+            listSources: (contractId: string, afterSequence?: number) =>
+              admitQuery(() =>
+                options.guidedPreparation!.service.listSources!(contractId, afterSequence),
+              ),
+          },
+        }
+      : {}),
     ...(options.guidedExecution
       ? {
           taskExecutions: {

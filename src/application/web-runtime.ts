@@ -37,6 +37,7 @@ export interface PersonalWebRuntimeOptions {
 export interface PersonalWebRuntime {
   listProjects(): Promise<ProjectCatalogEntry[]>;
   getActiveProject(): ProjectCatalogEntry | undefined;
+  getActiveApplication(): ActiveProjectRuntime['context']['application'] | undefined;
   getActiveHost(): ExecutionHost | undefined;
   selectProject(projectId: string): Promise<ProjectCatalogEntry>;
   closeActiveProject(): Promise<void>;
@@ -51,6 +52,7 @@ export function createPersonalWebRuntime(options: PersonalWebRuntimeOptions): Pe
   return {
     listProjects: async () => (await options.catalog.list()).projects,
     getActiveProject: () => active?.project,
+    getActiveApplication: () => active?.context.application,
     getActiveHost: () => active?.host,
     selectProject,
     closeActiveProject: async () => {

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { createApiClient, createRequestId, type LauncherSettings, type Task } from './api.js';
+import { createApiClient, type LauncherSettings, type Task } from './api.js';
 import { Setup } from './Setup.js';
 import { Settings } from './Settings.js';
 import { Projects } from './Projects.js';
 import { Devices } from './Devices.js';
 import { TransferWizard } from './TransferWizard.js';
+import { TaskCreate } from './TaskCreate.js';
+import { TaskPreparation } from './TaskPreparation.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -131,6 +133,15 @@ export function App(): ReactElement {
           {settings && <Projects api={api} onProjectChanged={refreshWorkspace} />}
           {settings && <Devices api={api} />}
           {settings && <TransferWizard api={api} />}
+          {settings && (
+            <TaskCreate
+              api={api}
+              onCreated={async (task) => {
+                window.location.hash = task.id;
+                await refreshTasks();
+              }}
+            />
+          )}
           <section className="workspace-grid">
             <TaskList tasks={tasks} onRefresh={refreshTasks} />
             {selected ? (
@@ -213,62 +224,7 @@ function TaskPanel(props: {
   api: ReturnType<typeof createApiClient>;
   onRefresh: () => Promise<void>;
 }): ReactElement {
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [operation, setOperation] = useState<string>();
-  const submit = async (): Promise<void> => {
-    if (!message.trim() || busy) return;
-    setBusy(true);
-    try {
-      const result = await props.api.execute(props.task.id, {
-        schemaVersion: 1,
-        requestId: createRequestId(),
-        contractId: props.task.id,
-        expectedRevision: props.task.revision,
-        expectedPreparationRevision: 1,
-        kind: 'reply',
-        message,
-        sourceIds: [],
-      });
-      setOperation(result.status);
-      setMessage('');
-      await props.onRefresh();
-    } catch (cause) {
-      setOperation(messageOf(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <section className="task-panel">
-      <p className="eyebrow">
-        {props.task.phase} · revision {props.task.revision}
-      </p>
-      <h2>Task {props.task.id}</h2>
-      <p>
-        Readiness: <strong>{props.task.readiness}</strong>
-      </p>
-      <p>Brief version {props.task.brief.version}. Plans and TODOs remain versioned artifacts.</p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <label htmlFor="task-message">Preparation message</label>
-        <textarea
-          id="task-message"
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          disabled={busy}
-        />
-        <button type="submit" disabled={busy || !message.trim()}>
-          {busy ? 'Sending...' : 'Send message'}
-        </button>
-      </form>
-      {operation && <p role="status">Operation: {operation}</p>}
-    </section>
-  );
+  return <TaskPreparation api={props.api} task={props.task} onRefresh={props.onRefresh} />;
 }
 
 function getTaskFromHash(): string | undefined {

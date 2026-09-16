@@ -3,6 +3,7 @@ import type { AgentDriver } from '../core/agent.js';
 import type { AgentProfile } from '../core/agent-profile.js';
 import type {
   GuidedPreparationBeginRequest,
+  GuidedPreparationMessage,
   GuidedPreparationOperationRequest,
   GuidedPreparationRequestRecord,
   GuidedPreparationState,
@@ -33,17 +34,29 @@ export interface GuidedPreparationOperationsContext {
 }
 
 export interface GuidedPreparationService {
+  create?(contractId: string): Promise<GuidedPreparationState>;
   execute(
     request: GuidedPreparationOperationRequest,
     options?: { signal?: AbortSignal; ownerToken?: string },
   ): Promise<GuidedPreparationRequestRecord>;
   confirmBrief(request: GuidedPreparationOperationRequest): Promise<GuidedPreparationState>;
+  getState?(contractId: string): Promise<GuidedPreparationState | undefined>;
+  listMessages?(
+    contractId: string,
+    afterSequence?: number,
+  ): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }>;
+  listSources?(
+    contractId: string,
+    afterSequence?: number,
+  ): Promise<{ items: GuidedPreparationSource[]; nextCursor?: number }>;
 }
 
 export function createGuidedPreparationService(
   context: GuidedPreparationOperationsContext,
 ): GuidedPreparationService {
   return {
+    create: (contractId) =>
+      context.store.createGuidedPreparation({ workspace: context.workspace, contractId }),
     execute: (request, options) => executeRequest(context, request, options),
     confirmBrief: async (request) => {
       const operation = parseGuidedPreparationOperation(request);
@@ -59,6 +72,19 @@ export function createGuidedPreparationService(
         sourceIds: operation.sourceIds,
       });
     },
+    getState: (contractId) => context.store.getGuidedPreparation(context.workspace, contractId),
+    listMessages: (contractId, afterSequence) =>
+      context.store.listGuidedPreparationMessages({
+        workspace: context.workspace,
+        contractId,
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+      }),
+    listSources: (contractId, afterSequence) =>
+      context.store.listGuidedPreparationSources({
+        workspace: context.workspace,
+        contractId,
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+      }),
   };
 }
 
