@@ -25,6 +25,7 @@ const api = {
     listDirectory: async () => ({
       rootId: 'root-1',
       segments: [],
+      hasBinaflowConfig: false,
       items: [{ name: 'Project', segments: ['Project'], hasBinaflowConfig: true }],
       nextOffset: null,
     }),

@@ -43,6 +43,7 @@ export interface ProjectRootCandidate {
 export interface ProjectDirectoryListing {
   rootId: string;
   segments: string[];
+  hasBinaflowConfig: boolean;
   items: ProjectDirectoryItem[];
   nextOffset: number | null;
 }
@@ -238,6 +239,7 @@ export async function listProjectDirectory(
   return {
     rootId,
     segments: [...segments],
+    hasBinaflowConfig: await fileExists(resolve(directoryPath, '.binaflow', 'config.json')),
     items: page,
     nextOffset: offset + limit < items.length ? offset + limit : null,
   };

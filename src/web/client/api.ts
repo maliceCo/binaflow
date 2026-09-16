@@ -192,7 +192,11 @@ export interface ApiClient {
     rootId: string,
     segments: string[],
     offset?: number,
-  ): Promise<{ items: ProjectDirectory[]; nextOffset: number | null }>;
+  ): Promise<{
+    hasBinaflowConfig: boolean;
+    items: ProjectDirectory[];
+    nextOffset: number | null;
+  }>;
   registerProject(rootId: string, segments: string[], projectId?: string): Promise<ProjectSummary>;
   getActiveProject(): Promise<ProjectSummary | null>;
   selectProject(projectId: string): Promise<ProjectSummary>;
@@ -323,9 +327,11 @@ export function createApiClient(): ApiClient {
     async listProjectDirectory(rootId, segments, offset = 0) {
       const query = new URLSearchParams({ rootId, offset: String(offset), limit: '50' });
       for (const segment of segments) query.append('segment', segment);
-      const result = await request<{ items: ProjectDirectory[]; nextOffset: number | null }>(
-        `/api/v1/project-directories?${query.toString()}`,
-      );
+      const result = await request<{
+        hasBinaflowConfig: boolean;
+        items: ProjectDirectory[];
+        nextOffset: number | null;
+      }>(`/api/v1/project-directories?${query.toString()}`);
       return result.data;
     },
     async registerProject(rootId, segments, projectId) {

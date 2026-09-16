@@ -8,7 +8,7 @@ describe('web project client', () => {
     const html = renderToStaticMarkup(<Projects api={{} as ApiClient} />);
     expect(html).toContain('Projects');
     expect(html).toContain('Add a project');
-    expect(html).toContain('Server folder');
+    expect(html).toContain('Authorized folder');
     expect(html).not.toContain('workspacePath');
   });
 });

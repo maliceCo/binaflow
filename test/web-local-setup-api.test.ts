@@ -51,6 +51,7 @@ describe('local setup roots API', () => {
         listDirectory: async () => ({
           rootId: candidateId,
           segments: [],
+          hasBinaflowConfig: false,
           items: [],
           nextOffset: null,
         }),

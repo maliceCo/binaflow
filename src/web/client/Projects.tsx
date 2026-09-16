@@ -41,7 +41,7 @@ export function Projects(props: {
   }
 
   return (
-    <section className="projects-panel" aria-labelledby="projects-title">
+    <section className="projects-panel panel" aria-labelledby="projects-title">
       <div className="section-heading">
         <h2 id="projects-title">Projects</h2>
         <button type="button" onClick={() => void refresh()}>
@@ -51,15 +51,17 @@ export function Projects(props: {
       {projects.length === 0 ? (
         <p>No projects registered.</p>
       ) : (
-        <ul>
+        <ul className="project-list">
           {projects.map((project) => (
-            <li key={project.id}>
+            <li key={project.id} className={project.id === activeId ? 'is-active' : ''}>
               <span>
-                {project.name} ({project.ownership})
+                <strong>{project.name}</strong>
+                <small>{project.ownership}</small>
               </span>
               <button
                 type="button"
                 onClick={() => void select(project.id)}
+                className={project.id === activeId ? 'button-success' : 'button-secondary'}
                 disabled={project.id === activeId}
               >
                 {project.id === activeId ? 'Active' : 'Open'}

@@ -69,6 +69,10 @@ describe('project catalog', () => {
         deviceId,
       ),
     ).resolves.toMatchObject({ workspacePath: workspace });
+    const { listProjectDirectory } = await import('../src/web/project-catalog.js');
+    await expect(
+      listProjectDirectory([{ rootId, label: 'Project', path: workspace }], rootId),
+    ).resolves.toMatchObject({ hasBinaflowConfig: true });
     await expect(
       registerProjectFromDirectory(
         catalog,

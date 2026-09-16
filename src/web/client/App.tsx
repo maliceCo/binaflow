@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { createApiClient, type LauncherSettings, type Task } from './api.js';
+import { createApiClient, type LauncherSettings, type ProjectSummary, type Task } from './api.js';
 import { Setup } from './Setup.js';
 import { Settings } from './Settings.js';
 import { Projects } from './Projects.js';
@@ -17,6 +17,7 @@ export function App(): ReactElement {
   const [error, setError] = useState<string | undefined>();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [settings, setSettings] = useState<LauncherSettings>();
+  const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedId, setSelectedId] = useState(() => getTaskFromHash());
 
@@ -54,16 +55,18 @@ export function App(): ReactElement {
       const nextSettings = await api.getSettings();
       setSettings(nextSettings);
       if (nextSettings.setupRequired) {
+        setActiveProject(null);
         setTasks([]);
         return;
       }
-      const activeProject = await api.getActiveProject();
-      if (activeProject) await refreshTasks();
+      const nextActiveProject = await api.getActiveProject();
+      setActiveProject(nextActiveProject);
+      if (nextActiveProject) await refreshTasks();
       else setTasks([]);
-    } catch (cause) {
+    } catch {
       setSettings(undefined);
-      setTasks([]);
-      setError(messageOf(cause));
+      setActiveProject(null);
+      await refreshTasks();
     }
   }
 
@@ -95,6 +98,7 @@ export function App(): ReactElement {
   }
 
   const selected = tasks.find((task) => task.id === selectedId);
+  const workspaceReady = activeProject !== null || settings === undefined;
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -108,6 +112,7 @@ export function App(): ReactElement {
             await api.logout();
             setAuthenticated(false);
             setSettings(undefined);
+            setActiveProject(null);
           }}
         >
           Log out
@@ -128,36 +133,90 @@ export function App(): ReactElement {
           }}
         />
       ) : (
-        <>
-          {settings && (
-            <button type="button" onClick={() => setShowSettings((visible) => !visible)}>
-              {showSettings ? 'Hide settings' : 'Settings'}
-            </button>
-          )}
+        <div className="app-content">
+          <div className="app-toolbar">
+            <div>
+              <strong>
+                {activeProject?.name ??
+                  (settings === undefined ? 'Configured workspace' : 'No active project')}
+              </strong>
+              <span>{workspaceReady ? 'Workspace ready' : 'Open a project to begin'}</span>
+            </div>
+            {settings && (
+              <button
+                className="button-secondary"
+                type="button"
+                onClick={() => setShowSettings((visible) => !visible)}
+              >
+                {showSettings ? 'Close settings' : 'Server settings'}
+              </button>
+            )}
+          </div>
           {showSettings && settings && (
             <Settings api={api} settings={settings} onSaved={setSettings} />
           )}
-          {settings && <Projects api={api} onProjectChanged={refreshWorkspace} />}
-          {settings && <Devices api={api} />}
-          {settings && <TransferWizard api={api} />}
           {settings && (
-            <TaskCreate
-              api={api}
-              onCreated={async (task) => {
-                window.location.hash = task.id;
-                await refreshTasks();
-              }}
-            />
+            <section className="flow-section" aria-labelledby="project-step-title">
+              <div className="flow-heading">
+                <span className="step-number">1</span>
+                <div>
+                  <p className="eyebrow">Workspace</p>
+                  <h2 id="project-step-title">Choose a project</h2>
+                  <p>Register a Binaflow folder, then open it to load its tasks.</p>
+                </div>
+              </div>
+              <Projects api={api} onProjectChanged={refreshWorkspace} />
+            </section>
           )}
-          <section className="workspace-grid">
-            <TaskList tasks={tasks} onRefresh={refreshTasks} />
-            {selected ? (
-              <TaskPanel task={selected} api={api} onRefresh={refreshTasks} />
-            ) : (
-              <p>Select a task to continue.</p>
-            )}
-          </section>
-        </>
+          {!workspaceReady && (
+            <div className="empty-state" role="status">
+              <strong>No project is open.</strong>
+              <p>Complete step 1 before creating or running tasks.</p>
+            </div>
+          )}
+          {workspaceReady && (
+            <section className="flow-section" aria-labelledby="task-step-title">
+              <div className="flow-heading">
+                <span className="step-number">2</span>
+                <div>
+                  <p className="eyebrow">Objective</p>
+                  <h2 id="task-step-title">Create or continue a task</h2>
+                  <p>Tasks move through brief, plan, TODO, execution, and review.</p>
+                </div>
+              </div>
+              <TaskCreate
+                api={api}
+                onCreated={async (task) => {
+                  window.location.hash = task.id;
+                  await refreshTasks();
+                }}
+              />
+              <section className="workspace-grid">
+                <TaskList tasks={tasks} onRefresh={refreshTasks} />
+                {selected ? (
+                  <TaskPanel task={selected} api={api} onRefresh={refreshTasks} />
+                ) : (
+                  <div className="empty-state compact">
+                    <strong>Select a task</strong>
+                    <p>Choose one from the list to prepare and execute it.</p>
+                  </div>
+                )}
+              </section>
+            </section>
+          )}
+          {settings && (
+            <details className="advanced-tools">
+              <summary>Advanced: devices and project handoff</summary>
+              <p className="muted">
+                Pairing and handoff are separate from the local task workflow.
+              </p>
+              <div className="tools-grid">
+                <Devices api={api} />
+                <TransferWizard api={api} />
+              </div>
+            </details>
+          )}
+        </div>
       )}
     </main>
   );
