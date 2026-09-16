@@ -38,6 +38,8 @@ export interface PeerAuthOptions {
   maxAttempts?: number;
   maxClockSkewMs?: number;
   allowExperimentalHttpOrigin?: boolean;
+  peers?: readonly DeviceRecord[];
+  persistPeers?: (peers: readonly DeviceRecord[]) => void;
 }
 
 interface PendingPairing {
@@ -50,7 +52,8 @@ export class PeerAuth {
   readonly deviceId: string;
   private readonly pending = new Map<string, PendingPairing>();
   private readonly peers = new Map<string, DeviceRecord>();
-  private readonly usedNonces = new Set<string>();
+  private readonly usedNonces = new Map<string, number>();
+  private readonly persistPeers: ((peers: readonly DeviceRecord[]) => void) | undefined;
   private readonly now: () => number;
   private readonly randomCode: () => string;
   private readonly pairingTtlMs: number;
@@ -63,6 +66,8 @@ export class PeerAuth {
     options: PeerAuthOptions = {},
   ) {
     this.deviceId = identity.deviceId;
+    this.persistPeers = options.persistPeers;
+    for (const peer of options.peers ?? []) this.peers.set(peer.deviceId, parseDeviceRecord(peer));
     this.now = options.now ?? Date.now;
     this.randomCode = options.randomCode ?? (() => randomBytes(4).toString('hex'));
     this.pairingTtlMs = options.pairingTtlMs ?? 5 * 60 * 1000;
@@ -72,6 +77,7 @@ export class PeerAuth {
   }
 
   beginPairing(): PairingOffer {
+    this.prune(this.now());
     const pairingId = randomBytes(16).toString('hex');
     const code = this.randomCode();
     const expiresAt = this.now() + this.pairingTtlMs;
@@ -91,6 +97,7 @@ export class PeerAuth {
     publicKey: string;
     certificateFingerprint: string;
   }): PairingAnswer {
+    this.prune(this.now());
     const pending = this.pending.get(input.pairingId);
     if (!pending || pending.expiresAt < this.now()) {
       this.pending.delete(input.pairingId);
@@ -134,6 +141,7 @@ export class PeerAuth {
       throw new Error('Peer certificate fingerprint changed');
     }
     this.peers.set(parsed.deviceId, parsed);
+    this.persistPeers?.([...this.peers.values()]);
     return parsed;
   }
 
@@ -149,6 +157,7 @@ export class PeerAuth {
       status: 'revoked',
       revokedAt: new Date(this.now()).toISOString(),
     });
+    this.persistPeers?.([...this.peers.values()]);
   }
 
   signRequest(peerId: string, body: unknown): SignedPeerRequest {
@@ -164,9 +173,11 @@ export class PeerAuth {
   }
 
   verifyRequest(request: SignedPeerRequest): unknown {
+    const timestamp = this.now();
+    this.prune(timestamp);
     const peer = this.peers.get(request.deviceId);
     if (!peer || peer.status !== 'paired') throw new Error('Peer is not paired');
-    if (Math.abs(this.now() - request.timestamp) > this.maxClockSkewMs) {
+    if (Math.abs(timestamp - request.timestamp) > this.maxClockSkewMs) {
       throw new Error('Peer request timestamp is outside the allowed window');
     }
     if (this.usedNonces.has(request.nonce)) throw new Error('Peer request was replayed');
@@ -185,8 +196,17 @@ export class PeerAuth {
       Buffer.from(request.signature, 'base64url'),
     );
     if (!valid) throw new Error('Peer request signature is invalid');
-    this.usedNonces.add(request.nonce);
+    this.usedNonces.set(request.nonce, request.timestamp + this.maxClockSkewMs);
     return request.body;
+  }
+
+  private prune(timestamp: number): void {
+    for (const [pairingId, pairing] of this.pending) {
+      if (pairing.expiresAt <= timestamp) this.pending.delete(pairingId);
+    }
+    for (const [nonce, expiresAt] of this.usedNonces) {
+      if (expiresAt <= timestamp) this.usedNonces.delete(nonce);
+    }
   }
 }
 

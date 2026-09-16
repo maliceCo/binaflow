@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDeviceRecord, loadOrCreateDeviceIdentity } from '../src/web/device-identity.js';
+import { FileDeviceStore } from '../src/web/device-store.js';
 import { PeerAuth } from '../src/web/peer-auth.js';
 
 const directories: string[] = [];
@@ -53,6 +54,30 @@ describe('peer authentication', () => {
     const late = authB.signRequest(identityA.deviceId, { transferId: 'late' });
     now += 100_000;
     expect(() => authA.verifyRequest(late)).toThrow(/timestamp/i);
+  });
+
+  it('persists paired and revoked peers across auth restarts', async () => {
+    const root = await mkdtemp(joinTemp());
+    directories.push(root);
+    const identity = await loadOrCreateDeviceIdentity({ directory: `${root}/local` });
+    const peer = await loadOrCreateDeviceIdentity({ directory: `${root}/peer` });
+    const store = new FileDeviceStore(`${root}/devices.json`);
+    const auth = new PeerAuth(identity, { persistPeers: (peers) => store.save(peers) });
+    const record = createDeviceRecord({
+      identity: peer,
+      name: 'Peer',
+      origin: 'https://peer.test',
+      certificateFingerprint: fingerprint,
+    });
+    auth.confirmPeerFingerprint(record);
+    const reloaded = new PeerAuth(identity, {
+      peers: store.load(),
+      persistPeers: (peers) => store.save(peers),
+    });
+    expect(reloaded.listPeers()).toEqual([record]);
+    reloaded.revokePeer(record.deviceId);
+    const revoked = new PeerAuth(identity, { peers: store.load() });
+    expect(revoked.listPeers()[0]).toMatchObject({ deviceId: record.deviceId, status: 'revoked' });
   });
 
   it('expires, limits, and revokes pairing', async () => {

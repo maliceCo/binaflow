@@ -6,6 +6,7 @@ import { createExecutionHost } from '../../application/execution-host.js';
 import { openApplicationContext } from '../../application/runtime.js';
 import { loadWebConfig } from '../../web/config.js';
 import { loadOrCreateDeviceIdentity } from '../../web/device-identity.js';
+import { FileDeviceStore } from '../../web/device-store.js';
 import {
   FileProjectCatalog,
   listProjectDirectory,
@@ -236,7 +237,10 @@ async function createLauncherResources(
   const identity = await loadOrCreateDeviceIdentity({
     directory: join(dirname(settingsPath), 'device'),
   });
+  const deviceStore = new FileDeviceStore(join(dirname(settingsPath), 'devices.json'));
   const peerAuth = new PeerAuth(identity, {
+    peers: deviceStore.load(),
+    persistPeers: (peers) => deviceStore.save(peers),
     allowExperimentalHttpOrigin:
       settingsController.get().peerTransport?.mode === 'lan-experimental',
   });
