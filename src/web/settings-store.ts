@@ -26,7 +26,10 @@ export interface SaveWebSettingsOptions {
 
 export interface WebSettingsController {
   get(): LauncherSettings;
-  update(value: unknown): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+  update(
+    value: unknown,
+    tlsMaterial?: { certificatePem: string; keyPem: string },
+  ): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   importTlsMaterial(
     certificatePem: string,
     keyPem: string,
@@ -183,24 +186,41 @@ export function createWebSettingsController(
   let sourceHash = initialSourceHash;
   return {
     get: () => current,
-    update: async (value) => {
-      const next = validateWebSettingsPreview(value);
+    update: async (value, tlsMaterial) => {
+      const validated = validateWebSettingsPreview(value);
       const previous = current;
-      const nextHash = await saveWebSettingsAtomically(next, {
-        path,
-        ...(sourceHash === undefined ? {} : { expectedSourceHash: sourceHash }),
-      });
-      current = next;
-      sourceHash = nextHash;
-      return {
-        settings: current,
-        restartRequired:
-          previous.web.host !== next.web.host ||
-          previous.web.port !== next.web.port ||
-          previous.web.origin !== next.web.origin ||
-          JSON.stringify(previous.web.tls) !== JSON.stringify(next.web.tls) ||
-          JSON.stringify(previous.peerTransport) !== JSON.stringify(next.peerTransport),
-      };
+      let next = validated;
+      let importedTls: { certFile: string; keyFile: string } | undefined;
+      if (tlsMaterial) {
+        importedTls = await importTlsMaterial({
+          ...tlsMaterial,
+          directory: dirname(path),
+        });
+        next = { ...validated, web: { ...validated.web, tls: importedTls } };
+      }
+      try {
+        const nextHash = await saveWebSettingsAtomically(next, {
+          path,
+          ...(sourceHash === undefined ? {} : { expectedSourceHash: sourceHash }),
+        });
+        current = next;
+        sourceHash = nextHash;
+        return {
+          settings: current,
+          restartRequired:
+            previous.web.host !== next.web.host ||
+            previous.web.port !== next.web.port ||
+            previous.web.origin !== next.web.origin ||
+            JSON.stringify(previous.web.tls) !== JSON.stringify(next.web.tls) ||
+            JSON.stringify(previous.peerTransport) !== JSON.stringify(next.peerTransport),
+        };
+      } catch (error) {
+        if (importedTls) {
+          await rm(importedTls.certFile, { force: true });
+          await rm(importedTls.keyFile, { force: true });
+        }
+        throw error;
+      }
     },
     importTlsMaterial: (certificatePem, keyPem) =>
       importTlsMaterial({ certificatePem, keyPem, directory: dirname(path) }),

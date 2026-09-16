@@ -40,6 +40,7 @@ export interface WebSettingsCapabilities {
   readonly get: () => LauncherSettings;
   readonly update: (
     value: unknown,
+    tlsMaterial?: { certificatePem: string; keyPem: string },
   ) => Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   readonly importTlsMaterial: (
     certificatePem: string,
@@ -267,13 +268,14 @@ export async function handleWebApi(
         return error(403, 'forbidden', 'Settings changes require a local connection');
       }
       const nextSettings = mergeSettingsUpdate(api.settings.get(), request.body);
+      const tlsMaterial = parseSettingsTlsMaterial(request.body);
       if (!nextSettings.setupRequired && nextSettings.projectRoots.length === 0) {
         throw new WebContractError(
           'invalid-input',
           'At least one project root is required before setup can finish',
         );
       }
-      const result = await api.settings.update(nextSettings);
+      const result = await api.settings.update(nextSettings, tlsMaterial);
       return ok(200, {
         settings: toWebLauncherSettingsDto(result.settings),
         restartRequired: result.restartRequired,
@@ -285,12 +287,8 @@ export async function handleWebApi(
         return error(403, 'forbidden', 'Settings changes require a local connection');
       }
       const body = parseTlsUpload(request.body);
-      const files = await api.settings.importTlsMaterial(body.certificatePem, body.keyPem);
       const current = api.settings.get();
-      const result = await api.settings.update({
-        ...current,
-        web: { ...current.web, tls: files },
-      });
+      const result = await api.settings.update(current, body);
       return ok(200, {
         settings: toWebLauncherSettingsDto(result.settings),
         restartRequired: result.restartRequired,
@@ -422,6 +420,13 @@ function isLoopbackSettingsRequest(request: WebApiRequest): boolean {
   return request.remoteAddress !== undefined && isLoopbackAddress(request.remoteAddress);
 }
 
+function parseSettingsTlsMaterial(
+  value: unknown,
+): { certificatePem: string; keyPem: string } | undefined {
+  if (!isRecordValue(value) || value.tlsMaterial === undefined) return undefined;
+  return parseTlsUpload(value.tlsMaterial);
+}
+
 function mergeSettingsUpdate(current: LauncherSettings, value: unknown): LauncherSettings {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new WebContractError('invalid-input', 'Invalid settings update');
@@ -430,7 +435,14 @@ function mergeSettingsUpdate(current: LauncherSettings, value: unknown): Launche
   if (
     Object.keys(record).some(
       (key) =>
-        !['deviceName', 'web', 'projectRoots', 'setupRequired', 'peerTransport'].includes(key),
+        ![
+          'deviceName',
+          'web',
+          'projectRoots',
+          'setupRequired',
+          'peerTransport',
+          'tlsMaterial',
+        ].includes(key),
     )
   ) {
     throw new WebContractError('invalid-input', 'Unknown settings field');

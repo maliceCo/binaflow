@@ -59,17 +59,16 @@ export function Settings(props: {
       if (props.setup && props.settings.projectRoots.length === 0) {
         throw new Error('Authorize at least one project root before saving setup');
       }
+      if ((certificatePem && !keyPem) || (!certificatePem && keyPem)) {
+        throw new Error('Provide both TLS fields');
+      }
       const updated = await props.api.updateSettings({
         setupRequired: false,
         deviceName,
         web: { host, port: Number(port), origin },
+        ...(certificatePem && keyPem ? { tlsMaterial: { certificatePem, keyPem } } : {}),
       });
-      let next = updated.settings;
-      if (certificatePem || keyPem) {
-        if (!certificatePem || !keyPem) throw new Error('Provide both TLS fields');
-        next = await props.api.uploadTls(certificatePem, keyPem);
-      }
-      props.onSaved(next);
+      props.onSaved(updated.settings);
       setCertificatePem('');
       setKeyPem('');
       setMessage(

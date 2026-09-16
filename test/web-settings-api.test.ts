@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -115,5 +115,27 @@ describe('web settings API', () => {
         api,
       ),
     ).resolves.toMatchObject({ status: 413, body: { error: { code: 'too-large' } } });
+  });
+
+  it('does not persist settings when combined TLS material is invalid', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-settings-api-'));
+    directories.push(directory);
+    const path = join(directory, 'web.json');
+    const controller = createWebSettingsController(path, defaultWebSettings());
+    const response = await handleWebApi(
+      {
+        method: 'PUT',
+        path: '/api/v1/settings',
+        remoteAddress: '127.0.0.1',
+        body: {
+          deviceName: 'Should not persist',
+          tlsMaterial: { certificatePem: 'bad', keyPem: 'bad' },
+        },
+      },
+      { settings: controller },
+    );
+    expect(response).toMatchObject({ status: 422 });
+    expect(controller.get().deviceName).toBe('Binaflow');
+    await expect(stat(path)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
