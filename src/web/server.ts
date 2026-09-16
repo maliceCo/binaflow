@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -7,7 +7,7 @@ import {
 } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { WebConfig } from './config.js';
 import { createWebAuth, type WebAuth, type WebSession } from './auth.js';
 import { handleWebApi, type WebApiCapabilities } from './routes.js';
@@ -314,11 +314,16 @@ function header(request: IncomingMessage, name: string): string | undefined {
 }
 
 function loadAssets(): WebServerAssets {
-  const root = resolve(fileURLToPath(new URL('../../web/', import.meta.url)));
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const root = [
+    resolve(moduleDirectory, '../../web'),
+    resolve(moduleDirectory, '../../dist/web'),
+  ].find((candidate) => existsSync(join(candidate, 'index.html')));
+  if (!root) throw new Error('Binaflow web assets are missing; run `pnpm run build:web` first');
   return {
-    index: readFileSync(resolve(root, 'index.html'), 'utf8'),
-    app: readFileSync(resolve(root, 'app.js'), 'utf8'),
-    css: readFileSync(resolve(root, 'styles.css'), 'utf8'),
+    index: readFileSync(join(root, 'index.html'), 'utf8'),
+    app: readFileSync(join(root, 'app.js'), 'utf8'),
+    css: readFileSync(join(root, 'styles.css'), 'utf8'),
   };
 }
 
