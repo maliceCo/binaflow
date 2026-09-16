@@ -100,6 +100,48 @@ export interface DeviceSummary {
   status: 'paired' | 'revoked';
 }
 
+export interface ExecutionPreview {
+  digest: string;
+  todoFileName: 'TODO.md';
+  gitClean: boolean;
+  blockerCount: number;
+}
+
+export interface ExecutionArtifact {
+  id: string;
+  runId: string;
+  stepId: string;
+  name: string;
+  kind: 'json' | 'text';
+  mediaType: string;
+  sizeBytes: number;
+}
+
+export interface ExecutionProgress {
+  runId: string;
+  contractId: string;
+  revision: number;
+  stage: 'execution' | 'changes-review';
+  status: string;
+  phases: Array<{
+    id: string;
+    ordinal: number;
+    title: string;
+    status: string;
+    tasks: Array<{
+      id: string;
+      status: string;
+      attempt: number;
+      resultArtifact?: ExecutionArtifact;
+      verificationArtifact?: ExecutionArtifact;
+    }>;
+    commitSha?: string;
+    noChanges?: boolean;
+  }>;
+  activeBlock: { type: string; reason: string; evidence: ExecutionArtifact[] } | null;
+  nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
+}
+
 export interface TransferStatus {
   transferId: string;
   projectId: string;
@@ -152,6 +194,27 @@ export interface ApiClient {
   getTransfer(transferId: string): Promise<TransferStatus>;
   resumeTransfer(transferId: string): Promise<TransferStatus>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
+  previewTaskExecution(
+    taskId: string,
+    expectedRevision: number,
+    todoVersion: number,
+  ): Promise<ExecutionPreview>;
+  startTaskExecution(input: {
+    requestId: string;
+    contractId: string;
+    expectedRevision: number;
+    todoVersion: number;
+    previewDigest: string;
+  }): Promise<ExecutionProgress>;
+  getTaskExecution(taskId: string): Promise<ExecutionProgress | null>;
+  cancelTaskExecution(runId: string, reason: string): Promise<ExecutionProgress>;
+  resumeTaskExecution(input: {
+    runId: string;
+    expectedRevision: number;
+    previewDigest: string;
+    decision: string;
+    reason: string;
+  }): Promise<ExecutionProgress>;
 }
 
 export function createApiClient(): ApiClient {
@@ -323,6 +386,48 @@ export function createApiClient(): ApiClient {
         `/api/v1/tasks/${encodeURIComponent(taskId)}/operations`,
         'POST',
         { operation },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async previewTaskExecution(taskId, expectedRevision, todoVersion) {
+      const result = await request<ExecutionPreview>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/execution/preview`,
+        'POST',
+        { expectedRevision, todoVersion },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async startTaskExecution(input) {
+      const result = await request<ExecutionProgress>(
+        `/api/v1/tasks/${encodeURIComponent(input.contractId)}/execution`,
+        'POST',
+        input,
+        csrfToken,
+      );
+      return result.data;
+    },
+    async getTaskExecution(taskId) {
+      const result = await request<ExecutionProgress | null>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/execution`,
+      );
+      return result.data;
+    },
+    async cancelTaskExecution(runId, reason) {
+      const result = await request<ExecutionProgress>(
+        `/api/v1/executions/${encodeURIComponent(runId)}/cancel`,
+        'POST',
+        { reason },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async resumeTaskExecution(input) {
+      const result = await request<ExecutionProgress>(
+        `/api/v1/executions/${encodeURIComponent(input.runId)}/resume`,
+        'POST',
+        input,
         csrfToken,
       );
       return result.data;

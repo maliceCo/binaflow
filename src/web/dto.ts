@@ -1,6 +1,114 @@
 import type { GuidedPreparationRequestRecord } from '../application/guided-preparation.js';
+import type { GuidedExecutionProgress } from '../application/guided-execution.js';
 import type { TaskContractView } from '../application/task-contract.js';
 import type { WebOperationDto, WebTaskDto } from './contracts.js';
+
+export interface WebExecutionPreviewDto {
+  digest: string;
+  todoFileName: 'TODO.md';
+  gitClean: boolean;
+  blockerCount: number;
+}
+
+export interface WebArtifactDto {
+  id: string;
+  runId: string;
+  stepId: string;
+  name: string;
+  kind: 'json' | 'text';
+  mediaType: string;
+  sizeBytes: number;
+}
+
+export interface WebGuidedExecutionProgressDto {
+  runId: string;
+  contractId: string;
+  revision: number;
+  stage: 'execution' | 'changes-review';
+  status: string;
+  phases: Array<{
+    id: string;
+    ordinal: number;
+    title: string;
+    status: string;
+    tasks: Array<{
+      id: string;
+      phaseId: string;
+      ordinal: number;
+      status: string;
+      attempt: number;
+      resultArtifact?: WebArtifactDto;
+      verificationArtifact?: WebArtifactDto;
+    }>;
+    commitSha?: string;
+    noChanges?: boolean;
+  }>;
+  activeBlock: {
+    id: string;
+    revision: number;
+    phaseId: string;
+    taskId?: string;
+    type: string;
+    reason: string;
+    evidence: WebArtifactDto[];
+  } | null;
+  nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
+}
+
+export function toWebGuidedExecutionProgress(
+  progress: GuidedExecutionProgress,
+): WebGuidedExecutionProgressDto {
+  return {
+    runId: progress.runId,
+    contractId: progress.contractId,
+    revision: progress.revision,
+    stage: progress.stage,
+    status: progress.status,
+    phases: progress.phases.map((phase) => ({
+      id: phase.id,
+      ordinal: phase.ordinal,
+      title: phase.title,
+      status: phase.status,
+      tasks: phase.tasks.map((task) => ({
+        id: task.id,
+        phaseId: task.phaseId,
+        ordinal: task.ordinal,
+        status: task.status,
+        attempt: task.attempt,
+        ...(task.resultArtifact ? { resultArtifact: toWebArtifact(task.resultArtifact) } : {}),
+        ...(task.verificationArtifact
+          ? { verificationArtifact: toWebArtifact(task.verificationArtifact) }
+          : {}),
+      })),
+      ...(phase.commitSha ? { commitSha: phase.commitSha } : {}),
+      ...(phase.noChanges === undefined ? {} : { noChanges: phase.noChanges }),
+    })),
+    activeBlock: progress.activeBlock
+      ? {
+          id: progress.activeBlock.id,
+          revision: progress.activeBlock.revision,
+          phaseId: progress.activeBlock.phaseId,
+          ...(progress.activeBlock.taskId ? { taskId: progress.activeBlock.taskId } : {}),
+          type: progress.activeBlock.type,
+          reason: progress.activeBlock.reason,
+          evidence: progress.activeBlock.evidence.map(toWebArtifact),
+        }
+      : null,
+    nextAction: progress.nextAction,
+  };
+}
+
+function toWebArtifact(reference: import('../core/run.js').ArtifactReference): WebArtifactDto {
+  return {
+    id: reference.id,
+    runId: reference.runId,
+    stepId: reference.stepId,
+    name: reference.name,
+    kind: reference.kind,
+    mediaType: reference.mediaType,
+    sizeBytes: reference.sizeBytes,
+  };
+}
 
 export interface WebTransferDto {
   transferId: string;

@@ -101,6 +101,11 @@ export function registerWebCommand(cli: Command): void {
           if (!preparation) throw new Error('The active project has no guided preparation');
           return preparation;
         };
+        const activeExecution = () => {
+          const execution = launcherResources?.runtime.getActiveHost()?.client.taskExecutions;
+          if (!execution) throw new Error('The active project has no guided execution');
+          return execution;
+        };
         const api: WebApiCapabilities = {
           ...(settingsController ? { settings: settingsController } : {}),
           ...(launcherResources
@@ -152,6 +157,15 @@ export function registerWebCommand(cli: Command): void {
                   activePreparation().listMessages(contractId, afterSequence),
                 listSources: (contractId, afterSequence) =>
                   activePreparation().listSources(contractId, afterSequence),
+                execution: {
+                  previewStart: (request) => activeExecution().previewStart(request),
+                  previewResume: (runId) => activeExecution().previewResume(runId),
+                  get: (runId) => activeExecution().get(runId),
+                  list: (query) => activeExecution().list(query),
+                  start: (request) => activeExecution().start(request),
+                  resume: (request) => activeExecution().resume(request),
+                  cancelWaiting: (runId, reason) => activeExecution().cancelWaiting(runId, reason),
+                },
               }
             : {}),
           ...(context && host
@@ -160,7 +174,28 @@ export function registerWebCommand(cli: Command): void {
                   ? { taskContracts: context.application.taskContracts }
                   : {}),
                 ...(host.client.guidedPreparation
-                  ? { guidedPreparation: { execute: host.client.guidedPreparation.execute } }
+                  ? {
+                      guidedPreparation: {
+                        execute: host.client.guidedPreparation.execute,
+                        create: host.client.guidedPreparation.create,
+                        getState: host.client.guidedPreparation.getState,
+                        listMessages: host.client.guidedPreparation.listMessages,
+                        listSources: host.client.guidedPreparation.listSources,
+                      },
+                    }
+                  : {}),
+                ...(host.client.taskExecutions
+                  ? {
+                      execution: {
+                        previewStart: host.client.taskExecutions.previewStart,
+                        previewResume: host.client.taskExecutions.previewResume,
+                        get: host.client.taskExecutions.get,
+                        list: host.client.taskExecutions.list,
+                        start: host.client.taskExecutions.start,
+                        resume: host.client.taskExecutions.resume,
+                        cancelWaiting: host.client.taskExecutions.cancelWaiting,
+                      },
+                    }
                   : {}),
               }
             : {}),

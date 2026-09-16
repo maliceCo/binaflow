@@ -1,4 +1,9 @@
 import { isIP } from 'node:net';
+import type {
+  GuidedExecutionService,
+  GuidedResumeRequest,
+  GuidedStartRequest,
+} from '../application/guided-execution.js';
 import type { GuidedPreparationService } from '../application/guided-preparation-operations.js';
 import type { TaskContractBrief, TaskContractService } from '../application/task-contract.js';
 import {
@@ -24,6 +29,7 @@ import {
 import type { PairingOffer } from './peer-auth.js';
 import type { ProjectDirectoryListing } from './project-catalog.js';
 import {
+  toWebGuidedExecutionProgress,
   toWebOperationDto,
   toWebTaskDto,
   toWebTransferDto,
@@ -53,6 +59,16 @@ export interface WebDeviceCapabilities {
   readonly beginPairing: () => PairingOffer;
   readonly confirmPeer: (record: DeviceRecord, expectedFingerprint?: string) => DeviceRecord;
   readonly revokePeer: (deviceId: string) => void;
+}
+
+export interface WebExecutionCapabilities {
+  readonly previewStart: GuidedExecutionService['previewStart'];
+  readonly previewResume: GuidedExecutionService['previewResume'];
+  readonly get: GuidedExecutionService['get'];
+  readonly list: GuidedExecutionService['list'];
+  readonly start: GuidedExecutionService['start'];
+  readonly resume: GuidedExecutionService['resume'];
+  readonly cancelWaiting: GuidedExecutionService['cancelWaiting'];
 }
 
 export interface WebProjectRuntimeCapabilities {
@@ -94,6 +110,7 @@ export interface WebApiCapabilities {
     listMessages?: GuidedPreparationService['listMessages'];
     listSources?: GuidedPreparationService['listSources'];
   };
+  readonly execution?: WebExecutionCapabilities;
   readonly getTaskDetail?: (contractId: string) => Promise<WebTaskDetailDto>;
   readonly listMessages?: (
     contractId: string,
@@ -329,6 +346,60 @@ export async function handleWebApi(
       const result = await api.guidedPreparation.execute(input.operation);
       return ok(202, toWebOperationDto(result));
     }
+    const previewTaskId = request.path.match(
+      /^\/api\/v1\/tasks\/([^/]+)\/execution\/preview$/,
+    )?.[1];
+    if (previewTaskId && request.method === 'POST') {
+      if (!api.execution) return unavailable();
+      const input = parseExecutionPreviewRequest(request.body);
+      const preview = await api.execution.previewStart({
+        contractId: previewTaskId,
+        expectedRevision: input.expectedRevision,
+        todoVersion: input.todoVersion,
+      });
+      return ok(200, {
+        digest: preview.digest,
+        todoFileName: preview.todoMarkdown.fileName,
+        gitClean: preview.git.clean,
+        blockerCount: preview.git.changes.length,
+      });
+    }
+    const taskExecutionId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/execution$/)?.[1];
+    if (taskExecutionId && request.method === 'POST') {
+      if (!api.execution) return unavailable();
+      const input = parseExecutionStartRequest(request.body, taskExecutionId);
+      return ok(202, toWebGuidedExecutionProgress(await api.execution.start(input)));
+    }
+    if (taskExecutionId && request.method === 'GET') {
+      if (!api.execution) return unavailable();
+      const result = await api.execution.list({ contractId: taskExecutionId, limit: 1 });
+      const progress = result.items[0];
+      return ok(200, progress ? toWebGuidedExecutionProgress(progress) : null);
+    }
+    const executionId = request.path.match(/^\/api\/v1\/executions\/([^/]+)$/)?.[1];
+    if (executionId && request.method === 'GET') {
+      if (!api.execution) return unavailable();
+      return ok(200, toWebGuidedExecutionProgress(await api.execution.get(executionId)));
+    }
+    const cancelExecutionId = request.path.match(/^\/api\/v1\/executions\/([^/]+)\/cancel$/)?.[1];
+    if (cancelExecutionId && request.method === 'POST') {
+      if (!api.execution) return unavailable();
+      const reason = parseCancelReason(request.body);
+      return ok(
+        200,
+        toWebGuidedExecutionProgress(await api.execution.cancelWaiting(cancelExecutionId, reason)),
+      );
+    }
+    const resumeExecutionId = request.path.match(/^\/api\/v1\/executions\/([^/]+)\/resume$/)?.[1];
+    if (resumeExecutionId && request.method === 'POST') {
+      if (!api.execution) return unavailable();
+      return ok(
+        202,
+        toWebGuidedExecutionProgress(
+          await api.execution.resume(parseExecutionResumeRequest(request.body, resumeExecutionId)),
+        ),
+      );
+    }
     return error(404, 'unknown-target', 'Not found');
   } catch (cause) {
     return mapError(cause);
@@ -383,6 +454,110 @@ function isLoopbackAddress(address: string): boolean {
   if (isIP(address) === 4) return address === '127.0.0.1';
   return (
     isIP(address) === 6 && (address === '::1' || address.toLowerCase().startsWith('::ffff:127.'))
+  );
+}
+
+function parseExecutionPreviewRequest(value: unknown): {
+  expectedRevision: number;
+  todoVersion: number;
+} {
+  if (!isRecordValue(value) || !hasOnlyKeysValue(value, ['expectedRevision', 'todoVersion'])) {
+    throw new WebContractError('invalid-input', 'Invalid execution preview request');
+  }
+  if (!positiveIntegerValue(value.expectedRevision) || !positiveIntegerValue(value.todoVersion)) {
+    throw new WebContractError('invalid-input', 'Invalid execution preview values');
+  }
+  return { expectedRevision: value.expectedRevision, todoVersion: value.todoVersion };
+}
+
+function parseExecutionStartRequest(value: unknown, contractId: string): GuidedStartRequest {
+  if (
+    !isRecordValue(value) ||
+    !hasOnlyKeysValue(value, [
+      'requestId',
+      'contractId',
+      'expectedRevision',
+      'todoVersion',
+      'previewDigest',
+    ])
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid execution start request');
+  }
+  if (
+    value.contractId !== contractId ||
+    !isUuidValue(value.requestId) ||
+    !positiveIntegerValue(value.expectedRevision) ||
+    !positiveIntegerValue(value.todoVersion) ||
+    typeof value.previewDigest !== 'string' ||
+    !value.previewDigest
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid execution start values');
+  }
+  return {
+    requestId: value.requestId,
+    contractId,
+    expectedRevision: value.expectedRevision,
+    todoVersion: value.todoVersion,
+    previewDigest: value.previewDigest,
+  };
+}
+
+function parseExecutionResumeRequest(value: unknown, runId: string): GuidedResumeRequest {
+  if (
+    !isRecordValue(value) ||
+    !hasOnlyKeysValue(value, ['runId', 'expectedRevision', 'previewDigest', 'decision', 'reason'])
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid execution resume request');
+  }
+  const decisions = ['retry-task', 'retry-verification', 'continue', 'reconcile-commit', 'cancel'];
+  if (
+    value.runId !== runId ||
+    !positiveIntegerValue(value.expectedRevision) ||
+    typeof value.previewDigest !== 'string' ||
+    !value.previewDigest ||
+    typeof value.decision !== 'string' ||
+    !decisions.includes(value.decision) ||
+    typeof value.reason !== 'string' ||
+    !value.reason.trim()
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid execution resume values');
+  }
+  return {
+    runId,
+    expectedRevision: value.expectedRevision,
+    previewDigest: value.previewDigest,
+    decision: value.decision as GuidedResumeRequest['decision'],
+    reason: value.reason,
+  };
+}
+
+function parseCancelReason(value: unknown): string {
+  if (!isRecordValue(value) || !hasOnlyKeysValue(value, ['reason'])) {
+    throw new WebContractError('invalid-input', 'Invalid execution cancellation request');
+  }
+  if (typeof value.reason !== 'string' || !value.reason.trim()) {
+    throw new WebContractError('invalid-input', 'Cancellation reason is required');
+  }
+  return value.reason;
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeysValue(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function positiveIntegerValue(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isUuidValue(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
   );
 }
 

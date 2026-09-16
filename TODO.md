@@ -621,7 +621,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
 
 ### Fase 5C: Prioridad actual - app completa en una computadora
 
-- [ ] **Tarea 5.14: Completar onboarding local, roots y apertura de proyecto**
+- [x] **Tarea 5.14: Completar onboarding local, roots y apertura de proyecto**
   - **Archivo:** `src/web/routes.ts`, `src/web/settings-store.ts`, `src/web/project-catalog.ts`; `src/web/client/Setup.tsx`, `Settings.tsx`, `ProjectBrowser.tsx`, `Projects.tsx`, `api.ts`, `styles.css`; nuevos `test/web-local-setup-api.test.ts`, `test/web-local-setup-client.test.tsx`; ampliar `test/web-settings-store.test.ts`, `test/project-browser.test.ts`.
   - **Funciones:** listSetupRoots, listSetupDirectory, addAuthorizedProjectRoot y recorrido visual setup -> root -> proyecto -> abrir.
   - **Descripcion:** hacer utilizable el primer arranque sin JSON ni CLI auxiliar. Desde una conexion loopback, el setup lista puntos de partida detectados por el servidor mediante IDs opacos, permite navegar por segmentos, autorizar una carpeta como root, registrar un proyecto que contenga `.binaflow/config.json` y abrirlo. El browser nunca envia ni recibe paths absolutos. `setupRequired` solo pasa a false cuando nombre, configuracion web y al menos un root valido quedan persistidos; despues el usuario puede agregar/quitar roots y proyectos sin borrar archivos. Mostrar claramente proyecto activo, errores de config/dataDir/lease y necesidad de restart.
@@ -629,7 +629,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
   - **Verificacion / TDD:** primer arranque vacio, seleccionar root por referencias server-side, registrar/abrir proyecto, reload, config ausente/invalida, symlink escape, root duplicado/eliminado, lease ocupado y ninguna ruta absoluta en DTO/HTML/localStorage. Al tocar `test/web-settings-store.test.ts`, retirar su import `chmod` actualmente sin uso para restaurar lint sin cleanup lateral. `pnpm exec vitest run test/web-local-setup-api.test.ts test/web-local-setup-client.test.tsx test/web-settings-store.test.ts test/project-browser.test.ts test/web-project-lifecycle.test.ts`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: complete local launcher onboarding`
 
-- [ ] **Tarea 5.15: Completar preparacion guiada de tareas en la web local**
+- [x] **Tarea 5.15: Completar preparacion guiada de tareas en la web local**
   - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`; `src/web/client/App.tsx`, `api.ts`; nuevos `src/web/client/TaskCreate.tsx`, `TaskPreparation.tsx`, `TaskSources.tsx`, `TaskPlan.tsx`; nuevos `test/web-local-task-api.test.ts`, `test/web-local-task-client.test.tsx`.
   - **Funciones:** createTask, getTaskDetail, listMessages, listSources y controles para reply/search/fetch-source/confirm-brief/generate-plan/comment-plan/approve-plan/generate-todo/recover-operation.
   - **Descripcion:** reemplazar el panel minimo actual por el recorrido local completo: crear tarea con objetivo, conversar, buscar o leer fuentes opcionales, revisar/confirmar brief, generar y comentar/regenerar plan, aprobar una version y generar TODO. Renderizar mensajes, fuentes, versiones, readiness, blockers y errores estructurados. Cada submit conserva requestId ante respuesta ambigua, deshabilita doble envio y reconcilia por polling acotado; reload/hash recupera la tarea sin repetir operaciones. No se ejecuta builder hasta confirmacion separada de la Tarea 5.16.
@@ -637,7 +637,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
   - **Verificacion / TDD:** crear/recargar tarea, reply, search/fetch opcional, confirm brief, generar/comentar/regenerar/aprobar plan, generar TODO, respuesta perdida/doble click, revision stale, contenido malicioso y cambio de proyecto. `pnpm exec vitest run test/web-local-task-api.test.ts test/web-local-task-client.test.tsx test/guided-preparation-operations.test.ts test/guided-preparation-persistence.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: complete local guided task preparation`
 
-- [ ] **Tarea 5.16: Completar ejecucion, progreso y revision local**
+- [x] **Tarea 5.16: Completar ejecucion, progreso y revision local**
   - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`, `src/application/execution-host.ts`; `src/web/client/App.tsx`, `api.ts`; nuevos `src/web/client/TaskExecution.tsx`, `RunProgress.tsx`, `Artifacts.tsx`; nuevos `test/web-local-execution-api.test.ts`, `test/web-local-execution-client.test.tsx`; ampliar `test/execution-host.test.ts`, `test/web-lifecycle.test.ts`.
   - **Funciones:** startTaskExecution, getTaskExecution, resumeTaskExecution, cancelTaskExecution, listRunEvents y listRunArtifacts mediante facade/host existentes.
   - **Descripcion:** desde un TODO aprobado pedir confirmacion visible e iniciar exactamente una ejecucion. Mostrar pasos, estado, eventos acotados, errores y artefactos por IDs/DTOs seguros; nunca leer archivos desde presentation. Reload y una segunda pestana recuperan progreso sin duplicar run. Cancelar usa el shutdown ordenado existente. El recorrido local termina en `waiting/changes-review` y permite consultar resultado/artefactos; no incorpora QA/cierre fuera del scope vigente.
@@ -843,8 +843,11 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   build:web`, `pnpm run test:web` (1 E2E) y 28 tests enfocados pasaron; el
   composition root conecta `PeerTransport`, `receiveProjectTransfer` y la API.
   Se conserva para 5.18/5.19 y no sustituye la aceptacion funcional local.
-- Revision funcional local: la UI actual no permite autorizar roots desde setup,
-  crear tareas ni recorrer todas las operaciones de preparacion/ejecucion. Esos
-  huecos se convierten en 5.14-5.16 antes del E2E local de 5.17.
-- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.14,
-  onboarding local completo sin JSON ni paths del browser.
+- Tareas 5.14-5.16 completadas: onboarding server-side sin paths, creacion y
+  preparacion guiada, preview/start/cancel de ejecucion, progreso y artefactos DTO.
+  Commits `1fe10df`, `4c44ef9` y `8002fab`; lint, typecheck, build:web y tests
+  enfocados pasan. El polling de operaciones conserva requestId ante timeout.
+- La aceptacion integral de una computadora queda en 5.17: falta E2E con
+  SQLite/Git/artefactos reales y driver determinista, no mocks de almacenamiento.
+- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.17,
+  E2E local completo y regresion baseline.

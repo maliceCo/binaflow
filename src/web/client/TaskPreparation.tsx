@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ApiClient, Task, TaskDetail } from './api.js';
+import { TaskExecution } from './TaskExecution.js';
 import { createRequestId } from './api.js';
 
 export function TaskPreparation(props: {
@@ -43,6 +44,7 @@ export function TaskPreparation(props: {
     setBusy(true);
     setError(undefined);
     try {
+      const before = detail;
       const result = await props.api.execute(props.task.id, {
         schemaVersion: 1,
         requestId: operationRequestId,
@@ -52,8 +54,9 @@ export function TaskPreparation(props: {
         kind,
         ...fields,
       });
-      requestId.current = undefined;
       setStatus(`${result.kind}: ${result.status}`);
+      await waitForPreparationUpdate(kind, before);
+      requestId.current = undefined;
       await refresh();
       await props.onRefresh();
     } catch (cause) {
@@ -64,7 +67,27 @@ export function TaskPreparation(props: {
     }
   }
 
-  const briefConfirmed = detail?.preparationRevision !== undefined && detail.lastSequence >= 0;
+  async function waitForPreparationUpdate(kind: string, before: TaskDetail): Promise<void> {
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const next = await props.api.getTaskDetail(props.task.id);
+      if (
+        (kind === 'reply' && next.messages.length > before.messages.length) ||
+        (kind === 'search' && next.sources.length > before.sources.length) ||
+        (kind === 'fetch-source' && next.sources.length > before.sources.length) ||
+        (kind === 'confirm-brief' && next.preparationRevision > before.preparationRevision) ||
+        (kind === 'generate-plan' && next.plan !== null) ||
+        (kind === 'comment-plan' && next.revision > before.revision) ||
+        (kind === 'approve-plan' && next.approvedPlan !== null) ||
+        (kind === 'generate-todo' && next.todo !== null)
+      ) {
+        return;
+      }
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
+    }
+    throw new Error('The operation is still running; retry will reuse its request ID');
+  }
+
+  const briefConfirmed = detail !== undefined;
   const planVersion = detail?.approvedPlan?.version ?? detail?.plan?.version;
 
   return (
@@ -237,6 +260,7 @@ export function TaskPreparation(props: {
               </button>
             )}
           </section>
+          <TaskExecution api={props.api} task={props.task} />
         </>
       ) : (
         <p>Loading preparation...</p>
