@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, rename, rm, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { lstat, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
+import { dirname, join, relative } from 'node:path';
 
 export interface PackageTransferProgress {
   sentBytes: number;
@@ -39,16 +39,17 @@ export async function sendPackageWithResume(input: {
 }
 
 export async function digestPackage(path: string): Promise<string> {
-  return sha256(path);
+  const info = await lstat(path);
+  return info.isDirectory() ? digestDirectory(path) : sha256(path);
 }
 
 export async function verifyTransferredPackage(
   path: string,
   expectedDigest: string,
 ): Promise<number> {
-  const digest = await sha256(path);
+  const digest = await digestPackage(path);
   if (digest !== expectedDigest) throw new Error('Transferred package digest does not match');
-  return (await stat(path)).size;
+  return packageBytes(path);
 }
 
 export async function materializePackageAtomically(
@@ -58,10 +59,62 @@ export async function materializePackageAtomically(
   const temporaryPath = `${destinationPath}.${process.pid}-${Date.now()}.tmp`;
   await mkdir(dirname(destinationPath), { recursive: true, mode: 0o700 });
   try {
-    await sendPackageWithResume({ sourcePath, targetPath: temporaryPath });
+    if ((await lstat(sourcePath)).isDirectory()) {
+      await copyDirectory(sourcePath, temporaryPath);
+    } else {
+      await sendPackageWithResume({ sourcePath, targetPath: temporaryPath });
+    }
     await rename(temporaryPath, destinationPath);
   } finally {
-    await rm(temporaryPath, { force: true });
+    await rm(temporaryPath, { recursive: true, force: true });
+  }
+}
+
+async function packageBytes(path: string): Promise<number> {
+  const info = await lstat(path);
+  if (!info.isDirectory()) return info.size;
+  const entries = await readdir(path, { withFileTypes: true });
+  let total = 0;
+  for (const entry of entries) total += await packageBytes(join(path, entry.name));
+  return total;
+}
+
+async function digestDirectory(path: string): Promise<string> {
+  const hash = createHash('sha256');
+  await digestDirectoryEntries(path, path, hash);
+  return hash.digest('hex');
+}
+
+async function digestDirectoryEntries(
+  root: string,
+  path: string,
+  hash: ReturnType<typeof createHash>,
+): Promise<void> {
+  const entries = (await readdir(path, { withFileTypes: true })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  for (const entry of entries) {
+    const entryPath = join(path, entry.name);
+    if (entry.isDirectory()) {
+      await digestDirectoryEntries(root, entryPath, hash);
+    } else if (entry.isFile()) {
+      hash.update(`${relative(root, entryPath)}\\0`);
+      hash.update(await sha256(entryPath));
+    } else {
+      throw new Error('Package contains an unsupported filesystem entry');
+    }
+  }
+}
+
+async function copyDirectory(sourcePath: string, targetPath: string): Promise<void> {
+  await mkdir(targetPath, { recursive: true, mode: 0o700 });
+  for (const entry of await readdir(sourcePath, { withFileTypes: true })) {
+    const sourceEntry = join(sourcePath, entry.name);
+    const targetEntry = join(targetPath, entry.name);
+    if (entry.isDirectory()) await copyDirectory(sourceEntry, targetEntry);
+    else if (entry.isFile())
+      await sendPackageWithResume({ sourcePath: sourceEntry, targetPath: targetEntry });
+    else throw new Error('Package contains an unsupported filesystem entry');
   }
 }
 

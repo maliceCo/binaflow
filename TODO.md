@@ -753,4 +753,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.12 completada: DTOs seguros sin rutas, endpoints preview/start/status/resume,
   wizard con IDs persistidos, confirmacion explicita, polling acotado y recovery;
   5 tests web enfocados, typecheck y build:web pasan.
-- Siguiente accion: ejecutar Tarea 5.13, E2E de dos launchers.
+- Tarea 5.13 bloqueada: el E2E inicial revelo que el adapter de 5.11 aun
+  transfiere paquetes localmente; falta el peer TLS autenticado con Range,
+  reconexion, replay/revocacion y dos servidores reales antes de declarar el
+  handoff remoto verificado.
+- Siguiente accion: implementar el transporte peer TLS de 5.11/5.13 sin
+  introducir mocks en el recorrido principal.

@@ -47,6 +47,14 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
   }, [props.api]);
 
   useEffect(() => {
+    if (!draft.transferId || status) return;
+    void props.api
+      .getTransfer(draft.transferId)
+      .then(setStatus)
+      .catch(() => undefined);
+  }, [draft.transferId, props.api, status]);
+
+  useEffect(() => {
     if (!status || ['completed', 'failed', 'interrupted'].includes(status.stage)) return;
     let polls = 0;
     const timer = window.setInterval(() => {
