@@ -26,6 +26,21 @@ export interface PeerTransportSource {
   getPackage: (transferId: string, requestId: string) => Promise<PeerTransferPackage | undefined>;
 }
 
+export interface PeerTransferReceiveRequest {
+  transferId: string;
+  requestId: string;
+  projectId: string;
+  sourceDeviceId: string;
+  targetDeviceId: string;
+  sourceEndpoint: string;
+  packageDigest: string;
+  packageBytes: number;
+}
+
+export interface PeerTransportReceiver {
+  receive: (request: PeerTransferReceiveRequest) => Promise<unknown>;
+}
+
 export interface PeerTransportOptions {
   host: string;
   port: number;
@@ -33,6 +48,7 @@ export interface PeerTransportOptions {
   experimentalLanOptIn?: boolean;
   auth: PeerAuth;
   source: PeerTransportSource;
+  receiver?: PeerTransportReceiver;
 }
 
 export interface PeerTransport {
@@ -47,6 +63,8 @@ export interface DownloadTransferResult {
   bytesReceived: number;
   files: number;
 }
+
+const MAX_RECEIVE_BODY_BYTES = 64 * 1024;
 
 const MAX_RANGE_BYTES = 16 * 1024 * 1024;
 
@@ -88,10 +106,16 @@ export function createPeerTransport(options: PeerTransportOptions): PeerTranspor
       else response.destroy();
     });
   });
+  let started = false;
   return {
     origin: `http://${formatHost(options.host)}:${options.port}`,
-    start: () => listen(server, options.port, options.host),
-    close: () => close(server),
+    start: async () => {
+      await listen(server, options.port, options.host);
+      started = true;
+    },
+    close: async () => {
+      if (started) await close(server);
+    },
   };
 }
 
@@ -100,6 +124,9 @@ export async function serveTransferRange(
   response: ServerResponse,
   options: PeerTransportOptions,
 ): Promise<void> {
+  if (request.url === '/peer/v1/receive') {
+    return receiveTransferRequest(request, response, options);
+  }
   if (request.method !== 'GET')
     return sendError(response, new Error('Peer method is not allowed'), 405);
   const manifestMatch = request.url?.match(/^\/peer\/v1\/transfers\/([^/]+)\/manifest$/);
@@ -142,6 +169,40 @@ export async function serveTransferRange(
   response.setHeader('Content-Length', String(end - start + 1));
   response.setHeader('X-Binaflow-Transfer-Digest', packageData.digest);
   packageData.open(file.path, start, end).pipe(response);
+}
+
+export async function requestPeerReceive(input: {
+  endpoint: string;
+  peerId: string;
+  auth: PeerAuth;
+  request: PeerTransferReceiveRequest;
+  mode?: PeerTransportMode;
+  experimentalLanOptIn?: boolean;
+}): Promise<unknown> {
+  const endpoint = validatePeerEndpoint(input.endpoint, input);
+  const target = '/peer/v1/receive';
+  const body = {
+    method: 'POST',
+    target,
+    transferId: input.request.transferId,
+    requestId: input.request.requestId,
+    body: input.request,
+  };
+  const signed = input.auth.signRequest(input.peerId, body);
+  const response = await fetch(new URL(target, endpoint), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Binaflow-Device-Id': signed.deviceId,
+      'X-Binaflow-Nonce': signed.nonce,
+      'X-Binaflow-Timestamp': String(signed.timestamp),
+      'X-Binaflow-Signature': signed.signature,
+      'X-Binaflow-Request-Id': input.request.requestId,
+    },
+    body: JSON.stringify(input.request),
+  });
+  if (!response.ok) throw new Error(`Peer receive request failed (${response.status})`);
+  return response.json();
 }
 
 export async function downloadTransferWithResume(input: {
@@ -256,7 +317,32 @@ async function signedFetch(input: {
   });
 }
 
-function signedRequest(request: IncomingMessage, body: Record<string, string>): SignedPeerRequest {
+async function receiveTransferRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  options: PeerTransportOptions,
+): Promise<void> {
+  if (request.method !== 'POST' || !options.receiver) {
+    return sendError(response, new Error('Peer receive is not available'), 404);
+  }
+  const body = await readJsonBody(request);
+  if (!isReceiveRequest(body))
+    return sendError(response, new Error('Peer receive request is invalid'));
+  const signed = signedRequest(request, {
+    method: 'POST',
+    target: request.url ?? '',
+    transferId: body.transferId,
+    requestId: body.requestId,
+    body,
+  });
+  options.auth.verifyRequest(signed);
+  const result = await options.receiver.receive(body);
+  response.statusCode = 200;
+  response.setHeader('Content-Type', 'application/json');
+  response.end(JSON.stringify(result));
+}
+
+function signedRequest(request: IncomingMessage, body: unknown): SignedPeerRequest {
   const deviceId = header(request, 'x-binaflow-device-id');
   const nonce = header(request, 'x-binaflow-nonce');
   const timestamp = Number(header(request, 'x-binaflow-timestamp'));
@@ -265,6 +351,35 @@ function signedRequest(request: IncomingMessage, body: Record<string, string>): 
     throw new Error('Peer signature headers are required');
   }
   return { deviceId, nonce, timestamp, signature, body };
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk as Buffer);
+    bytes += buffer.byteLength;
+    if (bytes > MAX_RECEIVE_BODY_BYTES) throw new Error('Peer receive request is too large');
+    chunks.push(buffer);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+}
+
+function isReceiveRequest(value: unknown): value is PeerTransferReceiveRequest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.transferId === 'string' &&
+    typeof record.requestId === 'string' &&
+    typeof record.projectId === 'string' &&
+    typeof record.sourceDeviceId === 'string' &&
+    typeof record.targetDeviceId === 'string' &&
+    typeof record.sourceEndpoint === 'string' &&
+    typeof record.packageDigest === 'string' &&
+    typeof record.packageBytes === 'number' &&
+    Number.isSafeInteger(record.packageBytes) &&
+    record.packageBytes >= 0
+  );
 }
 
 function parseRange(

@@ -779,9 +779,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   19 tests enfocados, typecheck, lint dirigido y build:web pasan. TLS peer y LAN
   real permanecen pendientes y no se consideran cubiertos.
 - Tarea 5.14 parcialmente verificada: `pnpm run build:web`, `pnpm run test:web`
-  (1 E2E) y 14 tests de boundaries/bootstrap/lifecycle/transfer pasan. Queda
-  bloqueada la parte de dos launchers reales: el composition root aun no conecta
-  `PeerTransport` y `ProjectTransfer` a la API del launcher. No se añadieron mocks
-  para ocultar esa desviacion.
-- Siguiente accion, solo tras autorizacion de implementacion: conectar el
-  composition root del launcher y completar Tarea 5.14.
+  (1 E2E) y 14 tests de boundaries/bootstrap/lifecycle/transfer pasan.
+  Composition root ya conecta `PeerTransport`, `receiveProjectTransfer` y la API
+  de transferencias; quedan el E2E completo A/B, warning visible en UI, restart,
+  replay/revocacion y la validacion del recorrido remoto sin mocks.
+- Siguiente accion, solo tras autorizacion de implementacion: completar el E2E
+  A/B de Tarea 5.14 y documentar sus limites.

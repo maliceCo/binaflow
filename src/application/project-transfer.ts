@@ -32,6 +32,20 @@ export interface ProjectTransferOptions {
   journal: FileTransferJournal;
 }
 
+export interface ReceiveProjectTransferOptions {
+  transferId: string;
+  requestId: string;
+  projectId: string;
+  sourceDeviceId: string;
+  targetDeviceId: string;
+  packageDigest: string;
+  packageBytes: number;
+  target: ProjectTransferContext;
+  receivedPackagePath: string;
+  outputDataDir: string;
+  journal: FileTransferJournal;
+}
+
 export interface ProjectTransferPreview {
   transferId: string;
   requestId: string;
@@ -145,6 +159,69 @@ export async function startProjectTransfer(
     targetDeviceId: options.targetDeviceId,
   });
   await options.target.catalog.updateOwnership(options.target.project.projectId, {
+    status: 'active',
+    ownerDeviceId: options.targetDeviceId,
+  });
+  record = {
+    ...record,
+    stage: 'completed',
+    targetReceipt: imported.transfer.transferId,
+    updatedAt: new Date().toISOString(),
+  };
+  await options.journal.save(record);
+  return record;
+}
+
+export async function receiveProjectTransfer(
+  options: ReceiveProjectTransferOptions,
+): Promise<TransferJournalRecord> {
+  if (options.target.project.projectId !== options.projectId) {
+    throw new ProjectTransferError(
+      'project-id-mismatch',
+      'Target project ID does not match transfer',
+    );
+  }
+  if (options.target.project.ownership.status !== 'active') {
+    throw new ProjectTransferError('target-not-active', 'Target project is not active');
+  }
+  const current = await options.journal.get(options.transferId);
+  let record: TransferJournalRecord = {
+    transferId: options.transferId,
+    projectId: options.projectId,
+    sourceDeviceId: options.sourceDeviceId,
+    targetDeviceId: options.targetDeviceId,
+    stage: 'importing',
+    requestId: options.requestId,
+    packageDigest: options.packageDigest,
+    bytesSent: current?.bytesSent ?? options.packageBytes,
+    bytesReceived: options.packageBytes,
+    receivedPackagePath: options.receivedPackagePath,
+    updatedAt: new Date().toISOString(),
+  };
+  await options.journal.save(record);
+  const preview = await options.target.portability.previewImport({
+    packagePath: options.receivedPackagePath,
+    outputDataDir: options.outputDataDir,
+  });
+  if (preview.blockers.length > 0) {
+    throw new ProjectTransferError(
+      'import-preflight-failed',
+      preview.blockers.map((item) => item.code).join(','),
+    );
+  }
+  const imported = await options.target.portability.importPackage({
+    requestId: options.requestId,
+    digest: preview.digest,
+    packagePath: options.receivedPackagePath,
+    outputDataDir: options.outputDataDir,
+  });
+  const generated = await generateUpdatedDataDirConfiguration({
+    configPath: options.target.project.configPath,
+    dataDir: imported.dataDir,
+    cwd: options.target.project.workspacePath,
+  });
+  await replaceConfigurationAtomically(generated);
+  await options.target.catalog.updateOwnership(options.projectId, {
     status: 'active',
     ownerDeviceId: options.targetDeviceId,
   });

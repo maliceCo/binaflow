@@ -22,6 +22,7 @@ import {
 import { createWebServer } from '../../web/server.js';
 import type { WebApiCapabilities } from '../../web/routes.js';
 import { rootOptions } from './common.js';
+import { createLauncherTransferResources } from './web-transfer.js';
 
 export function registerWebCommand(cli: Command): void {
   cli
@@ -93,6 +94,7 @@ export function registerWebCommand(cli: Command): void {
                 devices: launcherResources.devices,
                 projectCatalog: launcherResources.projectCatalog,
                 projectRuntime: launcherResources.runtime,
+                transfers: launcherResources.transfers,
               }
             : {}),
           ...(context && host
@@ -109,6 +111,7 @@ export function registerWebCommand(cli: Command): void {
         const server = createWebServer({ config: webConfig, api });
         const stop = async (): Promise<void> => {
           await server.close();
+          await launcherResources?.close();
           await launcherResources?.runtime.close();
           await host?.close();
         };
@@ -122,6 +125,7 @@ export function registerWebCommand(cli: Command): void {
           process.once('SIGTERM', onSignal);
         });
         try {
+          await launcherResources?.peerTransport?.start();
           await server.start();
           await waitForSignal;
         } finally {
@@ -140,7 +144,10 @@ async function createLauncherResources(
   const identity = await loadOrCreateDeviceIdentity({
     directory: join(dirname(settingsPath), 'device'),
   });
-  const peerAuth = new PeerAuth(identity);
+  const peerAuth = new PeerAuth(identity, {
+    allowExperimentalHttpOrigin:
+      settingsController.get().peerTransport?.mode === 'lan-experimental',
+  });
   const catalog = new FileProjectCatalog(resolveDefaultProjectCatalogPath());
   const runtime = createPersonalWebRuntime({ catalog, ownerDeviceId: identity.deviceId });
   const projectCatalog = {
@@ -159,9 +166,20 @@ async function createLauncherResources(
         projectId,
       ),
   };
+  const transferResources = await createLauncherTransferResources({
+    settingsPath,
+    settings: settingsController,
+    identity,
+    peerAuth,
+    catalog,
+    getActiveProject: () => runtime.getActiveProject(),
+  });
   return {
     runtime,
     projectCatalog,
+    transfers: transferResources.transfers,
+    peerTransport: transferResources.peerTransport,
+    close: transferResources.close,
     devices: {
       list: () => peerAuth.listPeers(),
       beginPairing: () => peerAuth.beginPairing(),
