@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ApiClient, ProjectDirectory } from './api.js';
+import type { ApiClient, ProjectDirectory, ProjectSummary } from './api.js';
 
 export function ProjectBrowser(props: {
   api: ApiClient;
-  onRegistered: () => Promise<void>;
+  onRegistered: (project: ProjectSummary) => Promise<void>;
 }): ReactElement {
   const [roots, setRoots] = useState<Array<{ id: string; label: string }>>([]);
   const [rootId, setRootId] = useState('');
@@ -43,8 +43,8 @@ export function ProjectBrowser(props: {
     setBusy(true);
     setError(undefined);
     try {
-      await props.api.registerProject(rootId, projectSegments);
-      await props.onRegistered();
+      const project = await props.api.registerProject(rootId, projectSegments);
+      await props.onRegistered(project);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not add project');
     } finally {
@@ -61,7 +61,7 @@ export function ProjectBrowser(props: {
         </div>
         {currentIsProject && (
           <button type="button" disabled={busy} onClick={() => void register(segments)}>
-            {busy ? 'Adding...' : 'Add this folder'}
+            {busy ? 'Adding...' : 'Add and open project'}
           </button>
         )}
       </div>
@@ -107,7 +107,7 @@ export function ProjectBrowser(props: {
               <span>{item.hasBinaflowConfig ? '◆' : '▸'}</span>
               <span>
                 {item.name}
-                {item.hasBinaflowConfig && <small>Binaflow project · click to add</small>}
+                {item.hasBinaflowConfig && <small>Binaflow project · click to add and open</small>}
               </span>
             </button>
           </li>

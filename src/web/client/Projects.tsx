@@ -109,7 +109,8 @@ export function Projects(props: {
       )}
       <ProjectBrowser
         api={props.api}
-        onRegistered={async () => {
+        onRegistered={async (project) => {
+          await props.api.selectProject(project.id);
           await refresh();
           await props.onProjectChanged?.();
         }}

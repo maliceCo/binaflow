@@ -22,13 +22,12 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
 
     await page.getByRole('button', { name: 'projects', exact: true }).click();
-    await page.getByRole('button', { name: /sample \(Binaflow project\)/ }).click();
-    await expect(page.getByRole('button', { name: 'Open' })).toBeVisible();
     const taskRefresh = page.waitForResponse(
       (response) => response.url().endsWith('/api/v1/tasks') && response.status() === 200,
     );
-    await page.getByRole('button', { name: 'Open' }).click();
+    await page.getByRole('button', { name: /sample \(Binaflow project\)/ }).click();
     await taskRefresh;
+    await expect(page.getByRole('button', { name: 'Active', exact: true })).toBeVisible();
     await expect(page.getByText('No tasks yet.')).toBeVisible();
 
     await page.getByLabel('Objective').fill('Prepare a deterministic local task');
