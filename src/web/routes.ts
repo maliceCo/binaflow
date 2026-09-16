@@ -419,7 +419,7 @@ function unavailable(): WebApiResponse {
 }
 
 function isLoopbackSettingsRequest(request: WebApiRequest): boolean {
-  return request.remoteAddress === undefined || isLoopbackAddress(request.remoteAddress);
+  return request.remoteAddress !== undefined && isLoopbackAddress(request.remoteAddress);
 }
 
 function mergeSettingsUpdate(current: LauncherSettings, value: unknown): LauncherSettings {

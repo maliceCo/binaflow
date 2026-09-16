@@ -32,6 +32,16 @@ describe('web settings API', () => {
         {
           method: 'PUT',
           path: '/api/v1/settings',
+          body: { deviceName: 'Missing address' },
+        },
+        api,
+      ),
+    ).resolves.toMatchObject({ status: 403, body: { error: { code: 'forbidden' } } });
+    await expect(
+      handleWebApi(
+        {
+          method: 'PUT',
+          path: '/api/v1/settings',
           remoteAddress: '192.0.2.10',
           body: { deviceName: 'Remote attempt' },
         },
@@ -73,6 +83,16 @@ describe('web settings API', () => {
       defaultWebSettings(),
     );
     const api = { settings: controller };
+    await expect(
+      handleWebApi(
+        {
+          method: 'POST',
+          path: '/api/v1/settings/tls',
+          body: { certificatePem: 'bad', keyPem: 'bad' },
+        },
+        api,
+      ),
+    ).resolves.toMatchObject({ status: 403 });
     await expect(
       handleWebApi(
         {
