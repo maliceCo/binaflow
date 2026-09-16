@@ -9,6 +9,7 @@ describe('web transfer client', () => {
     expect(html).toContain('Transfer project');
     expect(html).toContain('Preview');
     expect(html).toContain('Confirm transfer');
+    expect(html).toContain('New transfer');
     expect(html).not.toContain('workspacePath');
     expect(html).not.toContain('packagePath');
   });

@@ -27,6 +27,8 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
   const [status, setStatus] = useState<TransferStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const transferActive =
+    status !== undefined && !['completed', 'failed', 'interrupted'].includes(status.stage);
 
   useEffect(() => {
     void Promise.all([props.api.listProjects(), props.api.listDevices()])
@@ -72,9 +74,33 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
   }, [props.api, status]);
 
   function updateDraft(patch: Partial<TransferDraft>): void {
-    const next = { ...draft, ...patch };
+    const selectionChanged = ['projectId', 'targetProjectId', 'targetDeviceId'].some(
+      (key) => patch[key as keyof TransferDraft] !== undefined,
+    );
+    const next = selectionChanged
+      ? { ...draft, ...patch, transferId: crypto.randomUUID(), requestId: createRequestId() }
+      : { ...draft, ...patch };
     setDraft(next);
+    if (selectionChanged) {
+      setPreview(undefined);
+      setStatus(undefined);
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  }
+
+  function resetTransfer(): void {
+    const next: TransferDraft = {
+      transferId: '',
+      requestId: '',
+      projectId: '',
+      targetProjectId: '',
+      targetDeviceId: '',
+    };
+    setDraft(next);
+    setPreview(undefined);
+    setStatus(undefined);
+    setError(undefined);
+    localStorage.removeItem(STORAGE_KEY);
   }
 
   async function doPreview(): Promise<void> {
@@ -138,7 +164,12 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
           <p className="eyebrow">Ownership</p>
           <h2>Transfer project</h2>
         </div>
-        {status && <span>{status.stage}</span>}
+        <div className="button-row">
+          {status && <span>{status.stage}</span>}
+          <button type="button" disabled={busy || transferActive} onClick={resetTransfer}>
+            New transfer
+          </button>
+        </div>
       </div>
       <p>
         Preview the handoff before confirming. Only the selected project and paired device are used.
@@ -147,6 +178,7 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
         Source project
         <select
           value={draft.projectId}
+          disabled={busy || transferActive}
           onChange={(event) => updateDraft({ projectId: event.target.value })}
         >
           <option value="">Select a project</option>
@@ -161,6 +193,7 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
         Target project record
         <select
           value={draft.targetProjectId}
+          disabled={busy || transferActive}
           onChange={(event) => updateDraft({ targetProjectId: event.target.value })}
         >
           <option value="">Select a target</option>
@@ -175,6 +208,7 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
         Paired target device
         <select
           value={draft.targetDeviceId}
+          disabled={busy || transferActive}
           onChange={(event) => updateDraft({ targetDeviceId: event.target.value })}
         >
           <option value="">Select a device</option>
