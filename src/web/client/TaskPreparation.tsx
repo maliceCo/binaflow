@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ApiClient, Task, TaskDetail } from './api.js';
+import { ApiRequestError, type ApiClient, type Task, type TaskDetail } from './api.js';
 import { TaskExecution } from './TaskExecution.js';
 import { createRequestId } from './api.js';
 
@@ -19,6 +19,7 @@ export function TaskPreparation(props: {
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const requestId = useRef<string | undefined>(undefined);
+  const requestKey = useRef<string | undefined>(undefined);
 
   async function refresh(): Promise<void> {
     try {
@@ -34,15 +35,29 @@ export function TaskPreparation(props: {
   }
 
   useEffect(() => {
+    requestId.current = undefined;
+    requestKey.current = undefined;
     void refresh();
   }, [props.api, props.task.id, props.task.revision]);
 
   async function submit(kind: string, fields: Record<string, unknown> = {}): Promise<void> {
     if (!detail || busy) return;
+    const operationKey = JSON.stringify({
+      contractId: props.task.id,
+      expectedRevision: detail.revision,
+      expectedPreparationRevision: detail.preparationRevision,
+      kind,
+      ...fields,
+    });
+    if (requestKey.current !== operationKey) {
+      requestId.current = undefined;
+      requestKey.current = operationKey;
+    }
     const operationRequestId = requestId.current ?? createRequestId();
     requestId.current = operationRequestId;
     setBusy(true);
     setError(undefined);
+    let accepted = false;
     try {
       const before = detail;
       const result = await props.api.execute(props.task.id, {
@@ -54,14 +69,24 @@ export function TaskPreparation(props: {
         kind,
         ...fields,
       });
+      accepted = true;
       setStatus(`${result.kind}: ${result.status}`);
       await waitForPreparationUpdate(kind, before);
       requestId.current = undefined;
+      requestKey.current = undefined;
       await refresh();
       await props.onRefresh();
     } catch (cause) {
+      if (cause instanceof ApiRequestError && !accepted) {
+        requestId.current = undefined;
+        requestKey.current = undefined;
+      }
       setError(cause instanceof Error ? cause.message : 'The preparation operation failed');
-      setStatus('Request may still be running; retry keeps the same request ID.');
+      setStatus(
+        accepted
+          ? 'Request may still be running; retry keeps the same request ID.'
+          : 'The request was rejected; submit it again to create a new request ID.',
+      );
     } finally {
       setBusy(false);
     }

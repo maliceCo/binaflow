@@ -153,6 +153,17 @@ export interface TransferStatus {
   errorCode?: string;
 }
 
+export class ApiRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+  }
+}
+
 export interface ApiClient {
   session(): Promise<SessionData>;
   login(code: string): Promise<SessionData>;
@@ -450,9 +461,25 @@ async function request<T = unknown>(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const payload = (await response.json()) as ApiSuccess<T> & { error?: { message?: string } };
-  if (!response.ok)
-    throw new Error(payload.error?.message ?? `Request failed (${response.status})`);
+  let payload: (ApiSuccess<T> & { error?: { code?: string; message?: string } }) | undefined;
+  try {
+    payload = (await response.json()) as ApiSuccess<T> & {
+      error?: { code?: string; message?: string };
+    };
+  } catch {
+    throw new ApiRequestError(
+      response.status,
+      'invalid-response',
+      `Request failed (${response.status})`,
+    );
+  }
+  if (!response.ok) {
+    throw new ApiRequestError(
+      response.status,
+      payload.error?.code ?? 'request-failed',
+      payload.error?.message ?? `Request failed (${response.status})`,
+    );
+  }
   return payload;
 }
 
