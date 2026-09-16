@@ -8,6 +8,7 @@ import { loadOrCreateDeviceIdentity } from '../../web/device-identity.js';
 import {
   FileProjectCatalog,
   listProjectDirectory,
+  discoverProjectRootCandidates,
   registerProjectFromDirectory,
   resolveDefaultProjectCatalogPath,
 } from '../../web/project-catalog.js';
@@ -149,8 +150,30 @@ async function createLauncherResources(
       settingsController.get().peerTransport?.mode === 'lan-experimental',
   });
   const catalog = new FileProjectCatalog(resolveDefaultProjectCatalogPath());
+  const rootCandidates = await discoverProjectRootCandidates();
   const runtime = createPersonalWebRuntime({ catalog, ownerDeviceId: identity.deviceId });
   const projectCatalog = {
+    listSetupRoots: async () => {
+      const authorized = new Set(settingsController.get().projectRoots.map((root) => root.path));
+      return rootCandidates
+        .filter((candidate) => !authorized.has(candidate.path))
+        .map(({ id, label }) => ({ id, label }));
+    },
+    authorizeSetupRoot: async (candidateId: string) => {
+      const candidate = rootCandidates.find((item) => item.id === candidateId);
+      if (!candidate) throw new Error('Setup root candidate was not found');
+      const current = settingsController.get();
+      if (current.projectRoots.some((root) => root.path === candidate.path)) {
+        return { settings: current, restartRequired: false };
+      }
+      return settingsController.update({
+        ...current,
+        projectRoots: [
+          ...current.projectRoots,
+          { rootId: candidate.id, label: candidate.label, path: candidate.path },
+        ],
+      });
+    },
     getRoots: () =>
       settingsController.get().projectRoots.map(({ rootId, label }) => ({ id: rootId, label })),
     listProjects: async () => catalog.list().then((value) => value.projects),

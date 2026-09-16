@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   access,
   chmod,
@@ -34,11 +34,23 @@ export interface ProjectDirectoryItem {
   hasBinaflowConfig: boolean;
 }
 
+export interface ProjectRootCandidate {
+  id: string;
+  label: string;
+  path: string;
+}
+
 export interface ProjectDirectoryListing {
   rootId: string;
   segments: string[];
   items: ProjectDirectoryItem[];
   nextOffset: number | null;
+}
+
+export interface ProjectRootDiscoveryOptions {
+  cwd?: string;
+  homeDir?: string;
+  candidates?: string[];
 }
 
 export interface RegisterProjectInput {
@@ -50,6 +62,34 @@ export interface RegisterProjectInput {
 
 export function resolveDefaultProjectCatalogPath(environment: WebSettingsEnvironment = {}): string {
   return resolve(dirname(resolveDefaultWebSettingsPath(environment)), PROJECT_CATALOG_FILE);
+}
+
+export async function discoverProjectRootCandidates(
+  options: ProjectRootDiscoveryOptions = {},
+): Promise<ProjectRootCandidate[]> {
+  const homeDir = options.homeDir ?? process.env.HOME ?? process.cwd();
+  const paths = options.candidates ?? [
+    options.cwd ?? process.cwd(),
+    homeDir,
+    resolve(homeDir, 'Projects'),
+    resolve(homeDir, 'projects'),
+    resolve(homeDir, 'src'),
+    resolve(homeDir, 'Documents'),
+  ];
+  const seen = new Set<string>();
+  const result: ProjectRootCandidate[] = [];
+  for (const candidate of paths) {
+    let path: string;
+    try {
+      path = await realDirectory(candidate);
+    } catch {
+      continue;
+    }
+    if (seen.has(path)) continue;
+    seen.add(path);
+    result.push({ id: rootCandidateId(path), label: rootCandidateLabel(path, homeDir), path });
+  }
+  return result;
 }
 
 export class FileProjectCatalog {
@@ -250,6 +290,19 @@ function validateSegments(segments: readonly string[]): void {
       throw new Error('Directory segment exceeds its limit');
     }
   }
+}
+
+function rootCandidateId(path: string): string {
+  const hex = createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 32).split('');
+  hex[12] = '4';
+  const variant = hex[16] ?? '8';
+  hex[16] = ['8', '9', 'a', 'b'][Number.parseInt(variant, 16) % 4] ?? '8';
+  return `${hex.slice(0, 8).join('')}-${hex.slice(8, 12).join('')}-${hex.slice(12, 16).join('')}-${hex.slice(16, 20).join('')}-${hex.slice(20).join('')}`;
+}
+
+function rootCandidateLabel(path: string, homeDir: string): string {
+  if (path === homeDir) return 'Home';
+  return basename(path) || path;
 }
 
 function assertContained(rootPath: string, candidatePath: string): void {

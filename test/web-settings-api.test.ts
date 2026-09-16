@@ -47,6 +47,13 @@ describe('web settings API', () => {
           body: {
             deviceName: 'Desktop',
             web: { host: '127.0.0.1', port: 4317, origin: 'http://127.0.0.1:4317' },
+            projectRoots: [
+              {
+                rootId: '00000000-0000-4000-8000-000000000001',
+                label: 'Projects',
+                path: '/tmp/projects',
+              },
+            ],
           },
         },
         api,

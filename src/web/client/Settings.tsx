@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ApiClient, LauncherSettings } from './api.js';
+import type { ApiClient, LauncherSettings, SetupRootCandidate } from './api.js';
 
 export function Settings(props: {
   api: ApiClient;
@@ -17,6 +17,38 @@ export function Settings(props: {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [rootCandidates, setRootCandidates] = useState<SetupRootCandidate[]>([]);
+  const [rootBusy, setRootBusy] = useState<string>();
+
+  useEffect(() => {
+    if (!props.setup || !props.api.listSetupRoots) return;
+    void props.api
+      .listSetupRoots()
+      .then(setRootCandidates)
+      .catch((cause: unknown) =>
+        setError(cause instanceof Error ? cause.message : 'Project roots could not be loaded'),
+      );
+  }, [props.api, props.setup]);
+
+  async function authorizeRoot(candidateId: string): Promise<void> {
+    if (!props.api.authorizeSetupRoot || rootBusy) return;
+    setRootBusy(candidateId);
+    setError(undefined);
+    try {
+      const result = await props.api.authorizeSetupRoot(candidateId);
+      props.onSaved(result.settings);
+      setRootCandidates((current) => current.filter((candidate) => candidate.id !== candidateId));
+      setMessage(
+        result.restartRequired
+          ? 'Root authorized. Restart Binaflow to apply network changes.'
+          : 'Project root authorized.',
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The project root could not be authorized');
+    } finally {
+      setRootBusy(undefined);
+    }
+  }
 
   async function save(): Promise<void> {
     if (busy) return;
@@ -24,6 +56,9 @@ export function Settings(props: {
     setError(undefined);
     setMessage(undefined);
     try {
+      if (props.setup && props.settings.projectRoots.length === 0) {
+        throw new Error('Authorize at least one project root before saving setup');
+      }
       const updated = await props.api.updateSettings({
         setupRequired: false,
         deviceName,
@@ -52,6 +87,37 @@ export function Settings(props: {
       <p className="eyebrow">{props.setup ? 'First start' : 'Local server'}</p>
       <h2 id="settings-title">{props.setup ? 'Set up Binaflow' : 'Web settings'}</h2>
       <p>These settings belong to the computer running Binaflow.</p>
+      {props.setup && (
+        <div className="settings-section" aria-labelledby="project-roots-title">
+          <h3 id="project-roots-title">Project roots</h3>
+          <p>Select a local folder that may contain Binaflow projects.</p>
+          {props.settings.projectRoots.length > 0 && (
+            <ul>
+              {props.settings.projectRoots.map((root) => (
+                <li key={root.id}>{root.label}</li>
+              ))}
+            </ul>
+          )}
+          {rootCandidates.length > 0 ? (
+            <ul>
+              {rootCandidates.map((candidate) => (
+                <li key={candidate.id}>
+                  <span>{candidate.label}</span>{' '}
+                  <button
+                    type="button"
+                    onClick={() => void authorizeRoot(candidate.id)}
+                    disabled={rootBusy !== undefined}
+                  >
+                    {rootBusy === candidate.id ? 'Authorizing...' : 'Authorize'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No additional local folders were detected.</p>
+          )}
+        </div>
+      )}
       <label htmlFor="device-name">Computer name</label>
       <input
         id="device-name"

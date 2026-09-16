@@ -68,6 +68,10 @@ export interface WebApiCapabilities {
   readonly projectRuntime?: WebProjectRuntimeCapabilities;
   readonly projectCatalog?: {
     getRoots: () => Array<{ id: string; label: string }>;
+    listSetupRoots?: () => Promise<Array<{ id: string; label: string }>>;
+    authorizeSetupRoot?: (
+      candidateId: string,
+    ) => Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
     listProjects: () => Promise<ProjectCatalogEntry[]>;
     listDirectory: (
       rootId: string,
@@ -161,6 +165,21 @@ export async function handleWebApi(
       api.devices.revokePeer(deviceId);
       return ok(200, { revoked: true });
     }
+    if (request.path === '/api/v1/setup-roots' && request.method === 'GET') {
+      if (!api.projectCatalog?.listSetupRoots) return unavailable();
+      return ok(200, { items: await api.projectCatalog.listSetupRoots() });
+    }
+    if (request.path === '/api/v1/setup-roots' && request.method === 'POST') {
+      if (!api.projectCatalog?.authorizeSetupRoot) return unavailable();
+      if (!isLoopbackSettingsRequest(request)) {
+        return error(403, 'forbidden', 'Root authorization requires a local connection');
+      }
+      const result = await api.projectCatalog.authorizeSetupRoot(parseSetupRootBody(request.body));
+      return ok(200, {
+        settings: toWebLauncherSettingsDto(result.settings),
+        restartRequired: result.restartRequired,
+      });
+    }
     if (request.path === '/api/v1/project-roots' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
       return ok(200, { items: api.projectCatalog.getRoots() });
@@ -223,9 +242,14 @@ export async function handleWebApi(
       if (!isLoopbackSettingsRequest(request)) {
         return error(403, 'forbidden', 'Settings changes require a local connection');
       }
-      const result = await api.settings.update(
-        mergeSettingsUpdate(api.settings.get(), request.body),
-      );
+      const nextSettings = mergeSettingsUpdate(api.settings.get(), request.body);
+      if (!nextSettings.setupRequired && nextSettings.projectRoots.length === 0) {
+        throw new WebContractError(
+          'invalid-input',
+          'At least one project root is required before setup can finish',
+        );
+      }
+      const result = await api.settings.update(nextSettings);
       return ok(200, {
         settings: toWebLauncherSettingsDto(result.settings),
         restartRequired: result.restartRequired,
@@ -433,6 +457,20 @@ function parseDeviceIdBody(value: unknown): string {
     throw new WebContractError('invalid-input', 'Invalid device ID');
   }
   return (value as Record<string, unknown>).deviceId as string;
+}
+
+function parseSetupRootBody(value: unknown): string {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    typeof (value as Record<string, unknown>).candidateId !== 'string' ||
+    !/^[a-z0-9-]{1,80}$/.test((value as Record<string, unknown>).candidateId as string)
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid setup root');
+  }
+  return (value as Record<string, unknown>).candidateId as string;
 }
 
 function parseProjectRegistration(value: unknown): {

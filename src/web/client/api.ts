@@ -48,6 +48,11 @@ export interface ProjectSummary {
   updatedAt: string;
 }
 
+export interface SetupRootCandidate {
+  id: string;
+  label: string;
+}
+
 export interface ProjectDirectory {
   name: string;
   segments: string[];
@@ -81,6 +86,10 @@ export interface ApiClient {
   uploadTls(certificatePem: string, keyPem: string): Promise<LauncherSettings>;
   listProjects(): Promise<ProjectSummary[]>;
   listProjectRoots(): Promise<Array<{ id: string; label: string }>>;
+  listSetupRoots?(): Promise<SetupRootCandidate[]>;
+  authorizeSetupRoot?(
+    candidateId: string,
+  ): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   listProjectDirectory(
     rootId: string,
     segments: string[],
@@ -153,6 +162,17 @@ export function createApiClient(): ApiClient {
         '/api/v1/project-roots',
       );
       return result.data.items;
+    },
+    async listSetupRoots() {
+      const result = await request<{ items: SetupRootCandidate[] }>('/api/v1/setup-roots');
+      return result.data.items;
+    },
+    async authorizeSetupRoot(candidateId) {
+      const result = await request<{
+        settings: LauncherSettings;
+        restartRequired: boolean;
+      }>('/api/v1/setup-roots', 'POST', { candidateId }, csrfToken);
+      return result.data;
     },
     async listProjectDirectory(rootId, segments, offset = 0) {
       const query = new URLSearchParams({ rootId, offset: String(offset), limit: '50' });
