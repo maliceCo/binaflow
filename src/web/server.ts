@@ -41,7 +41,9 @@ export function createWebServer(options: WebServerOptions): WebServer {
   const assets = options.assets ?? loadAssets();
   const authority = new URL(options.config.origin).host;
   let server: Server | undefined;
+  let startPromise: Promise<void> | undefined;
   let closePromise: Promise<void> | undefined;
+  let closed = false;
 
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     void dispatch(request, response).catch(() => {
@@ -56,40 +58,56 @@ export function createWebServer(options: WebServerOptions): WebServer {
 
   return {
     auth,
-    start: async () => {
-      if (server) return;
-      server = options.config.tls
-        ? createHttpsServer(
-            {
-              cert: readFileSync(options.config.tls.certFile),
-              key: readFileSync(options.config.tls.keyFile),
-              maxHeaderSize: 16 * 1024,
-            },
-            handler,
-          )
-        : createHttpServer({ maxHeaderSize: 16 * 1024 }, handler);
-      await new Promise<void>((resolveStart, reject) => {
-        server!.once('error', reject);
-        server!.listen(options.config.port, options.config.host, () => {
-          server!.off('error', reject);
-          resolveStart();
-        });
+    start: () => {
+      if (closed) return Promise.reject(new Error('The web server is closed'));
+      if (server) return Promise.resolve();
+      if (startPromise) return startPromise;
+      startPromise = startServer().catch((error: unknown) => {
+        startPromise = undefined;
+        throw error;
       });
-      stderr.write(`Binaflow web listening at ${options.config.origin}\n`);
-      stderr.write(`Binaflow access code: ${auth.accessCode}\n`);
+      return startPromise;
     },
     close: () => {
       if (closePromise) return closePromise;
-      closePromise = new Promise<void>((resolveClose, reject) => {
-        if (!server) {
-          resolveClose();
-          return;
+      closed = true;
+      closePromise = (async () => {
+        await startPromise?.catch(() => undefined);
+        if (server) {
+          await close(server);
         }
-        server.close((error) => (error ? reject(error) : resolveClose()));
-      });
+      })();
       return closePromise;
     },
   };
+
+  async function startServer(): Promise<void> {
+    const candidate = options.config.tls
+      ? createHttpsServer(
+          {
+            cert: readFileSync(options.config.tls.certFile),
+            key: readFileSync(options.config.tls.keyFile),
+            maxHeaderSize: 16 * 1024,
+          },
+          handler,
+        )
+      : createHttpServer({ maxHeaderSize: 16 * 1024 }, handler);
+    try {
+      await new Promise<void>((resolveStart, reject) => {
+        candidate.once('error', reject);
+        candidate.listen(options.config.port, options.config.host, () => {
+          candidate.off('error', reject);
+          resolveStart();
+        });
+      });
+    } catch (error) {
+      candidate.close(() => undefined);
+      throw error;
+    }
+    server = candidate;
+    stderr.write(`Binaflow web listening at ${options.config.origin}\n`);
+    stderr.write(`Binaflow access code: ${auth.accessCode}\n`);
+  }
 
   async function dispatch(request: IncomingMessage, response: ServerResponse): Promise<void> {
     setSecurityHeaders(response, options.config.origin.startsWith('https:'));
@@ -325,6 +343,12 @@ function loadAssets(): WebServerAssets {
     app: readFileSync(join(root, 'app.js'), 'utf8'),
     css: readFileSync(join(root, 'styles.css'), 'utf8'),
   };
+}
+
+function close(server: Server): Promise<void> {
+  return new Promise((resolveClose, reject) => {
+    server.close((error) => (error ? reject(error) : resolveClose()));
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

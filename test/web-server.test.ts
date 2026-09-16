@@ -75,6 +75,24 @@ describe('web config, auth, and server', () => {
     });
   });
 
+  it('recovers cleanly when the port is occupied before listen succeeds', async () => {
+    const port = await freePort();
+    const blocker = createHttpServer().listen(port, '127.0.0.1');
+    await new Promise<void>((resolve) => blocker.once('listening', resolve));
+    const config = parseWebConfig({ host: '127.0.0.1', port, origin: `http://127.0.0.1:${port}` });
+    const server = createWebServer({
+      config,
+      assets: { index: '', app: '', css: '' },
+      stderr: { write: () => undefined },
+    });
+    await expect(server.start()).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    await new Promise<void>((resolve, reject) =>
+      blocker.close((error) => (error ? reject(error) : resolve())),
+    );
+    await server.start();
+    await server.close();
+  });
+
   it('supports login, CSRF-protected logout, expiry, and bounded sessions', () => {
     let timestamp = 1000;
     const auth = createWebAuth({
