@@ -9,14 +9,21 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const requestId = useRef<string | undefined>(undefined);
+  const taskGeneration = useRef(0);
   const todoVersion = props.task.todo?.version;
 
   useEffect(() => {
+    const generation = ++taskGeneration.current;
+    requestId.current = undefined;
+    setPreview(undefined);
+    setProgress(undefined);
+    setBusy(false);
+    setError(undefined);
     let active = true;
     void props.api
       .getTaskExecution(props.task.id)
       .then((next) => {
-        if (active && next) setProgress(next);
+        if (active && generation === taskGeneration.current) setProgress(next ?? undefined);
       })
       .catch(() => undefined);
     return () => {
@@ -41,53 +48,64 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
 
   async function loadPreview(): Promise<void> {
     if (busy || !todoVersion) return;
+    const generation = taskGeneration.current;
     setBusy(true);
     setError(undefined);
     try {
-      setPreview(
-        await props.api.previewTaskExecution(props.task.id, props.task.revision, todoVersion),
+      const next = await props.api.previewTaskExecution(
+        props.task.id,
+        props.task.revision,
+        todoVersion,
       );
+      if (generation === taskGeneration.current) setPreview(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The execution preview failed');
+      if (generation === taskGeneration.current)
+        setError(cause instanceof Error ? cause.message : 'The execution preview failed');
     } finally {
-      setBusy(false);
+      if (generation === taskGeneration.current) setBusy(false);
     }
   }
 
   async function start(): Promise<void> {
     if (busy || !preview || !todoVersion) return;
+    const generation = taskGeneration.current;
     const id = requestId.current ?? createRequestId();
     requestId.current = id;
     setBusy(true);
     setError(undefined);
     try {
-      setProgress(
-        await props.api.startTaskExecution({
-          requestId: id,
-          contractId: props.task.id,
-          expectedRevision: props.task.revision,
-          todoVersion,
-          previewDigest: preview.digest,
-        }),
-      );
-      requestId.current = undefined;
+      const next = await props.api.startTaskExecution({
+        requestId: id,
+        contractId: props.task.id,
+        expectedRevision: props.task.revision,
+        todoVersion,
+        previewDigest: preview.digest,
+      });
+      if (generation === taskGeneration.current) {
+        setProgress(next);
+        requestId.current = undefined;
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The execution could not be started');
+      if (generation === taskGeneration.current)
+        setError(cause instanceof Error ? cause.message : 'The execution could not be started');
     } finally {
-      setBusy(false);
+      if (generation === taskGeneration.current) setBusy(false);
     }
   }
 
   async function cancel(): Promise<void> {
     if (!progress || busy) return;
+    const generation = taskGeneration.current;
     setBusy(true);
     setError(undefined);
     try {
-      setProgress(await props.api.cancelTaskExecution(progress.runId, 'Cancelled from the web'));
+      const next = await props.api.cancelTaskExecution(progress.runId, 'Cancelled from the web');
+      if (generation === taskGeneration.current) setProgress(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The execution could not be cancelled');
+      if (generation === taskGeneration.current)
+        setError(cause instanceof Error ? cause.message : 'The execution could not be cancelled');
     } finally {
-      setBusy(false);
+      if (generation === taskGeneration.current) setBusy(false);
     }
   }
 
