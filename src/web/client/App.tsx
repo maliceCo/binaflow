@@ -53,10 +53,17 @@ export function App(): ReactElement {
     try {
       const nextSettings = await api.getSettings();
       setSettings(nextSettings);
-      if (!nextSettings.setupRequired) await refreshTasks();
-    } catch {
+      if (nextSettings.setupRequired) {
+        setTasks([]);
+        return;
+      }
+      const activeProject = await api.getActiveProject();
+      if (activeProject) await refreshTasks();
+      else setTasks([]);
+    } catch (cause) {
       setSettings(undefined);
-      await refreshTasks();
+      setTasks([]);
+      setError(messageOf(cause));
     }
   }
 
@@ -117,7 +124,7 @@ export function App(): ReactElement {
           settings={settings}
           onSaved={(next) => {
             setSettings(next);
-            void refreshTasks();
+            void refreshWorkspace();
           }}
         />
       ) : (

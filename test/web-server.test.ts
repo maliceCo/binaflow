@@ -124,6 +124,7 @@ describe('web config, auth, and server', () => {
       body: expect.stringContaining('false'),
     });
     await expect(request(port, '/nope')).resolves.toMatchObject({ status: 404 });
+    await expect(request(port, '/favicon.ico')).resolves.toMatchObject({ status: 204 });
     await expect(
       request(port, '/login', {
         method: 'POST',

@@ -156,6 +156,11 @@ export function createWebServer(options: WebServerOptions): WebServer {
       sendJson(response, result.status, result.body);
       return;
     }
+    if (method === 'GET' && path === '/favicon.ico') {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     if (method === 'GET' && path === '/') {
       send(response, 200, 'text/html; charset=utf-8', assets.index);
       return;
