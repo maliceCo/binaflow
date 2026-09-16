@@ -51,6 +51,18 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(page.getByText('Execution is waiting for changes review.')).toBeVisible({
       timeout: 15_000,
     });
+
+    await page.getByRole('button', { name: 'Server settings' }).click();
+    const revokeResponse = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/project-roots/'),
+    );
+    await page.getByRole('button', { name: 'Remove authorization' }).click();
+    const response = await revokeResponse;
+    expect(response.status()).toBe(200);
+    await expect(
+      page.getByText('Folder authorization removed. Registered projects and files were kept.'),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Active', exact: true })).toBeVisible();
   } finally {
     await page.close();
     await fixture.close();

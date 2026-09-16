@@ -188,6 +188,9 @@ export interface ApiClient {
   authorizeSetupRoot?(
     candidateId: string,
   ): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+  revokeProjectRoot?(
+    rootId: string,
+  ): Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
   listProjectDirectory(
     rootId: string,
     segments: string[],
@@ -322,6 +325,13 @@ export function createApiClient(): ApiClient {
         settings: LauncherSettings;
         restartRequired: boolean;
       }>('/api/v1/setup-roots', 'POST', { candidateId }, csrfToken);
+      return result.data;
+    },
+    async revokeProjectRoot(rootId) {
+      const result = await request<{
+        settings: LauncherSettings;
+        restartRequired: boolean;
+      }>(`/api/v1/project-roots/${encodeURIComponent(rootId)}`, 'DELETE', {}, csrfToken);
       return result.data;
     },
     async listProjectDirectory(rootId, segments, offset = 0) {

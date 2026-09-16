@@ -21,14 +21,14 @@ export function Settings(props: {
   const [rootBusy, setRootBusy] = useState<string>();
 
   useEffect(() => {
-    if (!props.setup || !props.api.listSetupRoots) return;
+    if (!props.api.listSetupRoots) return;
     void props.api
       .listSetupRoots()
       .then(setRootCandidates)
       .catch((cause: unknown) =>
         setError(cause instanceof Error ? cause.message : 'Project roots could not be loaded'),
       );
-  }, [props.api, props.setup]);
+  }, [props.api]);
 
   async function authorizeRoot(candidateId: string): Promise<void> {
     if (!props.api.authorizeSetupRoot || rootBusy) return;
@@ -45,6 +45,22 @@ export function Settings(props: {
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The project root could not be authorized');
+    } finally {
+      setRootBusy(undefined);
+    }
+  }
+
+  async function revokeRoot(rootId: string): Promise<void> {
+    if (!props.api.revokeProjectRoot || rootBusy) return;
+    setRootBusy(rootId);
+    setError(undefined);
+    try {
+      const result = await props.api.revokeProjectRoot(rootId);
+      props.onSaved(result.settings);
+      if (props.api.listSetupRoots) setRootCandidates(await props.api.listSetupRoots());
+      setMessage('Folder authorization removed. Registered projects and files were kept.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The project root could not be removed');
     } finally {
       setRootBusy(undefined);
     }
@@ -86,22 +102,40 @@ export function Settings(props: {
       <p className="eyebrow">{props.setup ? 'First start' : 'Local server'}</p>
       <h2 id="settings-title">{props.setup ? 'Set up Binaflow' : 'Web settings'}</h2>
       <p>These settings belong to the computer running Binaflow.</p>
-      {props.setup && (
-        <div className="settings-section" aria-labelledby="project-roots-title">
-          <h3 id="project-roots-title">Project roots</h3>
-          <p>Select a local folder that may contain Binaflow projects.</p>
-          {props.settings.projectRoots.length > 0 && (
-            <ul>
-              {props.settings.projectRoots.map((root) => (
-                <li key={root.id}>{root.label}</li>
-              ))}
-            </ul>
-          )}
-          {rootCandidates.length > 0 ? (
+      <div className="settings-section" aria-labelledby="project-roots-title">
+        <h3 id="project-roots-title">Authorized project folders</h3>
+        <p>
+          Authorization permits browsing and registering Binaflow projects inside a folder. Removing
+          it keeps registered projects and files.
+        </p>
+        {props.settings.projectRoots.length > 0 ? (
+          <ul>
+            {props.settings.projectRoots.map((root) => (
+              <li key={root.id}>
+                <span>{root.label}</span>
+                {props.api.revokeProjectRoot && (
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => void revokeRoot(root.id)}
+                    disabled={rootBusy !== undefined}
+                  >
+                    {rootBusy === root.id ? 'Removing...' : 'Remove authorization'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>No folders are authorized.</p>
+        )}
+        {rootCandidates.length > 0 ? (
+          <>
+            <h3>Available local folders</h3>
             <ul>
               {rootCandidates.map((candidate) => (
                 <li key={candidate.id}>
-                  <span>{candidate.label}</span>{' '}
+                  <span>{candidate.label}</span>
                   <button
                     type="button"
                     onClick={() => void authorizeRoot(candidate.id)}
@@ -112,11 +146,11 @@ export function Settings(props: {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p>No additional local folders were detected.</p>
-          )}
-        </div>
-      )}
+          </>
+        ) : (
+          <p>No additional local folders were detected.</p>
+        )}
+      </div>
       <label htmlFor="device-name">Computer name</label>
       <input
         id="device-name"

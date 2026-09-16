@@ -15,7 +15,7 @@ describe('local setup client', () => {
     const html = renderToStaticMarkup(
       <Settings api={{} as ApiClient} settings={settings} onSaved={() => undefined} setup />,
     );
-    expect(html).toContain('Project roots');
+    expect(html).toContain('Authorized project folders');
     expect(html).toContain('No additional local folders were detected.');
     expect(html).not.toContain('/mnt/');
   });

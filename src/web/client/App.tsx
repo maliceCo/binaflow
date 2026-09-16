@@ -165,7 +165,11 @@ export function App(): ReactElement {
                   <p>Register a Binaflow folder, then open it to load its tasks.</p>
                 </div>
               </div>
-              <Projects api={api} onProjectChanged={refreshWorkspace} />
+              <Projects
+                key={settings.projectRoots.map((root) => root.id).join(':')}
+                api={api}
+                onProjectChanged={refreshWorkspace}
+              />
             </section>
           )}
           {!workspaceReady && (

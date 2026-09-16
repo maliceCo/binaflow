@@ -47,6 +47,10 @@ describe('local setup roots API', () => {
             projectRoots: [{ rootId: id, label: 'Projects', path: directory }],
           });
         },
+        revokeRoot: async (id: string) => {
+          expect(id).toBe(candidateId);
+          return controller.update({ ...controller.get(), projectRoots: [] });
+        },
         listProjects: async () => [],
         listDirectory: async () => ({
           rootId: candidateId,
@@ -92,5 +96,31 @@ describe('local setup roots API', () => {
       body: { data: { settings: { projectRoots: [{ id: candidateId }] } } },
     });
     expect(JSON.stringify(response)).not.toContain(directory);
+
+    await expect(
+      handleWebApi(
+        {
+          method: 'DELETE',
+          path: `/api/v1/project-roots/${candidateId}`,
+          body: {},
+        },
+        api,
+      ),
+    ).resolves.toMatchObject({ status: 403 });
+    await expect(
+      handleWebApi(
+        {
+          method: 'DELETE',
+          path: `/api/v1/project-roots/${candidateId}`,
+          remoteAddress: '127.0.0.1',
+          body: {},
+        },
+        api,
+      ),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { data: { settings: { projectRoots: [] } } },
+    });
+    expect(controller.get().projectRoots).toEqual([]);
   });
 });

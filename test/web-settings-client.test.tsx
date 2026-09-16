@@ -7,10 +7,12 @@ const settings: LauncherSettings = {
   setupRequired: true,
   deviceName: 'Desktop',
   web: { host: '127.0.0.1', port: 4317, origin: 'http://127.0.0.1:4317', tlsConfigured: false },
-  projectRoots: [],
+  projectRoots: [{ id: 'root-1', label: 'Projects' }],
 };
 
-const api = {} as ApiClient;
+const api = {
+  revokeProjectRoot: async () => ({ settings, restartRequired: false }),
+} as unknown as ApiClient;
 
 describe('web settings client', () => {
   it('renders an accessible local setup form without exposing secrets', () => {
@@ -20,6 +22,7 @@ describe('web settings client', () => {
     expect(html).toContain('Computer name');
     expect(html).toContain('HTTPS certificate');
     expect(html).toContain('Private keys are never returned');
+    expect(html).toContain('Remove authorization');
     expect(html).not.toContain('undefined');
   });
 });

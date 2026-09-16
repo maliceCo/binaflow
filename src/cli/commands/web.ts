@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
 import type { TaskContractBrief } from '../../application/task-contract.js';
-import { createPersonalWebRuntime } from '../../application/web-runtime.js';
+import { createPersonalWebRuntime, ProjectLifecycleError } from '../../application/web-runtime.js';
 import { createExecutionHost } from '../../application/execution-host.js';
 import { openApplicationContext } from '../../application/runtime.js';
 import { loadWebConfig } from '../../web/config.js';
@@ -271,6 +271,16 @@ async function createLauncherResources(
     },
     getRoots: () =>
       settingsController.get().projectRoots.map(({ rootId, label }) => ({ id: rootId, label })),
+    revokeRoot: async (rootId: string) => {
+      const current = settingsController.get();
+      if (!current.projectRoots.some((item) => item.rootId === rootId)) {
+        throw new ProjectLifecycleError('not-found', 'Project root is not authorized');
+      }
+      return settingsController.update({
+        ...current,
+        projectRoots: current.projectRoots.filter((item) => item.rootId !== rootId),
+      });
+    },
     listProjects: async () => catalog.list().then((value) => value.projects),
     listDirectory: (rootId: string, segments: string[], offset: number, limit: number) =>
       listProjectDirectory(settingsController.get().projectRoots, rootId, segments, offset, limit),

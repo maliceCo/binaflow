@@ -89,6 +89,9 @@ export interface WebApiCapabilities {
     authorizeSetupRoot?: (
       candidateId: string,
     ) => Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
+    revokeRoot?: (
+      rootId: string,
+    ) => Promise<{ settings: LauncherSettings; restartRequired: boolean }>;
     listProjects: () => Promise<ProjectCatalogEntry[]>;
     listDirectory: (
       rootId: string,
@@ -208,6 +211,21 @@ export async function handleWebApi(
     if (request.path === '/api/v1/project-roots' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
       return ok(200, { items: api.projectCatalog.getRoots() });
+    }
+    const revokeRootId = request.path.match(/^\/api\/v1\/project-roots\/([^/]+)$/)?.[1];
+    if (revokeRootId && request.method === 'DELETE') {
+      if (!api.projectCatalog?.revokeRoot) return unavailable();
+      if (!isLoopbackSettingsRequest(request)) {
+        return error(403, 'forbidden', 'Root authorization changes require a local connection');
+      }
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Root revocation does not accept a body');
+      }
+      const result = await api.projectCatalog.revokeRoot(revokeRootId);
+      return ok(200, {
+        settings: toWebLauncherSettingsDto(result.settings),
+        restartRequired: result.restartRequired,
+      });
     }
     if (request.path === '/api/v1/project-directories' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
