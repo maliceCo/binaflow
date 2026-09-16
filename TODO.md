@@ -645,7 +645,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
   - **Verificacion / TDD:** start unico, doble submit, progreso entre dos pestañas, reload, cancel, interruption/resume admitido, fallo builder, cierre del navegador no cancela, shutdown ordenado, artefacto seguro y estado final waiting/changes-review. `pnpm exec vitest run test/web-local-execution-api.test.ts test/web-local-execution-client.test.tsx test/execution-host.test.ts test/web-lifecycle.test.ts test/guided-execution-persistence.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: complete local guided task execution`
 
-- [ ] **Tarea 5.17: Aceptar la app completa en una computadora y cerrar baseline local**
+- [x] **Tarea 5.17: Aceptar la app completa en una computadora y cerrar baseline local**
   - **Archivo:** `test/web/local-launcher.e2e.ts`, `test/web/local-launcher-fixture.ts`, `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`; `README.md`, `docs/personal-web.md`, `docs/web-workflow-vision.md`, `TODO.md`.
   - **Funciones:** fixture de un launcher con SQLite/Git/artefactos temporales y AgentDriver falso determinista; ninguna funcion nueva de producto salvo fixes demostrados por el recorrido.
   - **Descripcion:** verificar en Chromium el viaje de una sola computadora: `binaflow web` sin JSON -> login -> setup/root -> registrar y abrir proyecto -> crear/preparar tarea -> plan/TODO -> confirmar ejecucion -> progreso -> waiting/changes-review -> artefactos -> reload/segunda sesion -> logout/shutdown. Ejecutar tambien un smoke manual sobre un proyecto desechable aprobado por el operador; si Pi/modelo real no se autoriza, registrar que el driver live sigue pendiente sin bloquear el recorrido determinista. Documentar operacion local y limites reales antes de retomar A/B.
@@ -847,7 +847,12 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   preparacion guiada, preview/start/cancel de ejecucion, progreso y artefactos DTO.
   Commits `1fe10df`, `4c44ef9` y `8002fab`; lint, typecheck, build:web y tests
   enfocados pasan. El polling de operaciones conserva requestId ante timeout.
-- La aceptacion integral de una computadora queda en 5.17: falta E2E con
-  SQLite/Git/artefactos reales y driver determinista, no mocks de almacenamiento.
-- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.17,
-  E2E local completo y regresion baseline.
+- Tarea 5.17 completada: `test/web/local-launcher.e2e.ts` arranca `binaflow web`
+  real con SQLite, Git, artefactos temporales y un Pi falso determinista; Chromium
+  cubre setup, root, proyecto, preparacion, plan/TODO, preview, ejecucion y
+  revision `waiting`. `pnpm run test:web`, typecheck, build web y tests enfocados
+  pasan. Pi/modelos live, smoke manual y LAN/TLS siguen pendientes.
+- La confirmacion de brief debia reconciliar la revision reservada por la admision;
+  el ajuste conserva CAS, idempotencia y el flujo directo probado por los tests.
+- Siguiente accion: retomar Tarea 5.18 A -> B; mantener 5.19 diferida hasta
+  promocion explicita.

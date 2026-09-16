@@ -165,10 +165,11 @@ async function performOperation(
       await context.store.confirmGuidedBrief({
         workspace: context.workspace,
         contractId: operation.contractId,
-        expectedPreparationRevision: operation.expectedPreparationRevision,
+        expectedPreparationRevision: operation.expectedPreparationRevision + 1,
         brief: operation.brief,
         throughSequence: operation.throughSequence,
         sourceIds: operation.sourceIds,
+        requestId: operation.requestId,
       });
       return {};
     case 'reply': {

@@ -125,6 +125,7 @@ export interface GuidedBriefConfirmationRequest {
   brief: TaskContractBrief;
   throughSequence: number;
   sourceIds: string[];
+  requestId?: string;
 }
 
 export interface GuidedPreparationRequestRecord {

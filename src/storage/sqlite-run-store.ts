@@ -1073,7 +1073,7 @@ export class SqliteRunStore
       if (preparation.revision !== request.expectedPreparationRevision) {
         throw new GuidedPreparationError('stale-revision', 'Guided preparation revision is stale');
       }
-      if (preparation.active_request_id) {
+      if (preparation.active_request_id && preparation.active_request_id !== request.requestId) {
         throw new GuidedPreparationError(
           'busy',
           'Cannot confirm a brief while a request is active',
@@ -1106,11 +1106,13 @@ export class SqliteRunStore
       this.database
         .prepare(
           `UPDATE guided_preparations
-              SET revision = revision + 1, brief_confirmed_through_sequence = ?,
-                  confirmed_source_ids_json = ?, updated_at = ?
-            WHERE contract_id = ? AND revision = ? AND active_request_id IS NULL`,
+              SET revision = CASE WHEN active_request_id = ? THEN revision ELSE revision + 1 END,
+                  brief_confirmed_through_sequence = ?, confirmed_source_ids_json = ?,
+                  updated_at = ?
+            WHERE contract_id = ? AND revision = ?`,
         )
         .run(
+          request.requestId ?? null,
           request.throughSequence,
           JSON.stringify(request.sourceIds),
           now,
