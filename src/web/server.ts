@@ -278,14 +278,24 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
   if (request.headers['content-type'] !== 'application/json')
     throw new Error('JSON content type required');
+  const declaredLength = header(request, 'content-length');
+  if (declaredLength !== undefined) {
+    const length = Number(declaredLength);
+    if (!Number.isSafeInteger(length) || length < 0) throw new Error('Invalid content length');
+    if (length > MAX_BODY_BYTES) throw new Error('Request body is too large');
+  }
   const chunks: Buffer[] = [];
   let size = 0;
-  request.setTimeout(15_000, () => request.destroy());
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.length;
-    if (size > MAX_BODY_BYTES) throw new Error('Request body is too large');
-    chunks.push(buffer);
+  const timeout = setTimeout(() => request.destroy(), 15_000);
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > MAX_BODY_BYTES) throw new Error('Request body is too large');
+      chunks.push(buffer);
+    }
+  } finally {
+    clearTimeout(timeout);
   }
   try {
     const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));

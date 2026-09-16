@@ -124,6 +124,13 @@ describe('web config, auth, and server', () => {
       body: expect.stringContaining('false'),
     });
     await expect(request(port, '/nope')).resolves.toMatchObject({ status: 404 });
+    await expect(
+      request(port, '/login', {
+        method: 'POST',
+        body: { value: 'x'.repeat(128 * 1024) },
+        headers: { Origin: config.origin },
+      }),
+    ).resolves.toMatchObject({ status: 413 });
     const login = await request(port, '/login', {
       method: 'POST',
       body: { code: auth.accessCode },

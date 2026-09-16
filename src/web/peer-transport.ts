@@ -100,7 +100,7 @@ export function createPeerTransport(options: PeerTransportOptions): PeerTranspor
   if (mode === 'lan-experimental' && !isAllowedBindHost(options.host)) {
     throw new Error('LAN experimental peer transport must bind to a private address');
   }
-  const server = createServer((request, response) => {
+  const server = createServer({ maxHeaderSize: 16 * 1024 }, (request, response) => {
     void serveTransferRange(request, response, options).catch((cause: unknown) => {
       if (!response.headersSent) sendError(response, cause);
       else response.destroy();
@@ -371,13 +371,24 @@ function signedRequest(request: IncomingMessage, body: unknown): SignedPeerReque
 }
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  const declaredLength = header(request, 'content-length');
+  if (declaredLength !== undefined) {
+    const length = Number(declaredLength);
+    if (!Number.isSafeInteger(length) || length < 0) throw new Error('Invalid content length');
+    if (length > MAX_RECEIVE_BODY_BYTES) throw new Error('Peer receive request is too large');
+  }
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.from(chunk as Buffer);
-    bytes += buffer.byteLength;
-    if (bytes > MAX_RECEIVE_BODY_BYTES) throw new Error('Peer receive request is too large');
-    chunks.push(buffer);
+  const timeout = setTimeout(() => request.destroy(), 15_000);
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.from(chunk as Buffer);
+      bytes += buffer.byteLength;
+      if (bytes > MAX_RECEIVE_BODY_BYTES) throw new Error('Peer receive request is too large');
+      chunks.push(buffer);
+    }
+  } finally {
+    clearTimeout(timeout);
   }
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
