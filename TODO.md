@@ -40,9 +40,16 @@ servidores personales sin sincronizacion bidireccional.
   Next.js, SSR, router externo, framework CSS, WebSockets ni service worker.
 - **Servidor:** HTTP/HTTPS nativo de Node y rutas explicitas; Ajv existente para
   validar. `binaflow web` permanece en primer plano, sin daemon ni servicio OS.
-- **Acceso:** codigo aleatorio de acceso generado al arrancar, introducido en un
-  formulario y canjeado por cookie de sesion. Para LAN se exige HTTPS con
-  certificado/clave aportados por el operador; HTTP solo en loopback.
+- **Acceso web:** codigo aleatorio de acceso generado al arrancar, introducido en
+  un formulario y canjeado por cookie de sesion. La UI HTTP sigue limitada a
+  loopback; exponer el navegador en LAN/VPN exige HTTPS con certificado/clave del
+  operador.
+- **Handoff LAN experimental:** el transporte peer puede usar HTTP en una LAN
+  privada solo mediante opt-in explicito, para peers emparejados y con advertencia
+  persistente de que no ofrece confidencialidad. Conserva firmas Ed25519, nonce,
+  timestamp, proteccion replay, revocacion, hashes y limites. No habilita la UI web
+  por HTTP en LAN ni se presenta como seguro para redes no confiables. TLS queda
+  como modo recomendado y requisito para eliminar la etiqueta experimental.
 - **Internet:** lectura de URLs publicas HTTPS y busqueda opcional mediante Brave
   Search API, con clave externa del operador. Sin clave, la UI muestra busqueda
   deshabilitada; la lectura por URL sigue disponible. Cada consulta/URL la envia
@@ -508,7 +515,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 - [x] **Tarea 5.3: Registrar el hallazgo manual como extension separada**
   - **Archivo:** `TODO.md`.
   - **Funciones:** ninguna nueva.
-  - **Descripcion:** conservar 5.1/5.2 como cierre verificable del Hito 4 y convertir la friccion observada al crear `binaweb.json` durante la prueba manual en una extension funcional posterior. El archivo local de prueba no es parte del producto, no se versiona, no se modifica y desaparece de la operacion normal al completar 5.5/5.6. Mover la regresion global al cierre 5.14 para que mida el producto extendido completo.
+  - **Descripcion:** conservar 5.1/5.2 como cierre verificable del Hito 4 y convertir la friccion observada al crear `binaweb.json` durante la prueba manual en una extension funcional posterior. El archivo local de prueba no es parte del producto, no se versiona, no se modifica y desaparece de la operacion normal al completar 5.5/5.6. Mover la regresion global al cierre 5.15 para que mida el producto extendido completo.
   - **Evitar:** presentar el launcher/handoff como bug del Hito 4, mezclar el JSON local en un commit, reabrir tareas terminadas o empezar implementacion durante esta reorganizacion.
   - **Verificacion:** `pnpm exec prettier --check TODO.md`; `git diff --check`.
   - **Commit Msg:** `docs: promote manual web feedback into the launcher plan`
@@ -518,7 +525,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 La extension empieza en 5.4. Hasta completar 5.5 sigue siendo valido arrancar el
 modo existente con `--web-config`; no importar, borrar ni depender del
 `binaweb.json` local usado durante la aceptacion. Las pruebas deben crear sus
-settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
+settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.15.
 
 - [x] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
   - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
@@ -571,15 +578,15 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 - [x] **Tarea 5.10: Emparejar servidores con identidad y revocacion explicitas**
   - **Archivo:** nuevos `src/web/device-identity.ts`, `src/web/peer-auth.ts`; `src/web/settings-store.ts`, `src/web/server.ts`, `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/Devices.tsx`; `src/web/client/api.ts`, `Settings.tsx`; nuevos `test/device-identity.test.ts`, `test/peer-auth.test.ts`, `test/web-device-api.test.ts`.
   - **Funciones:** loadOrCreateDeviceIdentity, beginPairing, answerPairingChallenge, confirmPeerFingerprint y revokePeer.
-  - **Descripcion:** generar una identidad Ed25519 por instalacion, guardar private key separada con 0600 y derivar deviceId de la public key. Emparejamiento manual por URL HTTPS, codigo aleatorio de un uso con TTL/intentos acotados y confirmacion de fingerprint/nombre en ambos equipos. Registrar public key, origin y certificado/fingerprint fijado; peticiones peer usan challenge, nonce, timestamp y firma, no cookie web. Revocar invalida nuevas solicitudes pero conserva historial. Solo LAN/VPN alcanzable; sin mDNS, relay, cuenta cloud ni sesiones compartidas.
-  - **Evitar:** enviar private key, codigo en URL/log, desactivar verificacion TLS global, confiar solo en IP/nombre, HTTP entre equipos, pairing permanente, aceptar replay/clock skew ilimitado o emparejar automaticamente por descubrimiento.
+  - **Descripcion:** generar una identidad Ed25519 por instalacion, guardar private key separada con 0600 y derivar deviceId de la public key. El modo confiable empareja manualmente por URL HTTPS, codigo aleatorio de un uso con TTL/intentos acotados y confirmacion de fingerprint/nombre en ambos equipos. Registrar public key, origin y certificado/fingerprint fijado; peticiones peer usan challenge, nonce, timestamp y firma, no cookie web. Revocar invalida nuevas solicitudes pero conserva historial. Solo LAN/VPN alcanzable; sin mDNS, relay, cuenta cloud ni sesiones compartidas. La excepcion HTTP experimental, su warning y la confirmacion manual de fingerprint se delimitan en 5.13.
+  - **Evitar:** enviar private key, codigo en URL/log, desactivar verificacion TLS global, confiar solo en IP/nombre, HTTP entre equipos fuera del opt-in experimental de 5.13, pairing permanente, aceptar replay/clock skew ilimitado o emparejar automaticamente por descubrimiento.
   - **Verificacion / TDD:** handshake feliz entre dos servidores loopback TLS, codigo incorrecto/expirado/reusado, fingerprint cambiado, firma/replay invalido, revocacion y archivos privados. Usar reloj/crypto/rutas inyectados y certificados fixture. `pnpm exec vitest run test/device-identity.test.ts test/peer-auth.test.ts test/web-device-api.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: pair personal Binaflow servers securely`
 
 - [x] **Tarea 5.11: Transferir ownership reutilizando portabilidad existente**
   - **Archivo:** nuevos `src/application/project-transfer.ts`, `src/web/peer-transfer.ts`, `src/web/transfer-journal.ts`; `src/application/portability-operations.ts`, `src/config.ts`, `src/application/config-operations.ts`, `src/application/web-runtime.ts`, `src/web/server.ts`; nuevos `test/project-transfer.test.ts`, `test/peer-transfer.test.ts`, `test/transfer-journal.test.ts`; ampliar `test/portability-integration.test.ts`.
   - **Funciones:** previewProjectTransfer, startProjectTransfer, resumeProjectTransfer, receiveProjectTransfer y generateUpdatedDataDirConfiguration.
-  - **Descripcion:** orquestar un handoff A->B, nunca sync. Preflight exige source activo/idle, Git limpio, branch+HEAD exactos, peer/version compatibles, target workspace catalogado y espacio/limites aceptables. Reusar preview/export/package/inspect/import y lineage actuales; no duplicar formato ni hashes. El source exporta con requestId/digest estable y queda `exported`; el target descarga por streaming/Range autenticado a temp, verifica paquete completo, importa a dataDir nuevo administrado y actualiza `dataDir` del config mediante sourceHash+replace atomico antes de abrirlo. Journal global por transferId conserva etapa, digests, bytes y recibos para replay/reanudacion; nunca contiene private keys ni contenido de artefactos. Un fallo tras export deja recovery/resend explicito, no reactiva A ni activa B parcialmente. Git se inspecciona pero no ejecuta fetch/pull/push/checkout/reset.
+  - **Descripcion:** orquestar un handoff A->B, nunca sync. Preflight exige source activo/idle, Git limpio, branch+HEAD exactos, peer/version compatibles, target workspace catalogado y espacio/limites aceptables. Reusar preview/export/package/inspect/import y lineage actuales; no duplicar formato ni hashes. El source exporta con requestId/digest estable y queda `exported`; el target verifica el paquete completo, importa a dataDir nuevo administrado y actualiza `dataDir` del config mediante sourceHash+replace atomico antes de abrirlo. Journal global por transferId conserva etapa, digests, bytes y recibos para replay/reanudacion; nunca contiene private keys ni contenido de artefactos. Un fallo tras export deja recovery/resend explicito, no reactiva A ni activa B parcialmente. Git se inspecciona pero no ejecuta fetch/pull/push/checkout/reset. Esta tarea cierra la orquestacion y el adapter local; el transporte entre procesos/equipos se completa en 5.13.
   - **Evitar:** merge SQLite, dos owners activos, cargar paquete en memoria, confiar en Content-Length, endpoints de path arbitrario, modificar Git, importar sobre dataDir existente, reusar otro projectId, auto rollback de `exported` o crear schema 016 sin desviacion aprobada.
   - **Verificacion / TDD:** A->B real con SQLite/Git/artifacts temporales, rangos y reconexion, lost response/replay, hash corrupto, HEAD distinto, target dirty, corte antes/despues de export, config CAS cambiada y lineage B->A. `pnpm exec vitest run test/project-transfer.test.ts test/peer-transfer.test.ts test/transfer-journal.test.ts test/portability-integration.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: hand off active projects between paired servers`
@@ -587,26 +594,34 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 - [x] **Tarea 5.12: Guiar transferencia, progreso y recuperacion desde la web**
   - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`; nuevos `src/web/client/TransferWizard.tsx`, `src/web/client/Transfers.tsx`; `src/web/client/Projects.tsx`, `App.tsx`, `api.ts`, `styles.css`; nuevos `test/web-transfer-api.test.ts`, `test/web-transfer-client.test.tsx`.
   - **Funciones:** rutas preview/start/status/resume de transfer y wizard seleccionar equipo -> vincular clone target -> preflight -> confirmar -> progreso/recuperar.
-  - **Descripcion:** desde el proyecto activo elegir peer emparejado. En destino, notificacion pide seleccionar el clon local mediante el catalogo; nunca permite path remoto. Mostrar checks de version, Git, ejecuciones, tamano, TLS y destino. La confirmacion presenta que A quedara inutilizable y usa transferId/requestId/digest congelados. Progreso usa polling acotado y bytes reales, no porcentajes inventados sin total. Doble click/reload conserva IDs y no duplica export/import. Tras exito, A muestra `Transferido a <equipo>` solo lectura y B abre el proyecto activo. Estados recuperables ofrecen Reanudar o Descargar paquete offline existente; no ofrecen forzar activo.
+  - **Descripcion:** desde el proyecto activo elegir peer emparejado. En destino, notificacion pide seleccionar el clon local mediante el catalogo; nunca permite path remoto. Mostrar checks de version, Git, ejecuciones, tamano, destino y modo de transporte (`TLS` o `LAN experimental sin cifrado`). La confirmacion presenta que A quedara inutilizable y usa transferId/requestId/digest congelados. Progreso usa polling acotado y bytes reales, no porcentajes inventados sin total. Doble click/reload conserva IDs y no duplica export/import. Tras exito, A muestra `Transferido a <equipo>` solo lectura y B abre el proyecto activo. Estados recuperables ofrecen Reanudar o Descargar paquete offline existente; no ofrecen forzar activo.
   - **Evitar:** empezar por seleccionar un peer, esconder blockers, generar IDs nuevos al reintentar, cancelar por cerrar pestana, exponer rutas/manifest sensible, activar target antes del recibo verificado, borrar paquete temporal antes de recovery o ofrecer sync simultaneo.
   - **Verificacion / TDD:** flujo feliz, rechazo humano, doble submit, reload/segunda sesion, peer desconectado, mismatch Git, corte y resume, source exported/target pendiente, retorno B->A y contenido malicioso escapado. `pnpm exec vitest run test/web-transfer-api.test.ts test/web-transfer-client.test.tsx test/project-transfer.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: add guided project handoff to the web launcher`
 
-- [ ] **Tarea 5.13: Verificar launcher y handoff entre dos servidores completos**
-  - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`.
-  - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer TLS loopback.
-  - **Descripcion:** E2E: arrancar A/B sin JSON, configurar por wizard, registrar clones por explorador, emparejar, crear/consultar tarea en A, transferir a B, comprobar A read-only y B activo desde otro contexto, trabajar en B y devolver a A. Cubrir restart durante download, replay y revocacion. Todo en tmpdirs/listeners loopback; ninguna HOME, red, credencial, Pi o certificado del operador. Extender boundaries: browser no Node/fs; routes no storage concreto; peer adapter no importa UI; project-transfer no HTTP; solo web-runtime compone ambos lados.
-  - **Evitar:** mocks que omitan SQLite/Git/artefactos en el recorrido principal, bind LAN real, sleeps fijos, screenshots como unica asercion, instalar navegadores/OS sin permiso, compartir catalogo/dataDir entre fixtures o declarar red remota probada.
-  - **Verificacion:** `pnpm exec vitest run test/architecture-boundaries.test.ts test/web-bootstrap.test.ts test/web-project-lifecycle.test.ts test/peer-transfer.test.ts test/project-transfer.test.ts`; tras Chromium aprobado, `pnpm run test:web`. Registrar bloqueo si Chromium falta.
-  - **Commit Msg:** `test: verify project handoff across personal web servers`
+- [ ] **Tarea 5.13: Implementar transporte peer LAN experimental y autenticado**
+  - **Archivo:** nuevo `src/web/peer-transport.ts`; `src/web/peer-auth.ts`, `src/web/config.ts`, `src/web/settings-store.ts`, `src/web/server.ts`, `src/application/project-transfer.ts`, `src/web/client/TransferWizard.tsx`; nuevos `test/peer-transport.test.ts`, `test/web-peer-transport.test.ts`; ampliar `test/peer-transfer.test.ts`.
+  - **Funciones:** createPeerTransport, validatePeerEndpoint, serveTransferRange, downloadTransferWithResume y closePeerTransport.
+  - **Descripcion:** crear un listener peer separado de la UI web. El modo por defecto sigue siendo loopback/off; `lan-experimental` requiere opt-in desde loopback, restart y confirmacion visible de que HTTP no cifra paquetes, nombres ni metadatos. Solo acepta peers ya emparejados, fingerprint Ed25519 confirmado manualmente y destinos resueltos a loopback/RFC1918/ULA; rechaza IP publica, unspecified, multicast, proxy y redirects. Cada request firma metodo, target, transferId, requestId, Range, timestamp, nonce y hash del body; conserva replay/clock-skew/revocacion. Exponer solo preflight, recibos y bytes de un paquete asociado al transferId, con Range/reanudacion, temp privado, limites y digest final. No relajar el servidor del navegador: UI HTTP continua solo loopback y UI LAN/VPN continua exigiendo HTTPS. El modo TLS peer recomendado queda como hardening posterior y no bloquea este MVP experimental.
+  - **Evitar:** llamar seguro/cifrado al modo experimental, enviar cookie web/codigo/private key, endpoint de path arbitrario, aceptar peer no emparejado, confiar solo en IP/Content-Length, DNS publico, CORS, auto-discovery, relay, fallback silencioso de HTTPS a HTTP o habilitar LAN por defecto.
+  - **Verificacion / TDD:** opt-in/restart, warning, peer firmado feliz sobre listeners loopback HTTP, request sin firma o alterada, nonce repetido, clock-skew, revocado, IP publica, redirect/proxy, Range valido/invalido, corte+resume, digest corrupto, limites y ausencia de paths/secrets en errores. Los tests no abren LAN real. `pnpm exec vitest run test/peer-auth.test.ts test/peer-transfer.test.ts test/peer-transport.test.ts test/web-peer-transport.test.ts test/project-transfer.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: add opt-in authenticated LAN project transport`
 
-- [ ] **Tarea 5.14: Documentar operacion sin JSON y cerrar regresion**
+- [ ] **Tarea 5.14: Verificar launcher y handoff entre dos servidores completos**
+  - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`.
+  - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer HTTP experimental sobre loopback.
+  - **Descripcion:** E2E: arrancar A/B sin JSON, habilitar explicitamente `lan-experimental`, registrar clones por explorador, emparejar y confirmar fingerprints, crear/consultar tarea en A, transferir a B, comprobar A read-only y B activo desde otro contexto, trabajar en B y devolver a A. Cubrir restart durante download, replay, revocacion y warning persistente. El recorrido principal usa SQLite/Git/artefactos reales y dos listeners peer separados; todo vive en tmpdirs/loopback, sin HOME, LAN real, credencial, Pi ni certificado del operador. Extender boundaries: browser no Node/fs; routes no storage concreto; peer transport no importa UI/storage; project-transfer no HTTP; solo composition root conecta ambos lados.
+  - **Evitar:** mocks que omitan SQLite/Git/artefactos en el recorrido principal, bind LAN real, sleeps fijos, screenshots como unica asercion, instalar navegadores/OS sin permiso, compartir catalogo/dataDir entre fixtures, ocultar que HTTP carece de confidencialidad o declarar LAN/TLS remotos probados.
+  - **Verificacion:** `pnpm exec vitest run test/architecture-boundaries.test.ts test/web-bootstrap.test.ts test/web-project-lifecycle.test.ts test/peer-transport.test.ts test/peer-transfer.test.ts test/project-transfer.test.ts`; tras Chromium aprobado, `pnpm run test:web`. Registrar por separado que TLS peer y LAN real siguen pendientes.
+  - **Commit Msg:** `test: verify experimental LAN handoff across personal servers`
+
+- [ ] **Tarea 5.15: Documentar operacion sin JSON y cerrar regresion**
   - **Archivo:** `README.md`, `docs/personal-web.md`, `docs/data-portability.md`, `docs/web-workflow-vision.md`, `TODO.md`; `AGENTS.md` solo si el alcance vigente cambia.
   - **Funciones:** ninguna nueva.
-  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing LAN/VPN, TLS aportado, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Explicar que paths/config/credenciales no viajan; cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas y dejar LAN/VPN/plataformas reales pendientes si solo hay fixtures. La regresion debe conservar CLI JSON/JSONL, TUI, modo web por proyecto y roundtrip de paquetes schema14/15. Solicitar confirmacion antes de retirar TODO.
-  - **Evitar:** llamar sync al handoff, prometer NAT traversal/relay/cloud, afirmar garantia ante restaurar backups viejos, ocultar downtime tras export, afirmar auto Git/TLS, ejecutar bundles/releases o borrar TODO automaticamente.
+  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Separar tres casos: UI HTTP loopback, UI LAN/VPN con HTTPS y transporte peer `lan-experimental` por HTTP con firmas pero sin confidencialidad. Explicar opt-in, warning, red privada confiable, fingerprints, revocacion y que paths/config local/private keys no viajan. Advertir que SQLite, Git y artefactos pueden contener datos sensibles y cruzan la red sin cifrar. Cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas; dejar TLS peer, LAN/VPN/plataformas reales pendientes si solo hay fixtures loopback. La regresion debe conservar CLI JSON/JSONL, TUI, modo web por proyecto y roundtrip de paquetes schema14/15. Solicitar confirmacion antes de retirar TODO.
+  - **Evitar:** llamar sync al handoff, llamar seguro al HTTP experimental, prometer NAT traversal/relay/cloud, afirmar garantia ante restaurar backups viejos, ocultar downtime tras export, afirmar auto Git/TLS, ejecutar bundles/releases o borrar TODO automaticamente.
   - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web` si Chromium esta disponible; pruebas enfocadas existentes de CLI protocol y portabilidad; `git diff --check`; `git status --short`. No corregir fallos ajenos fuera de tareas sin protocolo de desviacion.
-  - **Commit Msg:** `docs: record verified launcher and project handoff guarantees`
+  - **Commit Msg:** `docs: record verified launcher and experimental handoff guarantees`
 
 ## Criterios de aceptacion global
 
@@ -621,8 +636,12 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 ### Seguridad y compatibilidad
 
 - [ ] Sesion/Origin/Host/CSRF, SSRF y rendering seguro probados con casos negativos.
-- [ ] LAN usa TLS/codigo, un proyecto activo y ninguna API de terminal o FS general.
-- [ ] Configuracion sensible y ampliacion de roots solo se admiten desde loopback.
+- [ ] La UI HTTP solo escucha loopback; exponer la UI en LAN/VPN exige TLS/codigo,
+      un proyecto activo y ninguna API de terminal o FS general.
+- [ ] El handoff HTTP `lan-experimental` exige opt-in, red privada, peer emparejado,
+      firmas/replay/revocacion y warning de ausencia de confidencialidad.
+- [ ] Configuracion sensible, opt-in experimental y ampliacion de roots solo se
+      admiten desde loopback.
 - [ ] CLI/TUI y claims/leases siguen protegidos; no segundo contexto durante web.
 - [ ] Paquetes schema14 siguen importables y schema15 conserva conversaciones/fuentes.
 - [ ] Suite completa y navegador pasan; aceptacion LAN/modelos/plataformas se describe
@@ -633,7 +652,8 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.14.
 - [ ] `binaflow web` arranca en loopback sin exigir JSON, proyecto ni dataDir.
 - [ ] El catalogo guarda rutas localmente y el browser solo usa rootId/segmentos.
 - [ ] Cambiar proyecto falla con 409 si existe una operacion activa.
-- [ ] Pairing exige TLS, codigo efimero, fingerprint y firmas sin compartir sesiones.
+- [ ] Pairing confiable usa TLS; el modo experimental exige codigo efimero,
+      fingerprint confirmado manualmente y firmas sin compartir sesiones.
 - [ ] Handoff conserva projectId/lineage, verifica Git y deja un solo owner activo.
 - [ ] Corte/replay se recupera por transferId sin duplicar exportacion ni importacion.
 
@@ -669,7 +689,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Orden actual: Hito 4 base cerrado; ejecutar la extension desde 5.4 hasta 5.14,
+- Orden actual: Hito 4 base cerrado; ejecutar la extension desde 5.4 hasta 5.15,
   una tarea y un commit a la vez.
 - Origen de la extension: una prueba manual necesito crear `binaweb.json` y pasar
   `--web-config`; el archivo permanece local y ajeno a los commits. El producto
@@ -724,7 +744,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   `pnpm run test` pasaron (70 archivos, 428 tests, 1 omitido). Tras instalar
   Chromium, `pnpm run test:web` tambien pasa.
 - Tarea 5.3 completada: el feedback manual queda separado como extension 5.x y la
-  regresion completa se ejecutara en 5.14, sin incluir configuracion local real.
+  regresion completa se ejecutara en 5.15, sin incluir configuracion local real.
 - Tarea 5.4 completada: contratos version 1 estrictos para settings, catalogo,
   devices, ownership, transferencias y DTOs sin paths/secrets; 4 tests enfocados y
   typecheck pasan.
@@ -753,9 +773,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.12 completada: DTOs seguros sin rutas, endpoints preview/start/status/resume,
   wizard con IDs persistidos, confirmacion explicita, polling acotado y recovery;
   5 tests web enfocados, typecheck y build:web pasan.
-- Tarea 5.13 bloqueada: el E2E inicial revelo que el adapter de 5.11 aun
-  transfiere paquetes localmente; falta el peer TLS autenticado con Range,
-  reconexion, replay/revocacion y dos servidores reales antes de declarar el
-  handoff remoto verificado.
-- Siguiente accion: implementar el transporte peer TLS de 5.11/5.13 sin
-  introducir mocks en el recorrido principal.
+- Revision de alcance previa a 5.13: el E2E inicial revelo que el adapter de 5.11
+  aun transfiere paquetes localmente. Se aprueba planificar un transporte peer
+  `lan-experimental` por HTTP, opt-in y sin confidencialidad, conservando firmas,
+  Range, hashes, replay/revocacion y ownership unico. Esto no relaja la UI web ni
+  permite presentarlo como seguro; TLS peer queda como hardening posterior.
+- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.13
+  sin introducir mocks en el recorrido principal.
