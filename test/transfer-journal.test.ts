@@ -31,9 +31,15 @@ describe('transfer journal', () => {
     };
     await journal.save(record);
     await journal.save({ ...record, stage: 'completed', bytesReceived: 10 });
+    await Promise.all([
+      journal.save({ ...record, transferId: 'transfer-a' }),
+      journal.save({ ...record, transferId: 'transfer-b' }),
+    ]);
     expect(await journal.get(record.transferId)).toMatchObject({
       stage: 'completed',
       bytesReceived: 10,
     });
+    expect(await journal.get('transfer-a')).toMatchObject({ transferId: 'transfer-a' });
+    expect(await journal.get('transfer-b')).toMatchObject({ transferId: 'transfer-b' });
   });
 });

@@ -93,9 +93,76 @@ export async function discoverProjectRootCandidates(
 }
 
 export class FileProjectCatalog {
+  private mutationQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly catalogPath: string) {}
 
   async list(): Promise<ProjectCatalog> {
+    await this.mutationQueue;
+    return this.read();
+  }
+
+  register(input: RegisterProjectInput): Promise<ProjectCatalogEntry> {
+    return this.enqueue(async () => {
+      const workspacePath = await validateWorkspace(input.workspacePath);
+      const config = await readProjectConfig(workspacePath);
+      const catalog = await this.read();
+      const existing = catalog.projects.find((project) => project.workspacePath === workspacePath);
+      if (existing) return existing;
+      if (
+        input.projectId &&
+        catalog.projects.some((project) => project.projectId === input.projectId)
+      ) {
+        throw new Error('Project ID is already registered');
+      }
+      const projectId = input.projectId ?? randomUUID();
+      const now = new Date().toISOString();
+      const entry: ProjectCatalogEntry = {
+        projectId,
+        name: input.name ?? basename(workspacePath),
+        workspacePath,
+        configPath: resolve(workspacePath, '.binaflow', 'config.json'),
+        dataDirPath: resolve(
+          dirname(resolve(workspacePath, '.binaflow', 'config.json')),
+          config.dataDir,
+        ),
+        ownership: { status: 'active', ownerDeviceId: input.ownerDeviceId },
+        updatedAt: now,
+      };
+      const next = parseProjectCatalog({
+        schemaVersion: 1,
+        projects: [...catalog.projects, entry],
+      });
+      await this.save(next);
+      return entry;
+    });
+  }
+
+  remove(projectId: string): Promise<void> {
+    return this.enqueue(async () => {
+      const catalog = await this.read();
+      const next = catalog.projects.filter((project) => project.projectId !== projectId);
+      if (next.length !== catalog.projects.length) {
+        await this.save({ schemaVersion: 1, projects: next });
+      }
+    });
+  }
+
+  updateOwnership(projectId: string, ownership: ProjectOwnership): Promise<ProjectCatalogEntry> {
+    return this.enqueue(async () => {
+      const catalog = await this.read();
+      const project = catalog.projects.find((item) => item.projectId === projectId);
+      if (!project) throw new Error('Project not found');
+      const updated = { ...project, ownership, updatedAt: new Date().toISOString() };
+      await this.save({
+        schemaVersion: 1,
+        projects: catalog.projects.map((item) => (item.projectId === projectId ? updated : item)),
+      });
+      return updated;
+    });
+  }
+
+  private async read(): Promise<ProjectCatalog> {
     try {
       return parseProjectCatalog(JSON.parse(await readFile(this.catalogPath, 'utf8')));
     } catch (error) {
@@ -104,58 +171,13 @@ export class FileProjectCatalog {
     }
   }
 
-  async register(input: RegisterProjectInput): Promise<ProjectCatalogEntry> {
-    const workspacePath = await validateWorkspace(input.workspacePath);
-    const config = await readProjectConfig(workspacePath);
-    const catalog = await this.list();
-    const existing = catalog.projects.find((project) => project.workspacePath === workspacePath);
-    if (existing) return existing;
-    if (
-      input.projectId &&
-      catalog.projects.some((project) => project.projectId === input.projectId)
-    ) {
-      throw new Error('Project ID is already registered');
-    }
-    const projectId = input.projectId ?? randomUUID();
-    const now = new Date().toISOString();
-    const entry: ProjectCatalogEntry = {
-      projectId,
-      name: input.name ?? basename(workspacePath),
-      workspacePath,
-      configPath: resolve(workspacePath, '.binaflow', 'config.json'),
-      dataDirPath: resolve(
-        dirname(resolve(workspacePath, '.binaflow', 'config.json')),
-        config.dataDir,
-      ),
-      ownership: { status: 'active', ownerDeviceId: input.ownerDeviceId },
-      updatedAt: now,
-    };
-    const next = parseProjectCatalog({ schemaVersion: 1, projects: [...catalog.projects, entry] });
-    await this.save(next);
-    return entry;
-  }
-
-  async remove(projectId: string): Promise<void> {
-    const catalog = await this.list();
-    const next = catalog.projects.filter((project) => project.projectId !== projectId);
-    if (next.length !== catalog.projects.length) {
-      await this.save({ schemaVersion: 1, projects: next });
-    }
-  }
-
-  async updateOwnership(
-    projectId: string,
-    ownership: ProjectOwnership,
-  ): Promise<ProjectCatalogEntry> {
-    const catalog = await this.list();
-    const project = catalog.projects.find((item) => item.projectId === projectId);
-    if (!project) throw new Error('Project not found');
-    const updated = { ...project, ownership, updatedAt: new Date().toISOString() };
-    await this.save({
-      schemaVersion: 1,
-      projects: catalog.projects.map((item) => (item.projectId === projectId ? updated : item)),
-    });
-    return updated;
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation);
+    this.mutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   private async save(catalog: ProjectCatalog): Promise<void> {

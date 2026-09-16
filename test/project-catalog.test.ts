@@ -42,6 +42,19 @@ describe('project catalog', () => {
     );
   });
 
+  it('serializes concurrent registrations without losing a project', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-project-catalog-'));
+    directories.push(directory);
+    const first = await project(directory, 'one');
+    const second = await project(directory, 'two');
+    const catalog = new FileProjectCatalog(join(directory, 'projects.json'));
+    await Promise.all([
+      catalog.register({ workspacePath: first, ownerDeviceId: deviceId }),
+      catalog.register({ workspacePath: second, ownerDeviceId: deviceId }),
+    ]);
+    expect((await catalog.list()).projects.map((item) => item.name).sort()).toEqual(['one', 'two']);
+  });
+
   it('registers only a directory selected below an authorized root', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-project-catalog-'));
     directories.push(directory);
