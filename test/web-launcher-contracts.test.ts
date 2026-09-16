@@ -97,6 +97,31 @@ describe('web launcher contracts', () => {
     ).toMatchObject({ status: 'completed', receivedBytes: 1024 });
   });
 
+  it('accepts an explicit experimental peer transport setting', () => {
+    expect(
+      parseLauncherSettings({
+        ...settings,
+        peerTransport: {
+          mode: 'lan-experimental',
+          host: '192.168.1.10',
+          port: 4318,
+          warningAccepted: true,
+        },
+      }).peerTransport,
+    ).toEqual({
+      mode: 'lan-experimental',
+      host: '192.168.1.10',
+      port: 4318,
+      warningAccepted: true,
+    });
+    expect(() =>
+      parseLauncherSettings({
+        ...settings,
+        peerTransport: { mode: 'lan-experimental', host: '192.168.1.10', port: 4318 },
+      }),
+    ).toThrow(WebContractError);
+  });
+
   it('rejects unknown fields, invalid IDs, and impossible ownership records', () => {
     expect(() => parseLauncherSettings({ ...settings, extra: true })).toThrow(WebContractError);
     expect(() =>

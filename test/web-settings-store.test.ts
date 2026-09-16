@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  createWebSettingsController,
   defaultWebSettings,
   launcherSettingsToWebConfig,
   loadOrBootstrapWebSettings,
@@ -71,6 +72,24 @@ describe('web settings store', () => {
       ),
     ).rejects.toThrow(/changed/i);
     expect(await readFile(path, 'utf8')).toBe('{broken');
+  });
+
+  it('requires restart when the experimental peer transport changes', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-web-settings-'));
+    directories.push(directory);
+    const path = join(directory, 'web.json');
+    const initial = defaultWebSettings();
+    const controller = createWebSettingsController(path, initial);
+    const result = await controller.update({
+      ...initial,
+      peerTransport: {
+        mode: 'lan-experimental',
+        host: '192.168.1.10',
+        port: 4318,
+        warningAccepted: true,
+      },
+    });
+    expect(result.restartRequired).toBe(true);
   });
 
   it('maps launcher settings to the existing strict web config', () => {

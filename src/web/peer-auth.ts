@@ -37,6 +37,7 @@ export interface PeerAuthOptions {
   pairingTtlMs?: number;
   maxAttempts?: number;
   maxClockSkewMs?: number;
+  allowExperimentalHttpOrigin?: boolean;
 }
 
 interface PendingPairing {
@@ -54,6 +55,7 @@ export class PeerAuth {
   private readonly pairingTtlMs: number;
   private readonly maxAttempts: number;
   private readonly maxClockSkewMs: number;
+  private readonly allowExperimentalHttpOrigin: boolean;
 
   constructor(
     private readonly identity: DeviceIdentity,
@@ -64,6 +66,7 @@ export class PeerAuth {
     this.pairingTtlMs = options.pairingTtlMs ?? 5 * 60 * 1000;
     this.maxAttempts = options.maxAttempts ?? 5;
     this.maxClockSkewMs = options.maxClockSkewMs ?? 60 * 1000;
+    this.allowExperimentalHttpOrigin = options.allowExperimentalHttpOrigin === true;
   }
 
   beginPairing(): PairingOffer {
@@ -98,7 +101,12 @@ export class PeerAuth {
     }
     if (hash(input.code) !== pending.codeHash) throw new Error('Invalid pairing code');
     const deviceId = deviceIdFromPublicKey(input.publicKey);
-    if (!/^https:\/\//.test(input.origin)) throw new Error('Peer origin must use HTTPS');
+    const secureOrigin = /^https:\/\//.test(input.origin);
+    const experimentalHttpOrigin =
+      this.allowExperimentalHttpOrigin && /^http:\/\//.test(input.origin);
+    if (!secureOrigin && !experimentalHttpOrigin) {
+      throw new Error('Peer origin must use HTTPS unless experimental HTTP is enabled');
+    }
     this.pending.delete(input.pairingId);
     return {
       pairingId: input.pairingId,

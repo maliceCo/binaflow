@@ -326,7 +326,8 @@ function mergeSettingsUpdate(current: LauncherSettings, value: unknown): Launche
   const record = value as Record<string, unknown>;
   if (
     Object.keys(record).some(
-      (key) => !['deviceName', 'web', 'projectRoots', 'setupRequired'].includes(key),
+      (key) =>
+        !['deviceName', 'web', 'projectRoots', 'setupRequired', 'peerTransport'].includes(key),
     )
   ) {
     throw new WebContractError('invalid-input', 'Unknown settings field');
@@ -341,6 +342,7 @@ function mergeSettingsUpdate(current: LauncherSettings, value: unknown): Launche
     ...(record.deviceName === undefined ? {} : { deviceName: record.deviceName }),
     ...(web === undefined ? {} : { web: { ...current.web, ...(web as object) } }),
     ...(record.projectRoots === undefined ? {} : { projectRoots: record.projectRoots }),
+    ...(record.peerTransport === undefined ? {} : { peerTransport: record.peerTransport }),
   });
 }
 

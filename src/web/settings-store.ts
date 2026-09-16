@@ -198,7 +198,8 @@ export function createWebSettingsController(
           previous.web.host !== next.web.host ||
           previous.web.port !== next.web.port ||
           previous.web.origin !== next.web.origin ||
-          JSON.stringify(previous.web.tls) !== JSON.stringify(next.web.tls),
+          JSON.stringify(previous.web.tls) !== JSON.stringify(next.web.tls) ||
+          JSON.stringify(previous.peerTransport) !== JSON.stringify(next.peerTransport),
       };
     },
     importTlsMaterial: (certificatePem, keyPem) =>

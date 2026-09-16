@@ -40,6 +40,13 @@ export interface LauncherProjectRoot {
   path: string;
 }
 
+export interface PeerTransportSettings {
+  mode: 'off' | 'lan-experimental';
+  host: string;
+  port: number;
+  warningAccepted: boolean;
+}
+
 export interface LauncherSettings {
   schemaVersion: typeof LAUNCHER_SCHEMA_VERSION;
   setupRequired: boolean;
@@ -51,6 +58,7 @@ export interface LauncherSettings {
     tls?: { certFile: string; keyFile: string };
   };
   projectRoots: LauncherProjectRoot[];
+  peerTransport?: PeerTransportSettings;
 }
 
 export interface ProjectCatalogEntry {
@@ -139,12 +147,20 @@ export interface WebLauncherSettingsDto {
   deviceName: string;
   web: { host: string; port: number; origin: string; tlsConfigured: boolean };
   projectRoots: Array<{ id: string; label: string }>;
+  peerTransport?: PeerTransportSettings;
 }
 
 export function parseLauncherSettings(value: unknown): LauncherSettings {
   const record = asStrictRecord(value, 'launcher settings');
   assertVersion(record);
-  assertKeys(record, ['schemaVersion', 'setupRequired', 'deviceName', 'web', 'projectRoots']);
+  assertKeys(record, [
+    'schemaVersion',
+    'setupRequired',
+    'deviceName',
+    'web',
+    'projectRoots',
+    'peerTransport',
+  ]);
   const setupRequired = record.setupRequired;
   assertBoolean(setupRequired, 'setupRequired');
   const deviceName = parseName(record.deviceName, 'deviceName');
@@ -154,12 +170,17 @@ export function parseLauncherSettings(value: unknown): LauncherSettings {
     'projectRoots',
     LAUNCHER_LIMITS.maxProjectRoots,
   );
+  const peerTransport =
+    record.peerTransport === undefined
+      ? undefined
+      : parsePeerTransportSettings(record.peerTransport);
   return {
     schemaVersion: LAUNCHER_SCHEMA_VERSION,
     setupRequired,
     deviceName,
     web,
     projectRoots: projectRoots.map(parseProjectRoot),
+    ...(peerTransport === undefined ? {} : { peerTransport }),
   };
 }
 
@@ -324,6 +345,7 @@ export function toWebLauncherSettingsDto(settings: LauncherSettings): WebLaunche
       tlsConfigured: settings.web.tls !== undefined,
     },
     projectRoots: settings.projectRoots.map(({ rootId, label }) => ({ id: rootId, label })),
+    ...(settings.peerTransport === undefined ? {} : { peerTransport: settings.peerTransport }),
   };
 }
 
@@ -369,6 +391,20 @@ function parseTlsSettings(value: unknown): { certFile: string; keyFile: string }
     certFile: parseBoundedString(record.certFile, 'certFile', LAUNCHER_LIMITS.maxPathBytes),
     keyFile: parseBoundedString(record.keyFile, 'keyFile', LAUNCHER_LIMITS.maxPathBytes),
   };
+}
+
+function parsePeerTransportSettings(value: unknown): PeerTransportSettings {
+  const record = asStrictRecord(value, 'peer transport settings');
+  assertKeys(record, ['mode', 'host', 'port', 'warningAccepted']);
+  const mode = parseEnum(record.mode, ['off', 'lan-experimental'] as const, 'peer transport mode');
+  const host = parseBoundedString(record.host, 'peer transport host', 255);
+  const port = record.port;
+  if (typeof port !== 'number' || !Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw invalid('peer transport port is invalid');
+  }
+  const warningAccepted = record.warningAccepted;
+  assertBoolean(warningAccepted, 'peer transport warningAccepted');
+  return { mode, host, port, warningAccepted };
 }
 
 function parseProjectRoot(value: unknown): LauncherProjectRoot {

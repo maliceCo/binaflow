@@ -33,6 +33,12 @@ export interface LauncherSettings {
   deviceName: string;
   web: { host: string; port: number; origin: string; tlsConfigured: boolean };
   projectRoots: Array<{ id: string; label: string }>;
+  peerTransport?: {
+    mode: 'off' | 'lan-experimental';
+    host: string;
+    port: number;
+    warningAccepted: boolean;
+  };
 }
 
 export interface ProjectSummary {

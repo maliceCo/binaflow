@@ -599,12 +599,12 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.15.
   - **Verificacion / TDD:** flujo feliz, rechazo humano, doble submit, reload/segunda sesion, peer desconectado, mismatch Git, corte y resume, source exported/target pendiente, retorno B->A y contenido malicioso escapado. `pnpm exec vitest run test/web-transfer-api.test.ts test/web-transfer-client.test.tsx test/project-transfer.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `feat: add guided project handoff to the web launcher`
 
-- [ ] **Tarea 5.13: Implementar transporte peer LAN experimental y autenticado**
+- [x] **Tarea 5.13: Implementar transporte peer LAN experimental y autenticado**
   - **Archivo:** nuevo `src/web/peer-transport.ts`; `src/web/peer-auth.ts`, `src/web/config.ts`, `src/web/settings-store.ts`, `src/web/server.ts`, `src/application/project-transfer.ts`, `src/web/client/TransferWizard.tsx`; nuevos `test/peer-transport.test.ts`, `test/web-peer-transport.test.ts`; ampliar `test/peer-transfer.test.ts`.
   - **Funciones:** createPeerTransport, validatePeerEndpoint, serveTransferRange, downloadTransferWithResume y closePeerTransport.
   - **Descripcion:** crear un listener peer separado de la UI web. El modo por defecto sigue siendo loopback/off; `lan-experimental` requiere opt-in desde loopback, restart y confirmacion visible de que HTTP no cifra paquetes, nombres ni metadatos. Solo acepta peers ya emparejados, fingerprint Ed25519 confirmado manualmente y destinos resueltos a loopback/RFC1918/ULA; rechaza IP publica, unspecified, multicast, proxy y redirects. Cada request firma metodo, target, transferId, requestId, Range, timestamp, nonce y hash del body; conserva replay/clock-skew/revocacion. Exponer solo preflight, recibos y bytes de un paquete asociado al transferId, con Range/reanudacion, temp privado, limites y digest final. No relajar el servidor del navegador: UI HTTP continua solo loopback y UI LAN/VPN continua exigiendo HTTPS. El modo TLS peer recomendado queda como hardening posterior y no bloquea este MVP experimental.
   - **Evitar:** llamar seguro/cifrado al modo experimental, enviar cookie web/codigo/private key, endpoint de path arbitrario, aceptar peer no emparejado, confiar solo en IP/Content-Length, DNS publico, CORS, auto-discovery, relay, fallback silencioso de HTTPS a HTTP o habilitar LAN por defecto.
-  - **Verificacion / TDD:** opt-in/restart, warning, peer firmado feliz sobre listeners loopback HTTP, request sin firma o alterada, nonce repetido, clock-skew, revocado, IP publica, redirect/proxy, Range valido/invalido, corte+resume, digest corrupto, limites y ausencia de paths/secrets en errores. Los tests no abren LAN real. `pnpm exec vitest run test/peer-auth.test.ts test/peer-transfer.test.ts test/peer-transport.test.ts test/web-peer-transport.test.ts test/project-transfer.test.ts`; `pnpm run typecheck`.
+  - **Verificacion / TDD:** opt-in/restart, warning, peer firmado feliz sobre listeners loopback HTTP, request sin firma o alterada, nonce repetido, clock-skew, revocado, IP publica, redirect/proxy, Range valido/invalido, corte+resume, digest corrupto, limites y ausencia de paths/secrets en errores. Los tests no abren LAN real. `pnpm exec vitest run test/peer-auth.test.ts test/peer-transfer.test.ts test/peer-transport.test.ts test/web-peer-transport.test.ts test/project-transfer.test.ts`; `pnpm run typecheck`. Evidencia actual: 19 tests enfocados, typecheck, lint dirigido y build:web pasan; TLS peer y LAN real siguen pendientes.
   - **Commit Msg:** `feat: add opt-in authenticated LAN project transport`
 
 - [ ] **Tarea 5.14: Verificar launcher y handoff entre dos servidores completos**
@@ -773,10 +773,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.12 completada: DTOs seguros sin rutas, endpoints preview/start/status/resume,
   wizard con IDs persistidos, confirmacion explicita, polling acotado y recovery;
   5 tests web enfocados, typecheck y build:web pasan.
-- Revision de alcance previa a 5.13: el E2E inicial revelo que el adapter de 5.11
-  aun transfiere paquetes localmente. Se aprueba planificar un transporte peer
-  `lan-experimental` por HTTP, opt-in y sin confidencialidad, conservando firmas,
-  Range, hashes, replay/revocacion y ownership unico. Esto no relaja la UI web ni
-  permite presentarlo como seguro; TLS peer queda como hardening posterior.
-- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.13
-  sin introducir mocks en el recorrido principal.
+- Tarea 5.13 completada: transporte peer separado de la UI con opt-in LAN
+  experimental, firmas Ed25519, nonce/timestamp/replay/revocacion, endpoints de
+  manifest/Range, reanudacion por archivo, limites y validacion de IP privada;
+  19 tests enfocados, typecheck, lint dirigido y build:web pasan. TLS peer y LAN
+  real permanecen pendientes y no se consideran cubiertos.
+- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.14
+  con dos launchers reales sobre loopback y el warning experimental visible.
