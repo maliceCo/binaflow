@@ -722,15 +722,47 @@ function mapError(cause: unknown): WebApiResponse {
   const code =
     cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
       ? cause.code
-      : 'operation-failed';
-  const status =
-    code === 'invalid-target' || code === 'not-found'
-      ? 404
-      : code === 'conflict' ||
-          code === 'stale-revision' ||
-          code === 'project-busy' ||
-          code === 'project-inactive'
-        ? 409
-        : 422;
-  return error(status, code, cause instanceof Error ? cause.message : 'Operation failed');
+      : undefined;
+  const publicCode = isPublicErrorCode(code) ? code : 'operation-failed';
+  return error(publicErrorStatus(publicCode), publicCode, publicErrorMessage(publicCode));
+}
+
+const PUBLIC_ERROR_MESSAGES = {
+  'invalid-input': 'Invalid request',
+  'too-large': 'Request is too large',
+  'invalid-target': 'The requested resource was not found',
+  'not-found': 'The requested resource was not found',
+  conflict: 'The operation conflicts with the current state',
+  'stale-revision': 'The resource changed; refresh and try again',
+  'project-busy': 'The project is busy',
+  'project-inactive': 'The project is not active',
+  'runtime-closed': 'The web runtime is closed',
+  'preflight-failed': 'The transfer preflight failed',
+  'import-preflight-failed': 'The transfer import preflight failed',
+  'operation-failed': 'Operation failed',
+} as const;
+
+type PublicErrorCode = keyof typeof PUBLIC_ERROR_MESSAGES;
+
+function isPublicErrorCode(code: string | undefined): code is PublicErrorCode {
+  return code !== undefined && code in PUBLIC_ERROR_MESSAGES;
+}
+
+function publicErrorStatus(code: PublicErrorCode): number {
+  if (code === 'invalid-input') return 400;
+  if (code === 'too-large') return 413;
+  if (code === 'invalid-target' || code === 'not-found') return 404;
+  if (
+    code === 'conflict' ||
+    code === 'stale-revision' ||
+    code === 'project-busy' ||
+    code === 'project-inactive' ||
+    code === 'runtime-closed'
+  )
+    return 409;
+  return 422;
+}
+
+function publicErrorMessage(code: PublicErrorCode): string {
+  return PUBLIC_ERROR_MESSAGES[code];
 }
