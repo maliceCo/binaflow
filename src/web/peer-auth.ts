@@ -47,6 +47,7 @@ interface PendingPairing {
 }
 
 export class PeerAuth {
+  readonly deviceId: string;
   private readonly pending = new Map<string, PendingPairing>();
   private readonly peers = new Map<string, DeviceRecord>();
   private readonly usedNonces = new Set<string>();
@@ -61,6 +62,7 @@ export class PeerAuth {
     private readonly identity: DeviceIdentity,
     options: PeerAuthOptions = {},
   ) {
+    this.deviceId = identity.deviceId;
     this.now = options.now ?? Date.now;
     this.randomCode = options.randomCode ?? (() => randomBytes(4).toString('hex'));
     this.pairingTtlMs = options.pairingTtlMs ?? 5 * 60 * 1000;

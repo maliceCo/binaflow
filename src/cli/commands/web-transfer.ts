@@ -241,6 +241,8 @@ async function createConfiguredPeerTransport(
         transferId: request.transferId,
         requestId: request.requestId,
         destination: receivedPackagePath,
+        expectedDigest: request.packageDigest,
+        expectedBytes: request.packageBytes,
         mode: 'lan-experimental',
         experimentalLanOptIn: true,
       });

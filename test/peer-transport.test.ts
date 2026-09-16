@@ -9,6 +9,7 @@ import { PeerAuth } from '../src/web/peer-auth.js';
 import {
   createPeerTransport,
   downloadTransferWithResume,
+  requestPeerReceive,
   validatePeerEndpoint,
 } from '../src/web/peer-transport.js';
 
@@ -66,6 +67,7 @@ describe('experimental LAN peer transport', () => {
           };
         },
       },
+      receiver: { receive: async () => ({ accepted: true }) },
     });
     await transport.start();
     try {
@@ -76,9 +78,69 @@ describe('experimental LAN peer transport', () => {
         transferId: 'transfer-1',
         requestId: 'request-1',
         destination,
+        expectedDigest: digest,
+        expectedBytes: content.byteLength,
       });
       expect(result).toMatchObject({ transferId: 'transfer-1', digest, files: 1 });
       expect(await readFile(join(destination, 'payload.bin'))).toEqual(content);
+
+      await expect(
+        downloadTransferWithResume({
+          endpoint: transport.origin,
+          peerId: identityB.deviceId,
+          auth: authA,
+          transferId: 'transfer-1',
+          requestId: 'request-digest-mismatch',
+          destination,
+          expectedDigest: 'f'.repeat(64),
+        }),
+      ).rejects.toThrow(/digest/i);
+      await expect(
+        downloadTransferWithResume({
+          endpoint: transport.origin,
+          peerId: identityB.deviceId,
+          auth: authA,
+          transferId: 'transfer-1',
+          requestId: 'request-size-mismatch',
+          destination,
+          expectedBytes: content.byteLength + 1,
+        }),
+      ).rejects.toThrow(/size/i);
+
+      await expect(
+        requestPeerReceive({
+          endpoint: transport.origin,
+          peerId: identityB.deviceId,
+          auth: authA,
+          request: {
+            transferId: 'transfer-1',
+            requestId: 'request-receive',
+            projectId: 'project-1',
+            sourceDeviceId: identityA.deviceId,
+            targetDeviceId: identityB.deviceId,
+            sourceEndpoint: transport.origin,
+            packageDigest: digest,
+            packageBytes: content.byteLength,
+          },
+        }),
+      ).resolves.toMatchObject({ accepted: true });
+      await expect(
+        requestPeerReceive({
+          endpoint: transport.origin,
+          peerId: identityB.deviceId,
+          auth: authA,
+          request: {
+            transferId: 'transfer-1',
+            requestId: 'request-wrong-source',
+            projectId: 'project-1',
+            sourceDeviceId: identityB.deviceId,
+            targetDeviceId: identityB.deviceId,
+            sourceEndpoint: transport.origin,
+            packageDigest: digest,
+            packageBytes: content.byteLength,
+          },
+        }),
+      ).rejects.toThrow(/400/);
     } finally {
       await transport.close();
     }

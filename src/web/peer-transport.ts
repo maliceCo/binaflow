@@ -212,6 +212,8 @@ export async function downloadTransferWithResume(input: {
   transferId: string;
   requestId: string;
   destination: string;
+  expectedDigest?: string;
+  expectedBytes?: number;
   mode?: PeerTransportMode;
   experimentalLanOptIn?: boolean;
   onProgress?: (receivedBytes: number, totalBytes: number) => void;
@@ -229,8 +231,14 @@ export async function downloadTransferWithResume(input: {
   if (manifest.transferId !== input.transferId || !Array.isArray(manifest.files)) {
     throw new Error('Peer manifest is invalid');
   }
+  if (input.expectedDigest !== undefined && manifest.digest !== input.expectedDigest) {
+    throw new Error('Peer manifest digest does not match the signed request');
+  }
   let receivedBytes = 0;
   const totalBytes = manifest.files.reduce((sum, file) => sum + file.sizeBytes, 0);
+  if (input.expectedBytes !== undefined && totalBytes !== input.expectedBytes) {
+    throw new Error('Peer manifest size does not match the signed request');
+  }
   await mkdir(input.destination, { recursive: true, mode: 0o700 });
   for (const file of manifest.files) {
     const relativePath = decodeRelativePath(file.path);
@@ -328,6 +336,9 @@ async function receiveTransferRequest(
   const body = await readJsonBody(request);
   if (!isReceiveRequest(body))
     return sendError(response, new Error('Peer receive request is invalid'));
+  if (header(request, 'x-binaflow-request-id') !== body.requestId) {
+    return sendError(response, new Error('Peer request ID does not match the body'));
+  }
   const signed = signedRequest(request, {
     method: 'POST',
     target: request.url ?? '',
@@ -336,6 +347,12 @@ async function receiveTransferRequest(
     body,
   });
   options.auth.verifyRequest(signed);
+  if (signed.deviceId !== body.sourceDeviceId) {
+    return sendError(response, new Error('Peer source device does not match the signature'));
+  }
+  if (body.targetDeviceId !== options.auth.deviceId) {
+    return sendError(response, new Error('Peer target device does not match the receiver'));
+  }
   const result = await options.receiver.receive(body);
   response.statusCode = 200;
   response.setHeader('Content-Type', 'application/json');
