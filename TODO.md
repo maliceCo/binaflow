@@ -1,10 +1,12 @@
-# PLAN DE EJECUCION: Hito 4 y extension 5.x - Web personal, launcher y handoff
+# PLAN DE EJECUCION: Hito 4 y extension 5.x - App local primero, handoff despues
 
 > **ATENCION SUB-AGENTE:** Seguir las tareas en orden, solo tras autorizacion de
 > implementacion. Cada tarea exige verificacion y commit propio. Ante una
 > desviacion, detenerse y pedir un ajuste del plan. El Hito 4 base esta cerrado;
-> la orden vigente es implementar la extension 5.x desde la Tarea 5.4. No invocar
-> modelos ni modificar datos, configuracion o certificados reales del usuario.
+> la orden vigente prioriza completar y aceptar toda la app en una computadora
+> desde la Tarea 5.14. El handoff sigue siendo obligatorio, pero sus pruebas A/B y
+> hardening no se ejecutan antes de cerrar la aceptacion local. No invocar modelos
+> ni modificar datos, configuracion o certificados reales del usuario.
 
 ## Lectura rapida para aprobar
 
@@ -16,9 +18,15 @@ se promueve como extension 5.x; no reabre ni invalida los contratos ya verificad
 **Objetivo base completado:** entrar desde un navegador, explorar una tarea,
 aprobar plan/TODO, iniciar ejecucion y recuperar progreso entre navegadores.
 
-**Objetivo nuevo:** arrancar con `binaflow web`, configurar desde la propia web,
-registrar proyectos locales y transferir el ownership de un proyecto entre dos
-servidores personales sin sincronizacion bidireccional.
+**Objetivo inmediato:** arrancar con `binaflow web`, completar setup, registrar y
+abrir proyectos, preparar una tarea, ejecutar el workflow y revisar su resultado
+en una sola computadora sin editar JSON manualmente.
+
+**Objetivo retenido:** transferir despues el ownership de un proyecto entre dos
+servidores personales mediante handoff A -> B, nunca sincronizacion bidireccional.
+El codigo de transporte ya implementado no se elimina ni se convierte en sync;
+su happy path y hardening quedan explicitamente trazados despues de la aceptacion
+local.
 
 ### Decisiones ya acordadas
 
@@ -29,8 +37,11 @@ servidores personales sin sincronizacion bidireccional.
 - La web llama a aplicacion; no envuelve CLI/TUI ni abre SQLite por peticion.
 - El servidor posee el trabajo, no la conexion HTTP. Cerrar una pestana o hacer
   logout no cancela un agente.
+- La prioridad actual es que todas las funciones locales sean utilizables en una
+  computadora antes de invertir mas trabajo en pruebas entre equipos.
 - Git sincroniza codigo. El estado Binaflow cambia de propietario mediante handoff
-  A -> B o B -> A; no hay merge de SQLite ni dos owners activos.
+  A -> B o B -> A; no hay merge de SQLite ni dos owners activos. Este bullet se
+  conserva como requisito importante aunque su validacion quede en la fase 5D.
 - Los hitos 5 y 6 conservan diffs editables, comentarios por linea, QA y cierre.
   La ejecucion guiada sigue acabando en `waiting/changes-review`.
 
@@ -515,7 +526,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 - [x] **Tarea 5.3: Registrar el hallazgo manual como extension separada**
   - **Archivo:** `TODO.md`.
   - **Funciones:** ninguna nueva.
-  - **Descripcion:** conservar 5.1/5.2 como cierre verificable del Hito 4 y convertir la friccion observada al crear `binaweb.json` durante la prueba manual en una extension funcional posterior. El archivo local de prueba no es parte del producto, no se versiona, no se modifica y desaparece de la operacion normal al completar 5.5/5.6. Mover la regresion global al cierre 5.15 para que mida el producto extendido completo.
+  - **Descripcion:** conservar 5.1/5.2 como cierre verificable del Hito 4 y convertir la friccion observada al crear `binaweb.json` durante la prueba manual en una extension funcional posterior. El archivo local de prueba no es parte del producto, no se versiona y desaparece de la operacion normal al completar 5.5/5.6. Ejecutar la regresion global local en 5.17 antes de retomar la validacion A/B.
   - **Evitar:** presentar el launcher/handoff como bug del Hito 4, mezclar el JSON local en un commit, reabrir tareas terminadas o empezar implementacion durante esta reorganizacion.
   - **Verificacion:** `pnpm exec prettier --check TODO.md`; `git diff --check`.
   - **Commit Msg:** `docs: promote manual web feedback into the launcher plan`
@@ -525,7 +536,8 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
 La extension empieza en 5.4. Hasta completar 5.5 sigue siendo valido arrancar el
 modo existente con `--web-config`; no importar, borrar ni depender del
 `binaweb.json` local usado durante la aceptacion. Las pruebas deben crear sus
-settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.15.
+settings en tmpdirs. La regresion global de la app local se ejecuta en 5.17; las
+pruebas de handoff se ejecutan despues, en la fase 5D.
 
 - [x] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
   - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
@@ -607,21 +619,59 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.15.
   - **Verificacion / TDD:** opt-in/restart, warning, peer firmado feliz sobre listeners loopback HTTP, request sin firma o alterada, nonce repetido, clock-skew, revocado, IP publica, redirect/proxy, Range valido/invalido, corte+resume, digest corrupto, limites y ausencia de paths/secrets en errores. Los tests no abren LAN real. `pnpm exec vitest run test/peer-auth.test.ts test/peer-transfer.test.ts test/peer-transport.test.ts test/web-peer-transport.test.ts test/project-transfer.test.ts`; `pnpm run typecheck`. Evidencia actual: 19 tests enfocados, typecheck, lint dirigido y build:web pasan; TLS peer y LAN real siguen pendientes.
   - **Commit Msg:** `feat: add opt-in authenticated LAN project transport`
 
-- [ ] **Tarea 5.14: Verificar launcher y handoff entre dos servidores completos**
-  - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`.
-  - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer HTTP experimental sobre loopback.
-  - **Descripcion:** E2E: arrancar A/B sin JSON, habilitar explicitamente `lan-experimental`, registrar clones por explorador, emparejar y confirmar fingerprints, crear/consultar tarea en A, transferir a B, comprobar A read-only y B activo desde otro contexto, trabajar en B y devolver a A. Cubrir restart durante download, replay, revocacion y warning persistente. El recorrido principal usa SQLite/Git/artefactos reales y dos listeners peer separados; todo vive en tmpdirs/loopback, sin HOME, LAN real, credencial, Pi ni certificado del operador. Extender boundaries: browser no Node/fs; routes no storage concreto; peer transport no importa UI/storage; project-transfer no HTTP; solo composition root conecta ambos lados.
-  - **Evitar:** mocks que omitan SQLite/Git/artefactos en el recorrido principal, bind LAN real, sleeps fijos, screenshots como unica asercion, instalar navegadores/OS sin permiso, compartir catalogo/dataDir entre fixtures, ocultar que HTTP carece de confidencialidad o declarar LAN/TLS remotos probados.
-  - **Verificacion:** `pnpm exec vitest run test/architecture-boundaries.test.ts test/web-bootstrap.test.ts test/web-project-lifecycle.test.ts test/peer-transport.test.ts test/peer-transfer.test.ts test/project-transfer.test.ts`; tras Chromium aprobado, `pnpm run test:web`. Registrar por separado que TLS peer y LAN real siguen pendientes.
-  - **Commit Msg:** `test: verify experimental LAN handoff across personal servers`
+### Fase 5C: Prioridad actual - app completa en una computadora
 
-- [ ] **Tarea 5.15: Documentar operacion sin JSON y cerrar regresion**
-  - **Archivo:** `README.md`, `docs/personal-web.md`, `docs/data-portability.md`, `docs/web-workflow-vision.md`, `TODO.md`; `AGENTS.md` solo si el alcance vigente cambia.
-  - **Funciones:** ninguna nueva.
-  - **Descripcion:** documentar `binaflow web` como entrada normal, setup local, roots, catalogo local, pairing, ownership unico, Git separado del estado, handoff directo/recovery y paquete offline. Separar tres casos: UI HTTP loopback, UI LAN/VPN con HTTPS y transporte peer `lan-experimental` por HTTP con firmas pero sin confidencialidad. Explicar opt-in, warning, red privada confiable, fingerprints, revocacion y que paths/config local/private keys no viajan. Advertir que SQLite, Git y artefactos pueden contener datos sensibles y cruzan la red sin cifrar. Cada equipo instala Binaflow/Pi y mantiene catalogo propio. Registrar pruebas exactas; dejar TLS peer, LAN/VPN/plataformas reales pendientes si solo hay fixtures loopback. La regresion debe conservar CLI JSON/JSONL, TUI, modo web por proyecto y roundtrip de paquetes schema14/15. Solicitar confirmacion antes de retirar TODO.
-  - **Evitar:** llamar sync al handoff, llamar seguro al HTTP experimental, prometer NAT traversal/relay/cloud, afirmar garantia ante restaurar backups viejos, ocultar downtime tras export, afirmar auto Git/TLS, ejecutar bundles/releases o borrar TODO automaticamente.
-  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web` si Chromium esta disponible; pruebas enfocadas existentes de CLI protocol y portabilidad; `git diff --check`; `git status --short`. No corregir fallos ajenos fuera de tareas sin protocolo de desviacion.
-  - **Commit Msg:** `docs: record verified launcher and experimental handoff guarantees`
+- [ ] **Tarea 5.14: Completar onboarding local, roots y apertura de proyecto**
+  - **Archivo:** `src/web/routes.ts`, `src/web/settings-store.ts`, `src/web/project-catalog.ts`; `src/web/client/Setup.tsx`, `Settings.tsx`, `ProjectBrowser.tsx`, `Projects.tsx`, `api.ts`, `styles.css`; nuevos `test/web-local-setup-api.test.ts`, `test/web-local-setup-client.test.tsx`; ampliar `test/web-settings-store.test.ts`, `test/project-browser.test.ts`.
+  - **Funciones:** listSetupRoots, listSetupDirectory, addAuthorizedProjectRoot y recorrido visual setup -> root -> proyecto -> abrir.
+  - **Descripcion:** hacer utilizable el primer arranque sin JSON ni CLI auxiliar. Desde una conexion loopback, el setup lista puntos de partida detectados por el servidor mediante IDs opacos, permite navegar por segmentos, autorizar una carpeta como root, registrar un proyecto que contenga `.binaflow/config.json` y abrirlo. El browser nunca envia ni recibe paths absolutos. `setupRequired` solo pasa a false cuando nombre, configuracion web y al menos un root valido quedan persistidos; despues el usuario puede agregar/quitar roots y proyectos sin borrar archivos. Mostrar claramente proyecto activo, errores de config/dataDir/lease y necesidad de restart.
+  - **Evitar:** pedir editar `web.json`, aceptar paths HTTP, usar selector de carpetas del cliente, autorizar `/` implicitamente, escanear recursivamente, abrir SQLite durante browse, ocultar fallo de apertura o mezclar setup con pairing/handoff.
+  - **Verificacion / TDD:** primer arranque vacio, seleccionar root por referencias server-side, registrar/abrir proyecto, reload, config ausente/invalida, symlink escape, root duplicado/eliminado, lease ocupado y ninguna ruta absoluta en DTO/HTML/localStorage. Al tocar `test/web-settings-store.test.ts`, retirar su import `chmod` actualmente sin uso para restaurar lint sin cleanup lateral. `pnpm exec vitest run test/web-local-setup-api.test.ts test/web-local-setup-client.test.tsx test/web-settings-store.test.ts test/project-browser.test.ts test/web-project-lifecycle.test.ts`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: complete local launcher onboarding`
+
+- [ ] **Tarea 5.15: Completar preparacion guiada de tareas en la web local**
+  - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`; `src/web/client/App.tsx`, `api.ts`; nuevos `src/web/client/TaskCreate.tsx`, `TaskPreparation.tsx`, `TaskSources.tsx`, `TaskPlan.tsx`; nuevos `test/web-local-task-api.test.ts`, `test/web-local-task-client.test.tsx`.
+  - **Funciones:** createTask, getTaskDetail, listMessages, listSources y controles para reply/search/fetch-source/confirm-brief/generate-plan/comment-plan/approve-plan/generate-todo/recover-operation.
+  - **Descripcion:** reemplazar el panel minimo actual por el recorrido local completo: crear tarea con objetivo, conversar, buscar o leer fuentes opcionales, revisar/confirmar brief, generar y comentar/regenerar plan, aprobar una version y generar TODO. Renderizar mensajes, fuentes, versiones, readiness, blockers y errores estructurados. Cada submit conserva requestId ante respuesta ambigua, deshabilita doble envio y reconcilia por polling acotado; reload/hash recupera la tarea sin repetir operaciones. No se ejecuta builder hasta confirmacion separada de la Tarea 5.16.
+  - **Evitar:** textarea unica para todas las fases, inventar revisiones, aprobar automaticamente, enviar transcripts completos al builder, HTML crudo, IDs nuevos al reintentar, busqueda sin clave presentada como disponible o mezclar tareas de proyectos distintos.
+  - **Verificacion / TDD:** crear/recargar tarea, reply, search/fetch opcional, confirm brief, generar/comentar/regenerar/aprobar plan, generar TODO, respuesta perdida/doble click, revision stale, contenido malicioso y cambio de proyecto. `pnpm exec vitest run test/web-local-task-api.test.ts test/web-local-task-client.test.tsx test/guided-preparation-operations.test.ts test/guided-preparation-persistence.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: complete local guided task preparation`
+
+- [ ] **Tarea 5.16: Completar ejecucion, progreso y revision local**
+  - **Archivo:** `src/web/routes.ts`, `src/web/dto.ts`, `src/application/execution-host.ts`; `src/web/client/App.tsx`, `api.ts`; nuevos `src/web/client/TaskExecution.tsx`, `RunProgress.tsx`, `Artifacts.tsx`; nuevos `test/web-local-execution-api.test.ts`, `test/web-local-execution-client.test.tsx`; ampliar `test/execution-host.test.ts`, `test/web-lifecycle.test.ts`.
+  - **Funciones:** startTaskExecution, getTaskExecution, resumeTaskExecution, cancelTaskExecution, listRunEvents y listRunArtifacts mediante facade/host existentes.
+  - **Descripcion:** desde un TODO aprobado pedir confirmacion visible e iniciar exactamente una ejecucion. Mostrar pasos, estado, eventos acotados, errores y artefactos por IDs/DTOs seguros; nunca leer archivos desde presentation. Reload y una segunda pestana recuperan progreso sin duplicar run. Cancelar usa el shutdown ordenado existente. El recorrido local termina en `waiting/changes-review` y permite consultar resultado/artefactos; no incorpora QA/cierre fuera del scope vigente.
+  - **Evitar:** ejecutar al aprobar plan, abrir segundo run, polling solapado, porcentajes inventados, terminal/browser filesystem, leer SQLite o artefactos desde routes/UI, cerrar proyecto busy, ocultar cancelled/interrupted o ampliar el engine con DAG/loops.
+  - **Verificacion / TDD:** start unico, doble submit, progreso entre dos pestañas, reload, cancel, interruption/resume admitido, fallo builder, cierre del navegador no cancela, shutdown ordenado, artefacto seguro y estado final waiting/changes-review. `pnpm exec vitest run test/web-local-execution-api.test.ts test/web-local-execution-client.test.tsx test/execution-host.test.ts test/web-lifecycle.test.ts test/guided-execution-persistence.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `feat: complete local guided task execution`
+
+- [ ] **Tarea 5.17: Aceptar la app completa en una computadora y cerrar baseline local**
+  - **Archivo:** `test/web/local-launcher.e2e.ts`, `test/web/local-launcher-fixture.ts`, `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`; `README.md`, `docs/personal-web.md`, `docs/web-workflow-vision.md`, `TODO.md`.
+  - **Funciones:** fixture de un launcher con SQLite/Git/artefactos temporales y AgentDriver falso determinista; ninguna funcion nueva de producto salvo fixes demostrados por el recorrido.
+  - **Descripcion:** verificar en Chromium el viaje de una sola computadora: `binaflow web` sin JSON -> login -> setup/root -> registrar y abrir proyecto -> crear/preparar tarea -> plan/TODO -> confirmar ejecucion -> progreso -> waiting/changes-review -> artefactos -> reload/segunda sesion -> logout/shutdown. Ejecutar tambien un smoke manual sobre un proyecto desechable aprobado por el operador; si Pi/modelo real no se autoriza, registrar que el driver live sigue pendiente sin bloquear el recorrido determinista. Documentar operacion local y limites reales antes de retomar A/B.
+  - **Evitar:** mocks que omitan SQLite/Git/artefactos, HOME/datos/credenciales reales, red publica, sleeps fijos, screenshots como unica asercion, declarar Pi/modelos/plataformas live probados o arreglar fallos ajenos sin desviacion.
+  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; pruebas enfocadas de CLI protocol, lifecycle y portabilidad; `git diff --check`; `git status --short`. Registrar fallos previos por separado y no retirar TODO.
+  - **Commit Msg:** `test: accept the complete single-computer web app`
+
+### Fase 5D: Handoff retenido - ejecutar despues de la aceptacion local
+
+- [ ] **Tarea 5.18: Verificar el happy path de handoff A -> B**
+  - **Prioridad:** importante pero posterior a 5.17. No es sync y no bloquea la aceptacion local.
+  - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`; fixes minimos de `src/cli/commands/web-transfer.ts`, `src/web/peer-transport.ts` o UI solo si el happy path los demuestra.
+  - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer HTTP experimental sobre loopback.
+  - **Descripcion:** probar solo el recorrido funcional principal: configurar A/B, mostrar/aceptar warning `lan-experimental`, registrar clones con el mismo projectId, emparejar y confirmar fingerprints, preparar un proyecto activo en A, transferirlo, comprobar A `exported`/solo lectura y B `active` con SQLite, historial y artefactos importados. No incluir aun retorno B -> A ni matriz de fallos.
+  - **Evitar:** llamarlo sync, compartir catalogo/dataDir, mocks que omitan SQLite/Git/artefactos, bind LAN real, sleeps fijos, ocultar ausencia de cifrado, modificar Git automaticamente o declarar LAN/TLS remotos probados.
+  - **Verificacion:** E2E A -> B en loopback y tests enfocados de composition root/project-transfer. Registrar LAN real y TLS peer como pendientes.
+  - **Commit Msg:** `test: verify the project handoff happy path`
+
+- [ ] **Tarea 5.19 [DIFERIDA]: Endurecer y probar recuperacion del handoff**
+  - **Prioridad:** no ejecutar hasta que 5.17 este aceptada y el owner promueva esta tarea.
+  - **Archivo:** ampliar `test/web/launcher-transfer.e2e.ts`, `test/peer-transport.test.ts`, `test/project-transfer.test.ts`, `docs/data-portability.md`, `docs/personal-web.md`.
+  - **Funciones:** ninguna primitiva nueva; completar recovery/resume del protocolo existente.
+  - **Descripcion:** cubrir corte/restart durante descarga, Range resume, respuesta perdida, replay, revocacion, peer desconectado, hash/HEAD/Git mismatch, source exported con target pendiente y retorno B -> A. Documentar paquete offline, downtime y limites. TLS peer permanece hardening separado salvo promocion explicita.
+  - **Evitar:** sync bidireccional, merge SQLite, auto rollback de exported, forzar active, ampliar alcance con relay/cloud/NAT traversal, convertir estos tests en bloqueo retroactivo de la app local o afirmar seguridad/confidencialidad del HTTP experimental.
+  - **Verificacion:** tests de recovery deterministas en loopback, regresion de portabilidad A -> B -> A, suite completa y documentacion segun evidencia.
+  - **Commit Msg:** `test: harden project handoff recovery`
 
 ## Criterios de aceptacion global
 
@@ -638,24 +688,34 @@ settings en tmpdirs. Las verificaciones globales se ejecutan una vez en 5.15.
 - [ ] Sesion/Origin/Host/CSRF, SSRF y rendering seguro probados con casos negativos.
 - [ ] La UI HTTP solo escucha loopback; exponer la UI en LAN/VPN exige TLS/codigo,
       un proyecto activo y ninguna API de terminal o FS general.
-- [ ] El handoff HTTP `lan-experimental` exige opt-in, red privada, peer emparejado,
-      firmas/replay/revocacion y warning de ausencia de confidencialidad.
+- [ ] En fase 5D, el handoff HTTP `lan-experimental` exige opt-in, red privada,
+      peer emparejado, firmas/replay/revocacion y warning de ausencia de
+      confidencialidad; no bloquea la aceptacion local de 5.17.
 - [ ] Configuracion sensible, opt-in experimental y ampliacion de roots solo se
       admiten desde loopback.
 - [ ] CLI/TUI y claims/leases siguen protegidos; no segundo contexto durante web.
 - [ ] Paquetes schema14 siguen importables y schema15 conserva conversaciones/fuentes.
-- [ ] Suite completa y navegador pasan; aceptacion LAN/modelos/plataformas se describe
-      segun evidencia real, sin confundir tests simulados con integracion live.
+- [ ] Suite completa y navegador pasan para el baseline de una computadora;
+      aceptacion Pi/modelos/plataformas live se describe segun evidencia real.
 
-### Launcher y handoff
+### Launcher local - bloquea la aceptacion 5.17
 
 - [ ] `binaflow web` arranca en loopback sin exigir JSON, proyecto ni dataDir.
+- [ ] Setup permite autorizar roots, registrar y abrir proyecto sin paths ni JSON manual.
 - [ ] El catalogo guarda rutas localmente y el browser solo usa rootId/segmentos.
 - [ ] Cambiar proyecto falla con 409 si existe una operacion activa.
+- [ ] La web permite crear/preparar tarea, aprobar plan/TODO, ejecutar una vez y
+      recuperar progreso/artefactos hasta `waiting/changes-review`.
+- [ ] Reload, segunda pestana, logout y shutdown conservan lifecycle y persistencia.
+
+### Handoff retenido - importante, no bloquea la aceptacion local
+
+- [ ] El happy path A -> B conserva projectId/lineage, verifica Git y deja un solo
+      owner activo; nunca se presenta como sync.
 - [ ] Pairing confiable usa TLS; el modo experimental exige codigo efimero,
       fingerprint confirmado manualmente y firmas sin compartir sesiones.
-- [ ] Handoff conserva projectId/lineage, verifica Git y deja un solo owner activo.
-- [ ] Corte/replay se recupera por transferId sin duplicar exportacion ni importacion.
+- [ ] Recovery, replay, revocacion, retorno B -> A y TLS peer permanecen trazados
+      en 5.19 hasta promocion explicita.
 
 ## Reglas de operacion
 
@@ -689,11 +749,12 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Orden actual: Hito 4 base cerrado; ejecutar la extension desde 5.4 hasta 5.15,
-  una tarea y un commit a la vez.
+- Orden actual: 5.4-5.13 completadas. Ejecutar ahora 5.14 -> 5.17, una tarea y
+  un commit a la vez, hasta aceptar toda la app en una computadora. Solo despues
+  ejecutar el happy path A -> B de 5.18; 5.19 permanece diferida.
 - Origen de la extension: una prueba manual necesito crear `binaweb.json` y pasar
-  `--web-config`; el archivo permanece local y ajeno a los commits. El producto
-  final debe arrancar sin ese paso.
+  `--web-config`; el archivo de prueba fue eliminado a peticion del owner y nunca
+  se versiono. El producto final debe arrancar sin ese paso.
 - El TODO anterior de Hito 3.5 era tracked y conserva su contenido en ese commit;
   blob `92165c2269bb7a02b7d4f0fe2101050ec75f9220`. Su estado real de completado esta
   documentado en `docs/data-portability.md` y el roadmap.
@@ -744,7 +805,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   `pnpm run test` pasaron (70 archivos, 428 tests, 1 omitido). Tras instalar
   Chromium, `pnpm run test:web` tambien pasa.
 - Tarea 5.3 completada: el feedback manual queda separado como extension 5.x y la
-  regresion completa se ejecutara en 5.15, sin incluir configuracion local real.
+  regresion completa local se ejecutara en 5.17, sin incluir configuracion real.
 - Tarea 5.4 completada: contratos version 1 estrictos para settings, catalogo,
   devices, ownership, transferencias y DTOs sin paths/secrets; 4 tests enfocados y
   typecheck pasan.
@@ -778,10 +839,12 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   manifest/Range, reanudacion por archivo, limites y validacion de IP privada;
   19 tests enfocados, typecheck, lint dirigido y build:web pasan. TLS peer y LAN
   real permanecen pendientes y no se consideran cubiertos.
-- Tarea 5.14 parcialmente verificada: `pnpm run build:web`, `pnpm run test:web`
-  (1 E2E) y 14 tests de boundaries/bootstrap/lifecycle/transfer pasan.
-  Composition root ya conecta `PeerTransport`, `receiveProjectTransfer` y la API
-  de transferencias; quedan el E2E completo A/B, warning visible en UI, restart,
-  replay/revocacion y la validacion del recorrido remoto sin mocks.
-- Siguiente accion, solo tras autorizacion de implementacion: completar el E2E
-  A/B de Tarea 5.14 y documentar sus limites.
+- Prework de handoff completado antes de reordenar prioridades: `pnpm run
+  build:web`, `pnpm run test:web` (1 E2E) y 28 tests enfocados pasaron; el
+  composition root conecta `PeerTransport`, `receiveProjectTransfer` y la API.
+  Se conserva para 5.18/5.19 y no sustituye la aceptacion funcional local.
+- Revision funcional local: la UI actual no permite autorizar roots desde setup,
+  crear tareas ni recorrer todas las operaciones de preparacion/ejecucion. Esos
+  huecos se convierten en 5.14-5.16 antes del E2E local de 5.17.
+- Siguiente accion, solo tras autorizacion de implementacion: ejecutar Tarea 5.14,
+  onboarding local completo sin JSON ni paths del browser.
