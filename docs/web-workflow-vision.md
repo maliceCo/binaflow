@@ -4,9 +4,10 @@ Estado: los Hitos 1, 2, 3, 3.5 y 4 estan implementados en su alcance local.
 El recorrido completo del launcher del Hito 4 pasa en Chromium con un Pi falso,
 SQLite, Git y artefactos temporales. Chromium ya esta instalado; la indicacion
 anterior de que faltaba estaba desactualizada.
-La revision contra `c90077d` encontro una regresion reproducible al cargar tareas
-en el modo web anterior, y un timeout CLI en la suite completa que paso aislado.
-Por tanto, implementado no significa que la regresion actual este toda en verde.
+La revision contra `c90077d` encontro una regresion al cargar tareas en el modo
+web anterior y un timeout CLI en suite. Durante la planificacion de convergencia,
+`browser.e2e.ts` y `test/cli-protocol.test.ts` pasaron aislados; la suite completa
+aun debe repetirse y no se declara verde por inferencia.
 El handoff web entre servidores sigue con aceptacion pendiente; no confundirlo
 con la portabilidad offline ya completada en 3.5. LAN/TLS entre equipos y modelos
 reales siguen siendo validaciones del operador. Los hitos 5 y 6 del roadmap
@@ -17,6 +18,26 @@ reales siguen siendo validaciones del operador. Los hitos 5 y 6 del roadmap
 Una web personal para explorar un problema con un LLM, aprobar un plan, delegar
 su ejecucion y revisar codigo y QA con control humano. La web complementa al CLI
 y la TUI; no los sustituye ni los utiliza como intermediarios.
+
+## Contrato De Superficies
+
+La experiencia canonica de tareas nuevas es `TaskContract` ->
+`guided-preparation` -> `guided-task-build` -> `guided-execution`. La Web es su
+superficie rica: el baseline actual cubre el recorrido hasta
+`waiting/changes-review`. Llegar a ese estado no implementa todavia diff,
+comentarios, editor ni QA/cierre.
+
+La matriz versionada de operaciones `create`, `prepare`, `approve-plan`,
+`execute`, `observe`, `resume/cancel`, `review-changes` y `review-qa` esta en
+[capacidades de las interfaces](interface-capabilities.md). Durante la Fase 5D,
+TUI y CLI solo reciben listado e inspeccion de tareas guiadas. Sus workflows
+directos/legacy siguen compatibles, pero no forman una segunda implementacion
+del flujo canonico.
+
+Los schemas de agente y las vistas de aplicacion son comunes. HTTP v1, CLI
+protocol-v1 y los renderizadores React, Ink y texto conservan contratos propios.
+Una superficie sin una capacidad no avanza esa etapa y dirige al usuario a la
+Web; la matriz no sustituye la autorizacion de aplicacion.
 
 ## Decisiones acordadas
 
@@ -74,18 +95,18 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 - [x] **4. Web personal y preparacion local:** autenticacion, API, React, fuentes,
       contratos guiados, inicio/seguimiento y launcher con setup/catalogo. El E2E
-      local llega a `waiting/changes-review`. Hay una regresion de compatibilidad
-      abierta; no implica aceptacion de LAN real ni handoff entre servidores.
+      local llega a `waiting/changes-review`. La compatibilidad legacy pasa
+      aislada; no implica regresion completa verde, LAN real ni handoff aceptado.
 
 ### Validacion y extension del Hito 4 pendientes
 
-- [ ] Resolver la carga inicial de tareas del modo web sin capacidades de launcher:
-      `test/web/browser.e2e.ts` falla tambien aislado tras login.
-- [ ] Obtener suite completa verde: el caso CLI de opciones update invalidas
-      excedio 15 s en suite, pero paso aislado sin cambiar su timeout.
-- [ ] Aceptar handoff web A -> B: Tarea 5.18 del TODO. Existe implementacion de
+- [ ] Repetir en la regresion completa la carga inicial del modo web sin launcher;
+      `test/web/browser.e2e.ts` pasa aislado con un worker.
+- [ ] Obtener suite completa verde; `test/cli-protocol.test.ts` pasa aislado sin
+      cambiar su timeout, pero el timeout historico de suite no se oculta.
+- [ ] Aceptar handoff web A -> B: Tarea 5.26 del TODO. Existe implementacion de
       transporte/pairing; no sustituye la prueba del recorrido entre launchers.
-- [ ] Recovery/retorno B -> A del handoff web: Tarea 5.19 diferida hasta promocion
+- [ ] Recovery/retorno B -> A del handoff web: Tarea 5.27 diferida hasta promocion
       explicita. TLS peer y LAN real siguen pendientes.
 - [ ] Registrar validacion del operador en LAN/TLS y con modelos reales cuando
       se autorice; los tests locales usan loopback y agentes simulados.
@@ -102,7 +123,7 @@ No son el **Hito 5** de revision de codigo de este roadmap.
 
 ## Evidencia de la revision de estado
 
-Revision de implementacion y checks contra `c90077d`, sin fixes funcionales:
+Evidencia historica contra `c90077d`, sin fixes funcionales:
 
 | Comprobacion                         | Resultado observado                                                                           |
 | ------------------------------------ | --------------------------------------------------------------------------------------------- |
@@ -113,13 +134,13 @@ Revision de implementacion y checks contra `c90077d`, sin fixes funcionales:
 | local-launcher.e2e.ts                | Setup, proyecto, brief, plan/TODO, preview e implementacion hasta waiting pasan con Pi falso. |
 | browser.e2e.ts                       | Falla al mostrar la tarea tras login; reproducido con un solo worker.                         |
 
-En `src/web/client/App.tsx`, refreshWorkspace exige settings/proyecto activo y
-vacia tareas cuando falla esa consulta. La fixture del modo anterior solo expone
-taskContracts; GET settings devuelve Operation is not available. Esto explica el
-fallo reproducido y senala la compatibilidad del arranque sin launcher que hay
-que revisar. No se modificaron codigo, expectativas ni timeouts para ocultarlo.
+La repeticion enfocada posterior paso: `pnpm exec playwright test
+ test/web/browser.e2e.ts --workers=1` (1 test) y `pnpm exec vitest run
+ test/cli-protocol.test.ts` (16 tests). `refreshWorkspace` conserva el fallback al
+workspace configurado cuando settings/proyecto no estan disponibles. Esta evidencia
+no sustituye `pnpm run test` ni `pnpm run test:web` de la Tarea 5.25.
 
-La primera ejecucion de tests se interrumpio por el limite externo de 300 s;
+La primera ejecucion historica se interrumpio por el limite externo de 300 s;
 los resultados de la tabla corresponden a la repeticion que si finalizo.
 El lector de fuentes existe y sus seis tests pasan; el check vacio de la Tarea
 2.3 del TODO era un desfase documental, no una funcionalidad ausente.
@@ -182,9 +203,9 @@ paquetes schema14 siguen admitidos. Siguen pendientes la revision de codigo y
 las decisiones selectivas de QA; no hay recuperacion automatica tras una caida
 abrupta.
 
-Siguiente paso recomendado: resolver la regresion de compatibilidad web y repetir
-los checks antes de dar el cierre tecnico actual por verde. No ejecutar ni
-promover automaticamente las tareas de handoff o los Hitos 5/6 por esta revision.
+Siguiente paso recomendado: continuar la Fase 5D desde la Tarea 5.19 antes de
+implementar revision de codigo o QA. No ejecutar automaticamente el handoff de la
+Fase 5E ni promover los Hitos 5/6 sin aceptar primero esa convergencia.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).

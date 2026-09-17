@@ -1,32 +1,32 @@
-# PLAN DE EJECUCION: Hito 4 y extension 5.x - App local primero, handoff despues
+# PLAN DE EJECUCION: Convergencia Web, TUI y CLI antes de revision de codigo
 
 > **ATENCION SUB-AGENTE:** Seguir las tareas en orden, solo tras autorizacion de
 > implementacion. Cada tarea exige verificacion y commit propio. Ante una
-> desviacion, detenerse y pedir un ajuste del plan. El Hito 4 base esta cerrado;
-> la orden vigente prioriza completar y aceptar toda la app en una computadora
-> desde la Tarea 5.14. El handoff sigue siendo obligatorio, pero sus pruebas A/B y
-> hardening no se ejecutan antes de cerrar la aceptacion local. No invocar modelos
-> ni modificar datos, configuracion o certificados reales del usuario.
+> desviacion, detenerse y pedir un ajuste del plan. El Hito 4 local esta cerrado;
+> la orden vigente prioriza la convergencia de contratos y alcances de Web, TUI y
+> CLI antes de iniciar los Hitos 5/6. El handoff sigue siendo obligatorio, pero su
+> aceptacion A/B queda retenida despues de esta fase. No invocar modelos ni
+> modificar datos, configuracion o certificados reales del usuario.
 
 ## Lectura rapida para aprobar
 
-**Estado:** Hitos 1, 2, 3 y 3.5, y el Hito 4 web base estan completados. Una prueba
-manual del Hito 4 hizo visible una friccion de producto nueva: arrancar la web
-exige preparar JSON y cada proceso queda ligado a un workspace. Esa observacion
-se promueve como extension 5.x; no reabre ni invalida los contratos ya verificados.
+**Estado:** Hitos 1, 2, 3, 3.5 y el Hito 4 web local estan implementados. El E2E
+web legacy y `test/cli-protocol.test.ts`, registrados antes como fallos, pasaron
+aisladamente durante esta planificacion; la regresion completa se repite en la
+Tarea 5.25 y no se declara verde por inferencia.
 
 **Objetivo base completado:** entrar desde un navegador, explorar una tarea,
 aprobar plan/TODO, iniciar ejecucion y recuperar progreso entre navegadores.
 
-**Objetivo inmediato:** arrancar con `binaflow web`, completar setup, registrar y
-abrir proyectos, preparar una tarea, ejecutar el workflow y revisar su resultado
-en una sola computadora sin editar JSON manualmente.
+**Objetivo inmediato:** establecer `TaskContract` + `guided-preparation` +
+`guided-task-build` como flujo canonico de tareas nuevas, compartir una proyeccion
+de aplicacion entre interfaces, eliminar los DTO duplicados del API web y publicar
+que operaciones soporta realmente cada superficie sin fingir paridad visual.
 
 **Objetivo retenido:** transferir despues el ownership de un proyecto entre dos
 servidores personales mediante handoff A -> B, nunca sincronizacion bidireccional.
 El codigo de transporte ya implementado no se elimina ni se convierte en sync;
-su happy path y hardening quedan explicitamente trazados despues de la aceptacion
-local.
+su happy path y hardening quedan trazados en la Fase 5E.
 
 ### Decisiones ya acordadas
 
@@ -37,11 +37,19 @@ local.
 - La web llama a aplicacion; no envuelve CLI/TUI ni abre SQLite por peticion.
 - El servidor posee el trabajo, no la conexion HTTP. Cerrar una pestana o hacer
   logout no cancela un agente.
-- La prioridad actual es que todas las funciones locales sean utilizables en una
-  computadora antes de invertir mas trabajo en pruebas entre equipos.
+- El flujo guiado de contratos es la ruta canonica para tareas nuevas. Los
+  workflows `plan-build*`, `todo-build-qa` y `research-plan-build` permanecen
+  compatibles como ejecuciones directas/legacy, sin migracion destructiva ni una
+  segunda evolucion paralela para los Hitos 5/6.
+- Compartir contrato significa compartir estado, schemas de negocio, comandos y
+  vistas de aplicacion. HTTP v1 y CLI protocol-v1 conservan envelopes distintos;
+  React, Ink y texto conservan renderizadores distintos.
+- Web sera la superficie rica para diff estructurado, comentarios por linea y
+  edicion manual. TUI y CLI tendran alcances explicitos y no incorporaran un
+  editor embebido para simular capacidades HTML.
 - Git sincroniza codigo. El estado Binaflow cambia de propietario mediante handoff
   A -> B o B -> A; no hay merge de SQLite ni dos owners activos. Este bullet se
-  conserva como requisito importante aunque su validacion quede en la fase 5D.
+  conserva como requisito importante aunque su validacion quede en la fase 5E.
 - Los hitos 5 y 6 conservan diffs editables, comentarios por linea, QA y cierre.
   La ejecucion guiada sigue acabando en `waiting/changes-review`.
 
@@ -537,7 +545,7 @@ La extension empieza en 5.4. Hasta completar 5.5 sigue siendo valido arrancar el
 modo existente con `--web-config`; no importar, borrar ni depender del
 `binaweb.json` local usado durante la aceptacion. Las pruebas deben crear sus
 settings en tmpdirs. La regresion global de la app local se ejecuta en 5.17; las
-pruebas de handoff se ejecutan despues, en la fase 5D.
+pruebas de handoff se ejecutan despues de la convergencia, en la fase 5E.
 
 - [x] **Tarea 5.4: Fijar contratos del launcher, catalogo y transferencia**
   - **Archivo:** nuevo `src/web/launcher-contracts.ts`; `src/web/contracts.ts`; nuevo `test/web-launcher-contracts.test.ts`.
@@ -653,10 +661,82 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
   - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; pruebas enfocadas de CLI protocol, lifecycle y portabilidad; `git diff --check`; `git status --short`. Registrar fallos previos por separado y no retirar TODO.
   - **Commit Msg:** `test: accept the complete single-computer web app`
 
-### Fase 5D: Handoff retenido - ejecutar despues de la aceptacion local
+### Fase 5D: Convergencia de contratos y superficies antes de los Hitos 5/6
 
-- [ ] **Tarea 5.18: Verificar el happy path de handoff A -> B**
-  - **Prioridad:** importante pero posterior a 5.17. No es sync y no bloquea la aceptacion local.
+No implementar diff, comentarios por linea, editor de codigo ni QA nuevo en esta
+fase. Su objetivo es dejar una sola fuente de verdad y fronteras verificables para
+que esos hitos no nazcan tres veces. `guided-task-build` no se agrega al comando
+legacy `run`: su coordinador, CAS, documentos y lifecycle siguen siendo la unica
+ruta valida para una tarea guiada.
+
+- [x] **Tarea 5.18: Fijar el flujo canonico y la matriz Web/TUI/CLI**
+  - **Archivo:** nuevo `docs/interface-capabilities.md`; `docs/web-workflow-vision.md`, `docs/tui-experience.md`, `README.md`, `TODO.md`.
+  - **Funciones:** ninguna funcion de codigo; contrato documental version 1 de flujo y superficies.
+  - **Descripcion:** declarar `TaskContract` + `guided-preparation` + `guided-task-build` + `guided-execution` como experiencia canonica de tareas nuevas. Registrar por etapa las operaciones semanticas `create`, `prepare`, `approve-plan`, `execute`, `observe`, `resume/cancel`, `review-changes` y `review-qa`. Web soporta la experiencia actual completa hasta `waiting/changes-review` y sera la superficie rica futura; TUI y CLI obtendran en esta fase listado/inspeccion de solo lectura. Los workflows directos existentes siguen ejecutables por CLI/TUI y se etiquetan legacy/directos, sin migrar runs ni borrar preparacion historica. Explicar que los schemas de agente y las vistas de aplicacion son comunes, mientras HTTP v1, CLI protocol-v1 y los renderizadores siguen separados. Fijar que un cliente sin una capacidad no puede avanzar esa etapa y debe indicar la superficie requerida.
+  - **Evitar:** prometer diff/QA aun no implementados, llamar deprecated a datos persistidos compatibles, introducir plugins, negociar capacidades con el engine o convertir la matriz en autorizacion de seguridad.
+  - **Verificacion:** `pnpm exec prettier --check docs/interface-capabilities.md docs/web-workflow-vision.md docs/tui-experience.md README.md TODO.md`; `git diff --check`.
+  - **Commit Msg:** `docs: define canonical workflow surface capabilities`
+
+- [ ] **Tarea 5.19: Crear la proyeccion canonica y segura de tarea guiada**
+  - **Archivo:** nuevo `src/application/guided-task-view.ts`; `src/application/service.ts`, `src/application/runtime.ts`, `src/application/operations.ts`; nuevo `test/guided-task-view.test.ts`; ampliar `test/application-runtime.test.ts`, `test/architecture-boundaries.test.ts`.
+  - **Funciones:** `listGuidedTaskViews`, `getGuidedTaskView`, `toGuidedExecutionProgressView` y tipos `GuidedTaskSummaryView`, `GuidedTaskDetailView`, `GuidedExecutionProgressView`.
+  - **Descripcion:** componer desde los puertos existentes de TaskContract, GuidedPreparation y GuidedExecution una vista de lectura independiente de HTTP/Ink/CLI. El summary contiene ID, revision, readiness, phase, headers documentales y run vinculado. El detail agrega brief/draft, plan, revisiones y secuencias de preparacion, mensajes, fuentes, operacion activa y progreso disponible. Mensajes omiten request interno; fuentes omiten contentHash; operaciones omiten requestHash/owner/profile; artefactos omiten `path`; ningun DTO devuelve workspace, configPath o dataDir. Las consultas usan paginacion/limites existentes, no leen archivos y quedan disponibles tanto en `openApplicationContext` como en `openApplicationStorage` usando el mismo `SqliteRunStore` ya abierto.
+  - **Evitar:** importar Web/TUI/CLI desde aplicacion, devolver records persistidos completos, duplicar SQL, abrir otro contexto/lease, cambiar schemas SQLite o agregar mutaciones a esta vista.
+  - **Verificacion / TDD:** primero crear casos para detalle completo, tarea sin preparacion/ejecucion, paginacion, artefacto sin path y contrato desconocido; luego `pnpm exec vitest run test/guided-task-view.test.ts test/application-runtime.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: expose a canonical guided task view`
+
+- [ ] **Tarea 5.20: Compartir el contrato HTTP entre servidor y navegador**
+  - **Archivo:** nuevo `src/web/api-contract.ts`; `src/web/contracts.ts`, `src/web/dto.ts`, `src/web/launcher-contracts.ts`, `src/web/client/api.ts`; nuevo `test/web-api-contract.test.ts`; ampliar `test/web-launcher-contracts.test.ts`, `test/architecture-boundaries.test.ts`.
+  - **Funciones:** tipos puros versionados para envelopes, sesion, settings, proyectos, devices, transferencias, tareas, preparacion y ejecucion; mantener parsers/proyectores en sus modulos actuales.
+  - **Descripcion:** mover a un modulo browser-safe las interfaces publicas hoy redeclaradas entre servidor y `client/api.ts`. `TaskDetail` debe incluir explicitamente `preparationRevision`, `lastSequence` y `confirmedSourceIds`, hoy esperados por React pero ausentes de `WebTaskDetailDto`. Reexportar nombres compatibles donde reduzca cambios; `ApiClient`, `fetch`, CSRF y `ApiRequestError` permanecen en el cliente. El contrato puede referenciar las vistas de aplicacion solo mediante `import type`; su bundle no puede contener imports Node, storage, Pi ni filesystem. No cambiar nombres JSON, version 1, opcionalidad ni envelopes en esta tarea.
+  - **Evitar:** generar codigo, instalar schema/codegen, mover validacion runtime al navegador, exponer records privados del launcher o aprovechar el movimiento para renombrar campos.
+  - **Verificacion / TDD:** probar que servidor y cliente asignan las mismas formas, que los campos requeridos del detail no pueden divergir y que DTOs no contienen paths/secrets; `pnpm exec vitest run test/web-api-contract.test.ts test/web-launcher-contracts.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `refactor: share the versioned web api contract`
+
+- [ ] **Tarea 5.21: Hacer que la web consuma la proyeccion de aplicacion**
+  - **Archivo:** `src/cli/commands/web.ts`, `src/web/routes.ts`, `src/web/dto.ts`, `src/web/server.ts`; `test/web-local-task-api.test.ts`, `test/web-local-execution-api.test.ts`, `test/web-routes.test.ts`, `test/web-bootstrap.test.ts`.
+  - **Funciones:** reemplazar `getTaskDetail` y los mapeos manuales por `listGuidedTaskViews`, `getGuidedTaskView` y `toGuidedExecutionProgressView`; estrechar `WebApiCapabilities` a queries/commands necesarias.
+  - **Descripcion:** eliminar de `registerWebCommand` el ensamblado manual de contrato, documentos, preparacion, mensajes y fuentes. Las rutas GET de tareas y los resultados de progreso deben proyectarse desde aplicacion; HTTP conserva envelope, status codes, auth y parsers. POST create/operations/start/resume/cancel sigue delegando a los servicios existentes y proyecta su respuesta comun, sin leer SQLite ni artefactos desde routes. Mantener el modo launcher y el modo por proyecto, incluida la compatibilidad de `browser.e2e.ts` cuando settings/proyecto no estan disponibles.
+  - **Evitar:** mover auth/CSRF a aplicacion, entregar `ApplicationService` completo a React, cambiar URLs, agregar polling/eventos o tocar comportamiento del workflow.
+  - **Verificacion / TDD:** afirmar igualdad exacta de payload entre facade y HTTP, compatibilidad sin launcher y ausencia de paths; `pnpm exec vitest run test/web-local-task-api.test.ts test/web-local-execution-api.test.ts test/web-routes.test.ts test/web-bootstrap.test.ts`; `pnpm exec playwright test test/web/browser.e2e.ts --workers=1`; `pnpm run typecheck`; `pnpm run build:web`.
+  - **Commit Msg:** `refactor: serve guided tasks from application views`
+
+- [ ] **Tarea 5.22: Exponer inspeccion de tareas guiadas en CLI**
+  - **Archivo:** nuevo `src/cli/commands/tasks.ts`; `src/cli/index.ts`, `src/cli/protocol.ts`, `src/cli/commands/common.ts`; nuevos `test/cli-tasks.test.ts`; ampliar `test/cli-protocol.test.ts`, `test/cli-output.test.ts`.
+  - **Funciones:** `registerTaskCommands`, presentadores humanos `printGuidedTaskList`/`printGuidedTaskDetail`; reutilizar `openStorageContext` y `writeJsonResult`.
+  - **Descripcion:** agregar `binaflow tasks` y `binaflow task <id>` como consultas de solo lectura. Modo humano muestra fase, readiness, documentos, ejecucion y proxima limitacion; `--json` envuelve la vista canonica sin recrear DTOs; `--jsonl` se rechaza antes de abrir storage. No crear, preparar, aprobar, iniciar ni editar tareas desde CLI en esta fase. El comando `workflows --json` y todos sus campos/orden permanecen sin cambios para preservar protocol-v1.
+  - **Evitar:** reutilizar DTO Web, leer SQLite/artifacts directamente, incluir paths, abrir driver/modelo, inventar acciones mutantes o convertir CLI en editor.
+  - **Verificacion / TDD:** lista vacia/con datos, detail desconocido, salida humana sanitizada, JSON versionado exacto, rechazo JSONL pre-storage y lease unico; `pnpm exec vitest run test/cli-tasks.test.ts test/cli-protocol.test.ts test/cli-output.test.ts`; `pnpm run typecheck`; `pnpm run build`.
+  - **Commit Msg:** `feat: inspect guided tasks from the cli`
+
+- [ ] **Tarea 5.23: Exponer tareas guiadas de solo lectura en la TUI**
+  - **Archivo:** nuevos `src/tui/screens/guided-tasks.tsx`, `src/tui/screens/guided-task.tsx`; `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`, `src/tui/shell-controller.tsx`, `src/tui/shell-view.tsx`, `src/tui/layout.tsx`; nuevo `test/tui-guided-tasks.test.tsx`; ampliar `test/tui-ink-shell.test.ts`, `test/tui-reduce.test.ts`.
+  - **Funciones:** eventos/estado para listar, seleccionar, abrir, refrescar y volver; pantallas `GuidedTasksScreen` y `GuidedTaskScreen` basadas solo en `GuidedTaskSummaryView`/`GuidedTaskDetailView`.
+  - **Descripcion:** agregar entrada visible `Guided tasks` y tecla documentada para observar las mismas tareas de la web. Mostrar brief/plan/TODO, revision/readiness, mensajes recientes acotados, fases/tareas, bloqueos y artefactos por metadata, con viewport existente. La pantalla es explicitamente read-only y, al llegar a preparacion o revision rica, indica usar `binaflow web`; no ofrece aprobacion invisible. Las queries usan `ApplicationQueries`, `lifecycle.trackRequest` y el contexto ya montado; navegar, resize o volver no crea owner, driver ni polling. Conservar preparaciones/runs legacy para historial y ejecucion directa, pero etiquetarlos como tales en la presentacion.
+  - **Evitar:** copiar `TaskPreparation.tsx`, llamar HTTP desde Ink, parsear JSON/artifacts, leer Git/filesystem, registrar otro `useInput`, mutar guided execution o eliminar pantallas legacy.
+  - **Verificacion / TDD:** lista, apertura, tarea sin plan, progreso waiting, texto malicioso, terminal estrecho, retorno con seleccion y ausencia de comandos mutantes; `pnpm exec vitest run test/tui-guided-tasks.test.tsx test/tui-ink-shell.test.ts test/tui-reduce.test.ts`; `pnpm run typecheck`; `pnpm run build`.
+  - **Commit Msg:** `feat: inspect canonical guided tasks in the tui`
+
+- [ ] **Tarea 5.24: Publicar soporte real por workflow y superficie**
+  - **Archivo:** nuevo `src/application/workflow-surface.ts`; `src/application/workflow-operations.ts`, `src/application/operations.ts`, `src/workflows/catalog.ts`; `src/cli/index.ts`, `src/tui/screens/workflows.tsx`, `src/tui/screens/preparation.tsx`, `src/tui/screens/guided-task.tsx`; nuevo `test/workflow-surface-contract.test.ts`; ampliar `test/application-operations.test.ts`, `test/cli-protocol.test.ts`, `test/tui-guided-tasks.test.tsx`.
+  - **Funciones:** `WORKFLOW_SURFACE_CONTRACT_VERSION`, `discoverWorkflowSurfaceContracts` y `supportForWorkflowSurface`; tipos cerrados de surface, mode y capabilities.
+  - **Descripcion:** publicar un manifiesto separado de `WorkflowDefinition`: workflows directos actuales con CLI/TUI `operate` y Web `unsupported`; `guided-task-build` con Web `operate` hasta changes-review y CLI/TUI `observe`. Capacidades cerradas: `create-task`, `prepare-task`, `approve-plan`, `execute-task`, `observe-execution`, `resume-execution`, `cancel-execution`, `view-change-summary`, `view-structured-diff`, `comment-diff`, `edit-files`, `approve-changes`, `review-qa`, `decide-qa`. Solo anunciar las implementadas; diff/comentarios/edicion/QA siguen ausentes hasta sus hitos. Usar el manifiesto para etiquetas humanas `Guided`, `Direct/legacy`, `Observe only` y mensajes de handoff de interfaz. `discoverWorkflows` y `binaflow workflows --json` no cambian.
+  - **Evitar:** persistir la superficie en runs, agregar HTML/Ink al core, filtrar seguridad por UI, convertir capacidades en plugins o afirmar que `unsupported` impide consultar datos historicos.
+  - **Verificacion / TDD:** matriz exacta, ningun workflow desconocido anunciado, guided no ejecutable por `run`, etiquetas consistentes y snapshot protocol-v1 intacto; `pnpm exec vitest run test/workflow-surface-contract.test.ts test/application-operations.test.ts test/cli-protocol.test.ts test/tui-guided-tasks.test.tsx`; `pnpm run typecheck`.
+  - **Commit Msg:** `feat: declare workflow support by client surface`
+
+- [ ] **Tarea 5.25: Aceptar la convergencia antes de iniciar revision de codigo**
+  - **Archivo:** `test/architecture-boundaries.test.ts`; `README.md`, `docs/interface-capabilities.md`, `docs/web-workflow-vision.md`, `docs/tui-experience.md`, `TODO.md`; fixes solo si una verificacion demuestra una desviacion y el owner aprueba ajustar esta tarea.
+  - **Funciones:** ninguna nueva; cierre documental y regresion.
+  - **Descripcion:** verificar el recorrido existente de Web, la inspeccion de la misma tarea por CLI/TUI y la compatibilidad de workflows directos. Registrar evidencia real y dejar escrito que Hito 5 debe introducir primero un change-set estructurado/versionado en aplicacion; HTML, ANSI y editores son proyecciones de superficie. Confirmar que no existen tipos de tarea/progreso duplicados en `client/api.ts`, que Web no ensambla negocio en `commands/web.ts` y que CLI protocol-v1/persistencia no cambiaron. No retirar codigo legacy ni TODO en este cierre.
+  - **Evitar:** implementar diff/QA, corregir flakes aumentando timeouts, ejecutar Pi/modelos reales, construir bundles Linux/Windows o declarar terminal/LAN/plataformas no probadas.
+  - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; `git diff --check`; `git status --short`. Ejecutar tambien `pnpm exec vitest run test/guided-task-view.test.ts test/web-api-contract.test.ts test/cli-tasks.test.ts test/tui-guided-tasks.test.tsx test/workflow-surface-contract.test.ts` para evidencia enfocada.
+  - **Commit Msg:** `test: accept shared workflow surface contracts`
+
+### Fase 5E: Handoff retenido - ejecutar despues de la convergencia
+
+- [ ] **Tarea 5.26: Verificar el happy path de handoff A -> B**
+  - **Prioridad:** importante pero posterior a 5.25. No es sync y no bloquea la convergencia local.
   - **Archivo:** nuevos `test/web/launcher-transfer.e2e.ts`, `test/web/two-server-fixture.ts`; `playwright.config.ts`, `test/architecture-boundaries.test.ts`, `package.json`; fixes minimos de `src/cli/commands/web-transfer.ts`, `src/web/peer-transport.ts` o UI solo si el happy path los demuestra.
   - **Funciones:** fixture de dos launchers, dos catalogos, dos repos Git y datasets temporales con peer HTTP experimental sobre loopback.
   - **Descripcion:** probar solo el recorrido funcional principal: configurar A/B, mostrar/aceptar warning `lan-experimental`, registrar clones con el mismo projectId, emparejar y confirmar fingerprints, preparar un proyecto activo en A, transferirlo, comprobar A `exported`/solo lectura y B `active` con SQLite, historial y artefactos importados. No incluir aun retorno B -> A ni matriz de fallos.
@@ -664,8 +744,8 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
   - **Verificacion:** E2E A -> B en loopback y tests enfocados de composition root/project-transfer. Registrar LAN real y TLS peer como pendientes.
   - **Commit Msg:** `test: verify the project handoff happy path`
 
-- [ ] **Tarea 5.19 [DIFERIDA]: Endurecer y probar recuperacion del handoff**
-  - **Prioridad:** no ejecutar hasta que 5.17 este aceptada y el owner promueva esta tarea.
+- [ ] **Tarea 5.27 [DIFERIDA]: Endurecer y probar recuperacion del handoff**
+  - **Prioridad:** no ejecutar hasta que 5.26 este aceptada y el owner promueva esta tarea.
   - **Archivo:** ampliar `test/web/launcher-transfer.e2e.ts`, `test/peer-transport.test.ts`, `test/project-transfer.test.ts`, `docs/data-portability.md`, `docs/personal-web.md`.
   - **Funciones:** ninguna primitiva nueva; completar recovery/resume del protocolo existente.
   - **Descripcion:** cubrir corte/restart durante descarga, Range resume, respuesta perdida, replay, revocacion, peer desconectado, hash/HEAD/Git mismatch, source exported con target pendiente y retorno B -> A. Documentar paquete offline, downtime y limites. TLS peer permanece hardening separado salvo promocion explicita.
@@ -688,7 +768,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
 - [ ] Sesion/Origin/Host/CSRF, SSRF y rendering seguro probados con casos negativos.
 - [ ] La UI HTTP solo escucha loopback; exponer la UI en LAN/VPN exige TLS/codigo,
       un proyecto activo y ninguna API de terminal o FS general.
-- [ ] En fase 5D, el handoff HTTP `lan-experimental` exige opt-in, red privada,
+- [ ] En fase 5E, el handoff HTTP `lan-experimental` exige opt-in, red privada,
       peer emparejado, firmas/replay/revocacion y warning de ausencia de
       confidencialidad; no bloquea la aceptacion local de 5.17.
 - [ ] Configuracion sensible, opt-in experimental y ampliacion de roots solo se
@@ -708,6 +788,19 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
       recuperar progreso/artefactos hasta `waiting/changes-review`.
 - [ ] Reload, segunda pestana, logout y shutdown conservan lifecycle y persistencia.
 
+### Convergencia de interfaces - bloquea el inicio del Hito 5
+
+- [ ] Web, TUI y CLI consumen `GuidedTaskView` para observar una tarea guiada.
+- [ ] `src/web/client/api.ts` no redeclara payloads ya definidos por el servidor.
+- [ ] La composicion web no ensambla documentos/preparacion en `commands/web.ts`.
+- [ ] CLI/TUI anuncian y ejecutan solo su alcance real; no ofrecen editor ni
+      aprobacion de diff inexistentes.
+- [ ] Workflows directos y runs persistidos conservan compatibilidad; guided task
+      no se agrega al comando generico `run`.
+- [ ] HTTP v1 y CLI protocol-v1 conservan sus envelopes y campos actuales.
+- [ ] Hito 5 queda obligado a partir de change-set estructurado/versionado en
+      aplicacion, nunca de HTML, ANSI o JSON creado por cada UI.
+
 ### Handoff retenido - importante, no bloquea la aceptacion local
 
 - [ ] El happy path A -> B conserva projectId/lineage, verifica Git y deja un solo
@@ -715,7 +808,7 @@ pruebas de handoff se ejecutan despues, en la fase 5D.
 - [ ] Pairing confiable usa TLS; el modo experimental exige codigo efimero,
       fingerprint confirmado manualmente y firmas sin compartir sesiones.
 - [ ] Recovery, replay, revocacion, retorno B -> A y TLS peer permanecen trazados
-      en 5.19 hasta promocion explicita.
+      en 5.27 hasta promocion explicita.
 
 ## Reglas de operacion
 
@@ -749,12 +842,14 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado contra `c90077d`: 5.4-5.17 completadas segun sus registros;
-  5.18 pendiente y 5.19 diferida. Esta revision de estado no ejecuta ninguna de ellas.
-- Revalidacion actual: format, lint, typecheck y build pasan. Vitest: 482 pasan,
-  1 omitido y 1 timeout CLI; ese caso pasa aislado con el timeout original.
-  Playwright: pasa el launcher local completo y falla browser.e2e.ts tras login,
-  tambien aislado. Hay regresion de compatibilidad abierta, no cierre verde.
+- Estado actualizado para la convergencia: 5.4-5.17 permanecen completadas;
+  5.18-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. Ninguna tarea nueva fue implementada en esta revision.
+- Evidencia enfocada de planificacion: `pnpm exec playwright test
+  test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
+  test/cli-protocol.test.ts` paso (16 tests). Los fallos registrados contra
+  `c90077d` no se reprodujeron aislados; no se afirma regresion completa verde
+  hasta ejecutar la Tarea 5.25.
 - Chromium ya esta disponible. La Tarea 2.3 se marca completada conforme a su
   registro previo, el adapter presente y sus seis tests actuales pasando.
   El detalle vigente esta en docs/web-workflow-vision.md.
@@ -848,7 +943,7 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Prework de handoff completado antes de reordenar prioridades: `pnpm run
   build:web`, `pnpm run test:web` (1 E2E) y 28 tests enfocados pasaron; el
   composition root conecta `PeerTransport`, `receiveProjectTransfer` y la API.
-  Se conserva para 5.18/5.19 y no sustituye la aceptacion funcional local.
+  Se conserva para 5.26/5.27 y no sustituye la aceptacion funcional local.
 - Tareas 5.14-5.16 completadas: onboarding server-side sin paths, creacion y
   preparacion guiada, preview/start/cancel de ejecucion, progreso y artefactos DTO.
   Commits `1fe10df`, `4c44ef9` y `8002fab`; lint, typecheck, build:web y tests
@@ -860,5 +955,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   pasan. Pi/modelos live, smoke manual y LAN/TLS siguen pendientes.
 - La confirmacion de brief debia reconciliar la revision reservada por la admision;
   el ajuste conserva CAS, idempotencia y el flujo directo probado por los tests.
-- Siguiente accion: retomar Tarea 5.18 A -> B; mantener 5.19 diferida hasta
-  promocion explicita.
+- Tarea 5.18 completada: `docs/interface-capabilities.md` fija el flujo canonico,
+  la matriz Web/TUI/CLI, el comportamiento ante capacidades ausentes y la
+  separacion entre schemas/vistas comunes y contratos de adapter. No cambia
+  codigo, protocolos, persistencia ni workflows directos compatibles.
+- Siguiente accion: ejecutar Tarea 5.19 solo tras autorizacion del owner; no
+  iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.

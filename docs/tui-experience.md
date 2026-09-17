@@ -14,6 +14,26 @@ Checks no aplazados ejecutados sobre el cambio: Prettier de archivos propios, `p
 
 Para ejecutar la TUI desde el checkout sin bundle: `pnpm install`, `pnpm run build` y `pnpm run cli -- tui`. Esto compila y arranca el proceso adjunto; no instala Pi, no autentica proveedores y no inicia daemon.
 
+## Relacion Con El Flujo Canonico
+
+La experiencia canonica de tareas nuevas es `TaskContract` ->
+`guided-preparation` -> `guided-task-build` -> `guided-execution`, descrita en
+[capacidades de las interfaces](interface-capabilities.md). La Web es la
+superficie rica de esa cadena. Durante la Fase 5D, la TUI solo obtiene listado e
+inspeccion de solo lectura para tareas guiadas; no crea, prepara, aprueba,
+ejecuta, reanuda, cancela ni revisa esas tareas.
+
+Las capacidades de preparacion, ejecucion y revision descritas en el resto de
+este documento pertenecen a los workflows directos/legacy existentes. Se
+conservan para compatibilidad de ejecucion, historial y recuperacion, pero no son
+una implementacion alternativa de los futuros Hitos 5/6. `legacy` distingue la
+ruta de interfaz: no declara obsoletos sus runs, borradores ni artefactos.
+
+Si una accion canonica no esta disponible, la TUI conserva el estado, explica la
+limitacion y remite a la Web. No genera contratos de negocio propios ni traduce
+la accion a un workflow directo. La matriz es documentacion de producto, no una
+autorizacion de seguridad.
+
 ## Vision E Invariantes Aprobados
 
 Binaflow es un espacio para preparar y completar tareas. La conversacion permite pensar; la sintesis conserva acuerdos; la propuesta contiene los outputs ejecutables; una accion humana explicita autoriza; los resultados explican lo sucedido con evidencia y limitaciones.

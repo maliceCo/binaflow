@@ -18,20 +18,34 @@ The preview includes five local workflows:
 - `research-plan-build`: experimental research, review, approval, plan, then
   build.
 
-For human users, Binaflow provides an attached terminal UI (TUI) with workflow
-menus, setup assistance, live progress, artifact browsing, recovery, and clear
-permission confirmations. The CLI remains the stable interface for scripts,
-plugins, and other automation.
+For human users, Binaflow provides an attached browser interface and an attached
+terminal UI (TUI). The CLI remains the stable interface for scripts, plugins,
+and other automation.
 
 The integration boundaries are intentionally separate:
 
 ```text
-Human user -> TUI -> Binaflow application operations -> workflow engine
+Human user -> Web or TUI -> Binaflow application operations
 Script/plugin -> CLI JSON or JSONL -> Binaflow application operations
-Workflow step -> AgentDriver -> Pi (current) or future harness driver
+Application operations -> workflow engine -> AgentDriver -> Pi
 ```
 
-### Conversational Preparation
+### Canonical Guided Tasks
+
+New guided tasks use one canonical chain: `TaskContract` ->
+`guided-preparation` -> `guided-task-build` -> `guided-execution`. The Web
+currently creates, prepares, approves, executes, and observes that chain through
+`waiting/changes-review`; change review and guided QA remain future milestones.
+During the convergence phase, TUI and CLI gain read-only listing and inspection,
+not duplicate mutation flows. See the versioned
+[interface capability matrix](docs/interface-capabilities.md).
+
+Existing `plan-build*`, `todo-build-qa`, and `research-plan-build` launch paths
+remain executable through CLI/TUI as compatible direct/legacy workflows. This
+label distinguishes their interface path; it does not deprecate persisted runs
+or historical preparation.
+
+### Direct/Legacy Conversational Preparation
 
 The TUI can prepare `plan-build` and `plan-build-qa-interactive` from an
 incomplete idea. Preparation is stored as a draft, so the conversation can be
@@ -50,9 +64,10 @@ expose a generic plugin API. That is different from Binaflow invoking OpenCode
 or Codex as an agent driver; those drivers are future integrations and are not
 included in this preview milestone.
 
-### Current TUI Scope And Validation
+### Current Direct/Legacy TUI Scope And Validation
 
-The task-centered TUI currently covers these presentation flows:
+Outside the canonical guided-task surface, the TUI currently covers these
+compatible direct/legacy presentation flows:
 
 - New task, continue, configuration, and the focused selectors for
   `plan-build`, `plan-build-qa`, and `todo-build-qa`.
@@ -110,17 +125,17 @@ application layer exposes queries such as `getRunView`, commands such as run,
 resume, and approval operations, and normalized events. Application contexts own
 the storage, artifact, engine, and driver lifecycles behind that service boundary.
 
-The CLI and attached TUI are presentation adapters over the same application
-operations. They share persisted state and commands but provide different user
-experiences: the CLI provides stable human and versioned machine protocols,
-while the TUI provides attached navigation, live interaction, QA history, and
-interactive review screens. Neither adapter reads SQLite, artifact files, or Pi
-directly.
+Web, CLI, and TUI are presentation adapters over application operations. They
+share persisted state, versioned agent schemas, semantic commands, and safe
+application views, but retain separate HTTP v1 and CLI protocol-v1 envelopes and
+separate React, Ink, and text renderers. None reads SQLite, artifact files, or Pi
+directly. See [interface capabilities](docs/interface-capabilities.md) for the
+supported surface of each adapter.
 
 Attached live activity is a bounded display buffer for the current execution.
-Durable normalized events remain in SQLite and are retrieved through the paged
-timeline query. A future web interface would be another presentation adapter;
-there is no web server or web UI in this preview.
+Durable normalized events remain in SQLite and are retrieved through application
+queries. The browser interface is served by an attached local web process; it is
+not a daemon or detached worker.
 
 ### Dataset portability
 
@@ -636,7 +651,8 @@ working Pi installation and credentials.
 - The TUI is attached to the current terminal; detached execution and
   reconnection are not supported.
 - Updates use HTTPS and SHA-256; signed manifests are reserved for a stable release.
-- There is no daemon, web UI, remote worker, or native web search provider.
+- The browser UI is attached to the local server process; there is no daemon,
+  remote worker, or native web search provider.
 - `research-plan-build` and its approval flow are experimental; approval and
   loop behavior are not generic workflow primitives yet.
 - TUI screens provide bounded list and text viewports with keyboard scrolling;
