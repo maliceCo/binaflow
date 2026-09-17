@@ -134,7 +134,7 @@ describe('portable dataset persistence', () => {
     const backup = new Database(backupPath, { readonly: true });
     expect(backup.pragma('integrity_check', { simple: true })).toBe('ok');
     expect(backup.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toEqual({
-      version: 15,
+      version: 17,
     });
     backup.close();
   });

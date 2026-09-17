@@ -14,9 +14,11 @@ import type {
 } from './ports.js';
 import {
   canonicalizeJson,
+  GuidedExecutionError,
   GUIDED_EXECUTION_COORDINATOR_VERSION,
   type GuidedExecutionAuthorization,
   type GuidedExecutionCreateRequest,
+  type GuidedExecutionGitState,
   type GuidedExecutionPreview,
   type GuidedExecutionProfile,
   type GuidedExecutionProgress,
@@ -137,11 +139,14 @@ export async function previewStart(
       (preparation.activeRequestId !== null ||
         preparation.briefConfirmedThroughSequence < preparation.lastSequence)
     ) {
-      throw new Error('Guided preparation is not confirmed for execution');
+      throw new GuidedExecutionError(
+        'preparation-not-confirmed',
+        'Guided preparation is not confirmed for execution',
+      );
     }
   }
   if (state.contract.revision !== request.expectedRevision)
-    throw new Error('Task contract revision is stale');
+    throw new GuidedExecutionError('stale-revision', 'Task contract revision is stale');
   const readiness = getTaskContractReadiness({
     brief: { id: state.currentBrief.id, version: state.currentBrief.version },
     plan: state.currentPlan
@@ -168,20 +173,43 @@ export async function previewStart(
     activeBlock: state.activeBlock ? { id: state.activeBlock.id } : null,
   });
   if (readiness !== 'ready' || !state.currentPlan || !state.currentTodo || !state.approval) {
-    throw new Error('Task contract is not ready for guided execution');
+    throw new GuidedExecutionError('not-ready', 'Task contract is not ready for guided execution');
   }
   if (state.currentTodo.version !== request.todoVersion)
-    throw new Error('Task contract TODO version is stale');
+    throw new GuidedExecutionError('stale-revision', 'Task contract TODO version is stale');
   if (state.execution)
-    throw new Error(`Task contract is already linked to ${state.execution.runId}`);
+    throw new GuidedExecutionError(
+      'conflict',
+      `Task contract is already linked to ${state.execution.runId}`,
+    );
 
   const profile = context.profiles.builder;
-  if (!profile) throw new Error('Builder profile is not configured');
+  if (!profile)
+    throw new GuidedExecutionError(
+      'execution-profile-invalid',
+      'Builder profile is not configured',
+    );
   if (profile.driver !== 'pi' || profile.workspaceMode !== 'read-write') {
-    throw new Error('Guided execution requires a read-write builder profile');
+    throw new GuidedExecutionError(
+      'execution-profile-invalid',
+      'Guided execution requires a read-write builder profile',
+    );
   }
-  if (profile.retryLimit !== 0) throw new Error('Guided execution requires builder retryLimit = 0');
-  const git = await context.git.preflight(context.workspace);
+  if (profile.retryLimit !== 0) {
+    throw new GuidedExecutionError(
+      'execution-profile-invalid',
+      'Guided execution requires builder retryLimit = 0',
+    );
+  }
+  let git: GuidedExecutionGitState;
+  try {
+    git = await context.git.preflight(context.workspace);
+  } catch (error) {
+    throw new GuidedExecutionError(
+      'workspace-not-ready',
+      error instanceof Error ? error.message : 'Workspace preflight failed',
+    );
+  }
   const commands = unique([
     ...state.currentPlan.body.verification,
     ...state.currentTodo.body.phases.flatMap((phase) =>

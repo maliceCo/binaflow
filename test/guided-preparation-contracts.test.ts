@@ -99,10 +99,81 @@ describe('guided preparation contracts', () => {
 
     const input: GuidedPreparationPromptInput = {
       brief,
+      briefVersion: 1,
       messages: [{ id: requestId, sequence: 1, role: 'user', content: 'x'.repeat(100_000) }],
       sources: [],
       instruction: 'Summarize the confirmed context.',
     };
     expect(() => buildGuidedPreparationPrompt(input)).toThrow(/size limit/i);
+  });
+
+  it('includes the strict JSON response contract in the planner prompt', () => {
+    const prompt = buildGuidedPreparationPrompt({
+      brief,
+      briefVersion: 1,
+      messages: [],
+      sources: [],
+      instruction: 'Answer the user.',
+    });
+
+    expect(prompt).toContain('Return exactly one JSON object and no markdown');
+    expect(prompt).toContain('"kind"');
+    expect(prompt).toContain('"const":"message"');
+    expect(prompt).toContain('"citedSourceIds"');
+    expect(prompt).toContain('"briefVersion"');
+    expect(prompt).toContain('must be exactly 1');
+  });
+
+  it('includes the approved plan and complete TODO schema when generating a TODO', () => {
+    const approvedPlan = {
+      briefVersion: 1,
+      summary: 'Implement the change',
+      items: [
+        {
+          id: 'one',
+          title: 'Implement',
+          description: 'Make the requested change.',
+          files: [{ path: 'src/example.ts', reason: 'Implementation' }],
+          acceptanceCriteria: ['The behavior is covered'],
+        },
+      ],
+      verification: ['Run the focused tests'],
+    };
+    const prompt = buildGuidedPreparationPrompt({
+      brief,
+      briefVersion: 1,
+      messages: [],
+      sources: [],
+      instruction: 'Generate a TODO for the approved plan.',
+      approvedPlan,
+      approvedPlanVersion: 1,
+    });
+
+    expect(prompt).toContain('Approved plan version: 1');
+    expect(prompt).toContain(JSON.stringify(approvedPlan));
+    expect(prompt).toContain('The complete JSON Schema for TODO is:');
+    expect(prompt).toContain('"planVersion"');
+    expect(prompt).toContain('Every approved plan item must be covered');
+  });
+
+  it('classifies invalid planner documents separately from invalid requests', () => {
+    expect(() =>
+      parseGuidedPlanOutput({
+        schemaVersion: 1,
+        kind: 'plan',
+        citedSourceIds: [],
+        plan: { summary: 'Missing required fields' },
+      }),
+    ).toThrow(/planner plan is invalid/i);
+    try {
+      parseGuidedPlanOutput({
+        schemaVersion: 1,
+        kind: 'plan',
+        citedSourceIds: [],
+        plan: { summary: 'Missing required fields' },
+      });
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'planner-output-invalid' });
+    }
   });
 });

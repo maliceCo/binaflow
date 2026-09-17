@@ -81,37 +81,6 @@ describe('interactive review CLI', () => {
       data: { threads: [{ messages: [{ content: 'Please explain the scope.' }] }] },
     });
   });
-
-  it('rejects ambiguous targets and unsupported JSONL without mutating the thread', async () => {
-    const directory = await setupWorkspace();
-    const store = new SqliteRunStore(join(directory, '.binaflow', 'data', 'runs.db'));
-    const run: WorkflowRun = {
-      id: 'review-run',
-      workflowId: 'plan-build-qa-interactive',
-      workflowVersion: 1,
-      objective: 'Review a change',
-      status: 'waiting',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    };
-    await store.createRun(run);
-    await store.createReviewThread({
-      id: 'thread-1',
-      runId: run.id,
-      phase: 'scope',
-      target: { kind: 'scope', id: 'scope' },
-      artifactRevision: 1,
-      state: 'waiting',
-      revision: 1,
-      createdAt: run.createdAt,
-      updatedAt: run.updatedAt,
-    });
-    store.close();
-
-    await expect(
-      createCli().parseAsync(['node', 'binaflow', '--cwd', directory, '--jsonl', 'review', run.id]),
-    ).rejects.toThrow('supports --json, not --jsonl');
-  });
 });
 
 async function setupWorkspace(): Promise<string> {

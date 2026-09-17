@@ -109,6 +109,7 @@ export interface WebApiCapabilities {
     Partial<Pick<TaskContractService, 'getDocument'>>;
   readonly guidedPreparation?: {
     execute: GuidedPreparationService['execute'];
+    recover?: GuidedPreparationService['recover'];
     create?: GuidedPreparationService['create'];
     getState?: GuidedPreparationService['getState'];
     listMessages?: GuidedPreparationService['listMessages'];
@@ -119,10 +120,12 @@ export interface WebApiCapabilities {
   readonly listMessages?: (
     contractId: string,
     afterSequence?: number,
+    limit?: number,
   ) => Promise<{ items: WebMessageDto[]; nextCursor?: number }>;
   readonly listSources?: (
     contractId: string,
     afterSequence?: number,
+    limit?: number,
   ) => Promise<{ items: WebSourceDto[]; nextCursor?: number }>;
 }
 
@@ -314,6 +317,9 @@ export async function handleWebApi(
     }
     const taskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)$/)?.[1];
     const operationTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/operations$/)?.[1];
+    const recovery = request.path.match(
+      /^\/api\/v1\/tasks\/([^/]+)\/operations\/([^/]+)\/recover$/,
+    );
     if (request.method === 'GET' && request.path === '/api/v1/tasks') {
       if (!api.taskContracts) return unavailable();
       const result = await api.taskContracts.list({});
@@ -340,13 +346,15 @@ export async function handleWebApi(
     if (messagesTaskId && request.method === 'GET') {
       if (!api.listMessages) return unavailable();
       const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
-      return ok(200, await api.listMessages(messagesTaskId, afterSequence || undefined));
+      const limit = parseQueryInteger(request.query?.get('limit'), 50);
+      return ok(200, await api.listMessages(messagesTaskId, afterSequence || undefined, limit));
     }
     const sourcesTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/sources$/)?.[1];
     if (sourcesTaskId && request.method === 'GET') {
       if (!api.listSources) return unavailable();
       const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
-      return ok(200, await api.listSources(sourcesTaskId, afterSequence || undefined));
+      const limit = parseQueryInteger(request.query?.get('limit'), 50);
+      return ok(200, await api.listSources(sourcesTaskId, afterSequence || undefined, limit));
     }
     if (taskId && request.method === 'GET') {
       if (api.getTaskDetail) return ok(200, await api.getTaskDetail(taskId));
@@ -361,6 +369,14 @@ export async function handleWebApi(
       }
       const result = await api.guidedPreparation.execute(input.operation);
       return ok(202, toWebOperationDto(result));
+    }
+    if (recovery && request.method === 'POST') {
+      if (!api.guidedPreparation?.recover) return unavailable();
+      if (request.body !== undefined && JSON.stringify(request.body) !== '{}') {
+        throw new WebContractError('invalid-input', 'Recovery does not accept a body');
+      }
+      const result = await api.guidedPreparation.recover!(recovery[1]!, recovery[2]!);
+      return ok(200, toWebOperationDto(result));
     }
     const previewTaskId = request.path.match(
       /^\/api\/v1\/tasks\/([^/]+)\/execution\/preview$/,
@@ -391,6 +407,20 @@ export async function handleWebApi(
       const result = await api.execution.list({ contractId: taskExecutionId, limit: 1 });
       const progress = result.items[0];
       return ok(200, progress ? toWebGuidedExecutionProgress(progress) : null);
+    }
+    const resumePreviewExecutionId = request.path.match(
+      /^\/api\/v1\/executions\/([^/]+)\/resume\/preview$/,
+    )?.[1];
+    if (resumePreviewExecutionId && request.method === 'GET') {
+      if (!api.execution) return unavailable();
+      const preview = await api.execution.previewResume(resumePreviewExecutionId);
+      return ok(200, {
+        runId: preview.runId,
+        revision: preview.revision,
+        status: preview.status,
+        allowedDecisions: preview.allowedDecisions,
+        digest: preview.digest,
+      });
     }
     const executionId = request.path.match(/^\/api\/v1\/executions\/([^/]+)$/)?.[1];
     if (executionId && request.method === 'GET') {
@@ -759,6 +789,13 @@ function mapError(cause: unknown): WebApiResponse {
 
 const PUBLIC_ERROR_MESSAGES = {
   'invalid-input': 'Invalid request',
+  'planner-output-invalid': 'The planner returned an invalid result. Generate it again.',
+  'context-limit': 'Review and confirm the brief before continuing the conversation.',
+  'recovery-required': 'Recover the interrupted operation before continuing.',
+  'preparation-not-confirmed': 'Review and confirm the preparation before executing.',
+  'not-ready': 'The task is not ready for execution.',
+  'execution-profile-invalid': 'The builder profile is incompatible with guided execution.',
+  'workspace-not-ready': 'The workspace must be a clean Git repository before execution.',
   'too-large': 'Request is too large',
   'invalid-target': 'The requested resource was not found',
   'not-found': 'The requested resource was not found',
@@ -767,6 +804,8 @@ const PUBLIC_ERROR_MESSAGES = {
   'project-busy': 'The project is busy',
   'project-inactive': 'The project is not active',
   'runtime-closed': 'The web runtime is closed',
+  'profile-invalid':
+    'The planner profile is incompatible with guided preparation; set planner skills mode to none',
   'preflight-failed': 'The transfer preflight failed',
   'import-preflight-failed': 'The transfer import preflight failed',
   'operation-failed': 'Operation failed',
@@ -787,7 +826,11 @@ function publicErrorStatus(code: PublicErrorCode): number {
     code === 'stale-revision' ||
     code === 'project-busy' ||
     code === 'project-inactive' ||
-    code === 'runtime-closed'
+    code === 'runtime-closed' ||
+    code === 'preparation-not-confirmed' ||
+    code === 'not-ready' ||
+    code === 'execution-profile-invalid' ||
+    code === 'workspace-not-ready'
   )
     return 409;
   return 422;

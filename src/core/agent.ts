@@ -7,6 +7,8 @@ export interface AgentRequest {
   stepId: string;
   profile: AgentProfile;
   prompt: string;
+  /** Opaque external conversation identity to continue, when supported. */
+  sessionId?: string;
 }
 
 export interface AgentDriver {

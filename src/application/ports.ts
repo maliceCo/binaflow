@@ -204,12 +204,15 @@ export interface GuidedPreparationStore {
     role: GuidedPreparationMessage['role'];
     content: string;
     requestId: string;
+    metadata?: import('./guided-preparation.js').GuidedPreparationMessageMetadata;
+    draftBrief?: import('./task-contract.js').TaskContractBrief;
   }): Promise<GuidedPreparationState>;
   listGuidedPreparationMessages(request: {
     workspace: string;
     contractId: string;
     afterSequence?: number;
     limit?: number;
+    latest?: boolean;
   }): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }>;
   listGuidedPreparationSources(request: {
     workspace: string;
@@ -228,6 +231,12 @@ export interface GuidedPreparationStore {
   finishGuidedPreparationRequest(
     request: GuidedPreparationFinishRequest,
   ): Promise<GuidedPreparationRequestRecord>;
+  recoverGuidedPreparationRequest(request: {
+    workspace: string;
+    contractId: string;
+    requestId: string;
+    recoveryOwnerToken: string;
+  }): Promise<GuidedPreparationRequestRecord>;
   confirmGuidedBrief(request: GuidedBriefConfirmationRequest): Promise<GuidedPreparationState>;
 }
 

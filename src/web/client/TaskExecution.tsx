@@ -1,22 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import type { ApiClient, ExecutionPreview, ExecutionProgress, Task } from './api.js';
+import type {
+  ApiClient,
+  ExecutionPreview,
+  ExecutionProgress,
+  ExecutionResumePreview,
+  Task,
+} from './api.js';
 import { createRequestId } from './api.js';
 
 export function TaskExecution(props: { api: ApiClient; task: Task }): ReactElement {
   const [preview, setPreview] = useState<ExecutionPreview>();
   const [progress, setProgress] = useState<ExecutionProgress>();
+  const [resumePreview, setResumePreview] = useState<ExecutionResumePreview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const requestId = useRef<string | undefined>(undefined);
   const taskGeneration = useRef(0);
   const todoVersion = props.task.todo?.version;
+  const executionReady = todoVersion !== undefined && props.task.readiness === 'ready';
 
   useEffect(() => {
     const generation = ++taskGeneration.current;
     requestId.current = undefined;
     setPreview(undefined);
     setProgress(undefined);
+    setResumePreview(undefined);
     setBusy(false);
     setError(undefined);
     let active = true;
@@ -30,6 +39,28 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
       active = false;
     };
   }, [props.api, props.task.id, props.task.executionRunId]);
+
+  useEffect(() => {
+    if (
+      !progress ||
+      (progress.nextAction !== 'resume' && progress.nextAction !== 'review-changes')
+    ) {
+      setResumePreview(undefined);
+      return;
+    }
+    let active = true;
+    void props.api
+      .previewTaskExecutionResume(progress.runId)
+      .then((next) => {
+        if (active) setResumePreview(next);
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : 'The resume preview failed');
+      });
+    return () => {
+      active = false;
+    };
+  }, [props.api, progress?.runId, progress?.revision, progress?.nextAction]);
 
   useEffect(() => {
     if (!progress || progress.nextAction === 'review-changes' || progress.nextAction === 'none') {
@@ -47,7 +78,7 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
   }, [props.api, props.task.id, progress?.nextAction]);
 
   async function loadPreview(): Promise<void> {
-    if (busy || !todoVersion) return;
+    if (busy || !executionReady || !todoVersion) return;
     const generation = taskGeneration.current;
     setBusy(true);
     setError(undefined);
@@ -67,7 +98,7 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
   }
 
   async function start(): Promise<void> {
-    if (busy || !preview || !todoVersion) return;
+    if (busy || !preview || !executionReady || !todoVersion) return;
     const generation = taskGeneration.current;
     const id = requestId.current ?? createRequestId();
     requestId.current = id;
@@ -93,6 +124,35 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
     }
   }
 
+  async function resume(decision: 'retry-task' | 'continue'): Promise<void> {
+    if (busy || !progress || !resumePreview) return;
+    if (!resumePreview.allowedDecisions.includes(decision)) return;
+    const generation = taskGeneration.current;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const next = await props.api.resumeTaskExecution({
+        runId: progress.runId,
+        expectedRevision: resumePreview.revision,
+        previewDigest: resumePreview.digest,
+        decision,
+        reason:
+          decision === 'retry-task'
+            ? 'Retry requested from the web'
+            : 'Changes reviewed from the web',
+      });
+      if (generation === taskGeneration.current) {
+        setProgress(next);
+        setResumePreview(undefined);
+      }
+    } catch (cause) {
+      if (generation === taskGeneration.current)
+        setError(cause instanceof Error ? cause.message : 'The execution could not be resumed');
+    } finally {
+      if (generation === taskGeneration.current) setBusy(false);
+    }
+  }
+
   async function cancel(): Promise<void> {
     if (!progress || busy) return;
     const generation = taskGeneration.current;
@@ -113,7 +173,10 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
     <section className="task-execution" aria-labelledby="task-execution-title">
       <h3 id="task-execution-title">Execution</h3>
       {!todoVersion && <p>Generate and approve a TODO before execution.</p>}
-      {!progress && todoVersion && (
+      {todoVersion && !executionReady && (
+        <p>Execution is unavailable until the task is ready for execution.</p>
+      )}
+      {!progress && executionReady && (
         <button type="button" onClick={() => void loadPreview()} disabled={busy}>
           {busy ? 'Preparing preview...' : 'Preview execution'}
         </button>
@@ -156,13 +219,27 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
               <ArtifactList artifacts={progress.activeBlock.evidence} />
             </div>
           )}
-          {progress.nextAction === 'cancel' && (
+          {progress.nextAction === 'resume' &&
+            resumePreview?.allowedDecisions.includes('retry-task') && (
+              <button type="button" onClick={() => void resume('retry-task')} disabled={busy}>
+                Retry task
+              </button>
+            )}
+          {progress.nextAction === 'review-changes' && (
+            <>
+              <p>Execution is waiting for changes review.</p>
+              {resumePreview?.allowedDecisions.includes('continue') && (
+                <button type="button" onClick={() => void resume('continue')} disabled={busy}>
+                  Finish review
+                </button>
+              )}
+            </>
+          )}
+          {((progress.nextAction === 'cancel' && !resumePreview) ||
+            resumePreview?.allowedDecisions.includes('cancel')) && (
             <button type="button" onClick={() => void cancel()} disabled={busy}>
               Cancel execution
             </button>
-          )}
-          {progress.nextAction === 'review-changes' && (
-            <p>Execution is waiting for changes review.</p>
           )}
           {progress.nextAction === 'none' && <p>Execution finished.</p>}
         </div>

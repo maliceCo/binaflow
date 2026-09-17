@@ -22,6 +22,13 @@ process.stdin.on('data', (chunk) => {
         success: true,
         data: { commands: [{ name: process.env.BINAFLOW_SKILL_NAME }] },
       });
+    } else if (command.type === 'get_state') {
+      write({
+        id: command.id,
+        type: 'response',
+        success: true,
+        data: { sessionId: 'session-1' },
+      });
     } else if (command.type === 'prompt') {
       writeFileSync(process.env.BINAFLOW_PROMPT_FILE, 'prompted');
       write({ id: command.id, type: 'response', success: true });

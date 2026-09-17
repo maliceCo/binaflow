@@ -46,6 +46,10 @@ describe('LocalGitWorkspace', () => {
     const clean = await workspace.preflight(directory);
     expect(clean).toMatchObject({ workspace: directory, branch: 'main', clean: true });
 
+    await mkdir(join(directory, '.binaflow', 'data'), { recursive: true });
+    await writeFile(join(directory, '.binaflow', 'data', 'runs.db'), 'runtime data\n');
+    await expect(workspace.preflight(directory)).resolves.toMatchObject({ clean: true });
+
     await writeFile(join(directory, 'untracked.txt'), 'untracked\n');
     await expect(workspace.preflight(directory)).rejects.toThrow('must be clean');
   });

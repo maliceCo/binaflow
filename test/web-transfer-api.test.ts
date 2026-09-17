@@ -35,15 +35,33 @@ describe('web transfer API', () => {
         { method: 'POST', path: '/api/v1/transfers/preview', body: input },
         { transfers },
       ),
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
       status: 200,
-      body: { data: { transferId: 'transfer-1', totalBytes: 100 } },
+      body: {
+        version: 1,
+        data: {
+          transferId: 'transfer-1',
+          requestId: 'request-1',
+          projectId: 'project-1',
+          blockers: [],
+          totalBytes: 100,
+        },
+      },
     });
     await expect(
       handleWebApi({ method: 'GET', path: '/api/v1/transfers/transfer-1' }, { transfers }),
-    ).resolves.toMatchObject({
+    ).resolves.toEqual({
       status: 200,
-      body: { data: { stage: 'sending', bytesSent: 40 } },
+      body: {
+        version: 1,
+        data: {
+          transferId: 'transfer-1',
+          projectId: 'project-1',
+          stage: 'sending',
+          bytesSent: 40,
+          bytesReceived: 0,
+        },
+      },
     });
     await expect(
       handleWebApi(
@@ -54,6 +72,9 @@ describe('web transfer API', () => {
         },
         { transfers },
       ),
-    ).resolves.toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
+    ).resolves.toEqual({
+      status: 400,
+      body: { version: 1, error: { code: 'invalid-input', message: expect.any(String) } },
+    });
   });
 });

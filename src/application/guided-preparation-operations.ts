@@ -11,7 +11,9 @@ import type {
   PublicSourceResult,
 } from './guided-preparation.js';
 import {
+  GUIDED_PREPARATION_LIMITS,
   buildGuidedPreparationPrompt,
+  GuidedPreparationError,
   parseGuidedPreparationOperation,
   parseGuidedPlanOutput,
   parseGuidedReplyOutput,
@@ -39,15 +41,18 @@ export interface GuidedPreparationService {
     request: GuidedPreparationOperationRequest,
     options?: { signal?: AbortSignal; ownerToken?: string },
   ): Promise<GuidedPreparationRequestRecord>;
+  recover?(contractId: string, requestId: string): Promise<GuidedPreparationRequestRecord>;
   confirmBrief(request: GuidedPreparationOperationRequest): Promise<GuidedPreparationState>;
   getState?(contractId: string): Promise<GuidedPreparationState | undefined>;
   listMessages?(
     contractId: string,
     afterSequence?: number,
+    limit?: number,
   ): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }>;
   listSources?(
     contractId: string,
     afterSequence?: number,
+    limit?: number,
   ): Promise<{ items: GuidedPreparationSource[]; nextCursor?: number }>;
 }
 
@@ -58,6 +63,13 @@ export function createGuidedPreparationService(
     create: (contractId) =>
       context.store.createGuidedPreparation({ workspace: context.workspace, contractId }),
     execute: (request, options) => executeRequest(context, request, options),
+    recover: (contractId, requestId) =>
+      context.store.recoverGuidedPreparationRequest({
+        workspace: context.workspace,
+        contractId,
+        requestId,
+        recoveryOwnerToken: randomUUID(),
+      }),
     confirmBrief: async (request) => {
       const operation = parseGuidedPreparationOperation(request);
       if (operation.kind !== 'confirm-brief') {
@@ -73,17 +85,19 @@ export function createGuidedPreparationService(
       });
     },
     getState: (contractId) => context.store.getGuidedPreparation(context.workspace, contractId),
-    listMessages: (contractId, afterSequence) =>
+    listMessages: (contractId, afterSequence, limit) =>
       context.store.listGuidedPreparationMessages({
         workspace: context.workspace,
         contractId,
         ...(afterSequence === undefined ? {} : { afterSequence }),
+        ...(limit === undefined ? {} : { limit }),
       }),
-    listSources: (contractId, afterSequence) =>
+    listSources: (contractId, afterSequence, limit) =>
       context.store.listGuidedPreparationSources({
         workspace: context.workspace,
         contractId,
         ...(afterSequence === undefined ? {} : { afterSequence }),
+        ...(limit === undefined ? {} : { limit }),
       }),
   };
 }
@@ -116,6 +130,11 @@ async function executeRequest(
       status: 'completed',
       ...(result.result ? { result: result.result } : {}),
       ...(result.publishedDocumentId ? { publishedDocumentId: result.publishedDocumentId } : {}),
+      ...(result.externalSessionId ? { resultExternalSessionId: result.externalSessionId } : {}),
+      ...(result.sessionThroughSequence === undefined
+        ? {}
+        : { resultSessionThroughSequence: result.sessionThroughSequence }),
+      ...(result.assistantMessage ? { assistantMessage: result.assistantMessage } : {}),
     });
   } catch (error) {
     await context.store
@@ -143,6 +162,13 @@ async function performOperation(
     | import('./guided-preparation.js').GuidedPlanOutput
     | import('./guided-preparation.js').GuidedTodoOutput;
   publishedDocumentId?: string;
+  externalSessionId?: string;
+  sessionThroughSequence?: number;
+  assistantMessage?: {
+    content: string;
+    metadata: import('./guided-preparation.js').GuidedPreparationMessageMetadata;
+    draftBrief?: import('./task-contract.js').TaskContractBrief;
+  };
 }> {
   switch (operation.kind) {
     case 'search': {
@@ -173,33 +199,50 @@ async function performOperation(
       });
       return {};
     case 'reply': {
-      const output = parseGuidedReplyOutput(await runPlanner(context, operation, signal));
+      const plannerResult = await runPlanner(context, operation, signal);
+      const output = parseGuidedReplyOutput(plannerResult.value);
       assertCitations(output.citedSourceIds, operation.sourceIds);
-      await context.store.appendGuidedPreparationMessage({
-        workspace: context.workspace,
-        contractId: operation.contractId,
-        role: 'assistant',
-        content: output.message,
-        requestId: operation.requestId,
-      });
-      return { result: output };
+      return {
+        result: output,
+        ...(plannerResult.sessionId ? { externalSessionId: plannerResult.sessionId } : {}),
+        assistantMessage: {
+          content: output.message,
+          metadata: {
+            questions: output.questions,
+            citedSourceIds: output.citedSourceIds,
+            ...(output.briefSuggestion ? { briefSuggestion: output.briefSuggestion } : {}),
+          },
+          ...(output.briefSuggestion ? { draftBrief: output.briefSuggestion } : {}),
+        },
+      };
     }
     case 'generate-plan': {
-      const output = parseGuidedPlanOutput(await runPlanner(context, operation, signal));
+      const output = parseGuidedPlanOutput((await runPlanner(context, operation, signal)).value);
       assertCitations(output.citedSourceIds, operation.sourceIds);
-      const state = await context.taskContracts.publishTaskContractPlan({
-        contractId: operation.contractId,
-        workspace: context.workspace,
-        expectedRevision: operation.expectedRevision,
-        plan: output.plan,
-      });
+      let state;
+      try {
+        state = await context.taskContracts.publishTaskContractPlan({
+          contractId: operation.contractId,
+          workspace: context.workspace,
+          expectedRevision: operation.expectedRevision,
+          plan: output.plan,
+        });
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'incompatible-version') {
+          throw new GuidedPreparationError(
+            'planner-output-invalid',
+            'Planner plan does not refer to the current brief version',
+          );
+        }
+        throw error;
+      }
       return {
         result: output,
         ...(state.currentPlan ? { publishedDocumentId: state.currentPlan.id } : {}),
       };
     }
     case 'generate-todo': {
-      const output = parseGuidedTodoOutput(await runPlanner(context, operation, signal));
+      const output = parseGuidedTodoOutput((await runPlanner(context, operation, signal)).value);
       assertCitations(output.citedSourceIds, []);
       const state = await context.taskContracts.publishTaskContractTodo({
         contractId: operation.contractId,
@@ -238,7 +281,7 @@ async function runPlanner(
   context: GuidedPreparationOperationsContext,
   operation: GuidedPreparationOperationRequest,
   signal?: AbortSignal,
-): Promise<unknown> {
+): Promise<{ value: unknown; sessionId?: string }> {
   validateGuidedPlannerProfile(context.plannerProfile);
   const state = await context.taskContracts.getTaskContract(
     context.workspace,
@@ -253,7 +296,8 @@ async function runPlanner(
   const messages = await context.store.listGuidedPreparationMessages({
     workspace: context.workspace,
     contractId: operation.contractId,
-    limit: 50,
+    limit: GUIDED_PREPARATION_LIMITS.maxMessages,
+    latest: true,
   });
   const sources = await context.store.listGuidedPreparationSources({
     workspace: context.workspace,
@@ -272,7 +316,8 @@ async function runPlanner(
     throw new Error('The brief must be confirmed before generating a plan');
   }
   const prompt = buildGuidedPreparationPrompt({
-    brief: state.currentBrief.body,
+    brief: preparation.draftBrief ?? state.currentBrief.body,
+    briefVersion: state.currentBrief.version,
     messages: messages.items.map((message) => ({
       id: message.id,
       sequence: message.sequence,
@@ -288,6 +333,12 @@ async function runPlanner(
       contentHash: source.contentHash,
     })),
     instruction: plannerInstruction(operation),
+    ...(operation.kind === 'generate-todo' && state.approvedPlan
+      ? {
+          approvedPlan: state.approvedPlan.body,
+          approvedPlanVersion: state.approvedPlan.version,
+        }
+      : {}),
   });
   const response = await context.driver.execute(
     {
@@ -295,14 +346,20 @@ async function runPlanner(
       stepId: operation.kind,
       profile: context.plannerProfile,
       prompt,
+      ...(operation.kind === 'reply' && preparation.externalSessionId
+        ? { sessionId: preparation.externalSessionId }
+        : {}),
     },
     () => undefined,
     signal ?? new AbortController().signal,
   );
   try {
-    return JSON.parse(response.text) as unknown;
+    return {
+      value: JSON.parse(response.text) as unknown,
+      ...(response.sessionId ? { sessionId: response.sessionId } : {}),
+    };
   } catch {
-    throw new Error('Planner returned invalid JSON');
+    throw new GuidedPreparationError('planner-output-invalid', 'Planner returned invalid JSON');
   }
 }
 
@@ -344,7 +401,10 @@ async function saveSources(
 function assertCitations(citations: readonly string[], selected: readonly string[]): void {
   const allowed = new Set(selected);
   if (citations.some((citation) => !allowed.has(citation))) {
-    throw new Error('Planner cited a source that was not selected');
+    throw new GuidedPreparationError(
+      'planner-output-invalid',
+      'Planner cited a source that was not selected',
+    );
   }
 }
 

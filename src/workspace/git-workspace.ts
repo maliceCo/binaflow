@@ -211,7 +211,7 @@ export class LocalGitWorkspace implements GitWorkspace {
           ? [firstPath, records[++index] ?? '']
           : [firstPath];
       for (const path of paths) {
-        if (!path) continue;
+        if (!path || isBinaflowPath(path)) continue;
         changes.push({
           path,
           status,
@@ -252,6 +252,10 @@ export class LocalGitWorkspace implements GitWorkspace {
       return '';
     }
   }
+}
+
+function isBinaflowPath(path: string): boolean {
+  return path === '.binaflow' || path.startsWith('.binaflow/');
 }
 
 async function fileHash(root: string, path: string): Promise<string | null> {

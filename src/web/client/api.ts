@@ -14,6 +14,16 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  metadata?: {
+    questions: string[];
+    citedSourceIds: string[];
+    briefSuggestion?: {
+      objective: string;
+      conclusions: string[];
+      constraints: string[];
+      outOfScope: string[];
+    };
+  };
 }
 
 export interface Source {
@@ -35,6 +45,27 @@ export interface TaskDetail extends Task {
     constraints: string[];
     outOfScope: string[];
   };
+  draftBrief: {
+    objective: string;
+    conclusions: string[];
+    constraints: string[];
+    outOfScope: string[];
+  };
+  planDocument: {
+    briefVersion: number;
+    summary: string;
+    items: Array<{
+      id: string;
+      title: string;
+      description: string;
+      files: Array<{ path: string; reason: string }>;
+      acceptanceCriteria: string[];
+    }>;
+    verification: string[];
+  } | null;
+  briefConfirmedThroughSequence: number;
+  messagesCompactedThroughSequence: number;
+  sessionRecoveredAt?: string;
   messages: Message[];
   sources: Source[];
   preparationRevision: number;
@@ -61,6 +92,7 @@ export interface Operation {
   kind: string;
   status: string;
   errorCode?: string;
+  result?: unknown;
 }
 
 export interface LauncherSettings {
@@ -105,6 +137,14 @@ export interface ExecutionPreview {
   todoFileName: 'TODO.md';
   gitClean: boolean;
   blockerCount: number;
+}
+
+export interface ExecutionResumePreview {
+  runId: string;
+  revision: number;
+  status: string;
+  allowedDecisions: string[];
+  digest: string;
 }
 
 export interface ExecutionArtifact {
@@ -212,6 +252,7 @@ export interface ApiClient {
   getTransfer(transferId: string): Promise<TransferStatus>;
   resumeTransfer(transferId: string): Promise<TransferStatus>;
   execute(taskId: string, operation: unknown): Promise<Operation>;
+  recover(taskId: string, requestId: string): Promise<Operation>;
   previewTaskExecution(
     taskId: string,
     expectedRevision: number,
@@ -225,6 +266,7 @@ export interface ApiClient {
     previewDigest: string;
   }): Promise<ExecutionProgress>;
   getTaskExecution(taskId: string): Promise<ExecutionProgress | null>;
+  previewTaskExecutionResume(runId: string): Promise<ExecutionResumePreview>;
   cancelTaskExecution(runId: string, reason: string): Promise<ExecutionProgress>;
   resumeTaskExecution(input: {
     runId: string;
@@ -417,6 +459,15 @@ export function createApiClient(): ApiClient {
       );
       return result.data;
     },
+    async recover(taskId, requestId) {
+      const result = await request<Operation>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/operations/${encodeURIComponent(requestId)}/recover`,
+        'POST',
+        {},
+        csrfToken,
+      );
+      return result.data;
+    },
     async previewTaskExecution(taskId, expectedRevision, todoVersion) {
       const result = await request<ExecutionPreview>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/execution/preview`,
@@ -438,6 +489,12 @@ export function createApiClient(): ApiClient {
     async getTaskExecution(taskId) {
       const result = await request<ExecutionProgress | null>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/execution`,
+      );
+      return result.data;
+    },
+    async previewTaskExecutionResume(runId) {
+      const result = await request<ExecutionResumePreview>(
+        `/api/v1/executions/${encodeURIComponent(runId)}/resume/preview`,
       );
       return result.data;
     },

@@ -48,6 +48,57 @@ describe('web API routes', () => {
     ).resolves.toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
   });
 
+  it('reports invalid planner output as a retryable generation failure', async () => {
+    const failure = Object.assign(new Error('planner details must stay private'), {
+      code: 'planner-output-invalid',
+    });
+    const response = await handleWebApi(
+      { method: 'POST', path: `/api/v1/tasks/${contractId}/operations`, body: { operation } },
+      { guidedPreparation: { execute: vi.fn(async () => Promise.reject(failure)) } },
+    );
+
+    expect(response).toEqual({
+      status: 422,
+      body: {
+        version: 1,
+        error: {
+          code: 'planner-output-invalid',
+          message: 'The planner returned an invalid result. Generate it again.',
+        },
+      },
+    });
+    expect(JSON.stringify(response)).not.toContain('planner details');
+  });
+
+  it('recovers an interrupted guided operation through its dedicated route', async () => {
+    const recover = vi.fn(async () => ({
+      contractId,
+      requestId,
+      operationId: requestId,
+      kind: 'reply' as const,
+      requestHash: 'hash',
+      preparationRevision: 2,
+      contractRevision: 1,
+      status: 'interrupted' as const,
+      ownerToken: null,
+      errorCode: 'recovery-required',
+    }));
+    const response = await handleWebApi(
+      {
+        method: 'POST',
+        path: `/api/v1/tasks/${contractId}/operations/${requestId}/recover`,
+        body: {},
+      },
+      { guidedPreparation: { execute: vi.fn(), recover } },
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: { data: { status: 'interrupted', errorCode: 'recovery-required' } },
+    });
+    expect(recover).toHaveBeenCalledWith(contractId, requestId);
+  });
+
   it('validates transfer commands without accepting server paths', async () => {
     const transfers = {
       preview: vi.fn(async (value: unknown) => ({
@@ -150,5 +201,36 @@ describe('web API routes', () => {
       body: { error: { code: 'operation-failed', message: 'Operation failed' } },
     });
     expect(JSON.stringify(unknownFailure)).not.toContain('/secret');
+  });
+
+  it('explains an incompatible planner profile without exposing internals', async () => {
+    const response = await handleWebApi(
+      {
+        method: 'POST',
+        path: `/api/v1/tasks/${contractId}/operations`,
+        body: { operation },
+      },
+      {
+        guidedPreparation: {
+          execute: async () => {
+            const error = new Error('profile details') as Error & { code: string };
+            error.code = 'profile-invalid';
+            throw error;
+          },
+        },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 422,
+      body: {
+        version: 1,
+        error: {
+          code: 'profile-invalid',
+          message:
+            'The planner profile is incompatible with guided preparation; set planner skills mode to none',
+        },
+      },
+    });
   });
 });

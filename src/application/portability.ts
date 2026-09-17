@@ -3,8 +3,8 @@ import { Ajv } from 'ajv';
 
 export const PORTABILITY_PROTOCOL = 'binaflow-transfer' as const;
 export const PORTABILITY_VERSION = 1 as const;
-export const PORTABILITY_SCHEMA_VERSIONS = [14, 15] as const;
-export const PORTABILITY_SCHEMA_VERSION = 15 as const;
+export const PORTABILITY_SCHEMA_VERSIONS = [14, 15, 16, 17] as const;
+export const PORTABILITY_SCHEMA_VERSION = 17 as const;
 export type PortabilitySchemaVersion = (typeof PORTABILITY_SCHEMA_VERSIONS)[number];
 export const PORTABLE_WORKSPACE_MARKER = '$BINAFlow_WORKSPACE' as const;
 

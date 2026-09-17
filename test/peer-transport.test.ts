@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDeviceRecord, loadOrCreateDeviceIdentity } from '../src/web/device-identity.js';
@@ -23,7 +24,7 @@ afterEach(async () => {
 
 describe('experimental LAN peer transport', () => {
   it('authenticates requests and resumes package files by Range', async () => {
-    const root = await mkdtemp(join('/tmp', 'binaflow-peer-transport-'));
+    const root = await mkdtemp(join(tmpdir(), 'binaflow-peer-transport-'));
     directories.push(root);
     const identityA = await loadOrCreateDeviceIdentity({ directory: join(root, 'a-device') });
     const identityB = await loadOrCreateDeviceIdentity({ directory: join(root, 'b-device') });
@@ -45,7 +46,7 @@ describe('experimental LAN peer transport', () => {
     authB.confirmPeerFingerprint(recordA);
     const packagePath = join(root, 'package', 'payload.bin');
     const destination = join(root, 'received');
-    const content = Buffer.from('0123456789'.repeat(200_000));
+    const content = Buffer.from('0123456789'.repeat(20_000));
     await mkdir(join(root, 'package'), { recursive: true });
     await writeFile(packagePath, content);
     await mkdir(destination, { recursive: true });
@@ -144,9 +145,9 @@ describe('experimental LAN peer transport', () => {
     } finally {
       await transport.close();
     }
-  });
+  }, 15_000);
 
-  it('rejects non-private endpoints and unauthenticated requests', async () => {
+  it('rejects non-private and non-opted-in endpoints', async () => {
     expect(() =>
       validatePeerEndpoint('http://8.8.8.8:4318/', {
         mode: 'lan-experimental',

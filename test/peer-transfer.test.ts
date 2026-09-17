@@ -17,12 +17,12 @@ afterEach(async () => {
 });
 
 describe('peer package transfer', () => {
-  it('streams and resumes a package without accepting arbitrary paths from HTTP', async () => {
+  it('streams and resumes a package with source integrity verification', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-peer-transfer-'));
     directories.push(directory);
     const source = join(directory, 'source.pkg');
     const target = join(directory, 'target.pkg');
-    await writeFile(source, '0123456789'.repeat(100_000));
+    await writeFile(source, '0123456789'.repeat(10_000));
     await writeFile(target, '01234');
     const progress: number[] = [];
     const result = await sendPackageWithResume({
@@ -33,6 +33,7 @@ describe('peer package transfer', () => {
     });
     expect(result.bytes).toBe((await readFile(source)).byteLength);
     expect(progress.at(-1)).toBe(result.bytes);
-    expect(await verifyTransferredPackage(target, await digestPackage(target))).toBe(result.bytes);
+    expect(await verifyTransferredPackage(target, await digestPackage(source))).toBe(result.bytes);
+    expect(await readFile(target)).toEqual(await readFile(source));
   });
 });

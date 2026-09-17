@@ -62,9 +62,11 @@ describe('portable transfer contracts', () => {
     ).toThrow(/Artifact count/);
   });
 
-  it('accepts schema 14 and 15 but rejects unknown future schemas', () => {
+  it('accepts schema 14, 15, 16, and 17 but rejects unknown future schemas', () => {
     expect(parseTransferManifest({ ...manifest(), schemaVersion: 15 }).schemaVersion).toBe(15);
-    expect(() => parseTransferManifest({ ...manifest(), schemaVersion: 16 })).toThrow(
+    expect(parseTransferManifest({ ...manifest(), schemaVersion: 16 }).schemaVersion).toBe(16);
+    expect(parseTransferManifest({ ...manifest(), schemaVersion: 17 }).schemaVersion).toBe(17);
+    expect(() => parseTransferManifest({ ...manifest(), schemaVersion: 18 })).toThrow(
       PortabilityContractError,
     );
   });

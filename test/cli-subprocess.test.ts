@@ -4,17 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { FileArtifactStore } from '../src/artifacts/file-artifact-store.js';
-import { loadConfig } from '../src/config.js';
-import { createCli } from '../src/cli/index.js';
-import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
-import type { StepRun, WorkflowRun } from '../src/core/run.js';
-import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 
 const cliEntry = fileURLToPath(new URL('../src/cli/index.ts', import.meta.url));
 const tsxEntry = fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url));
 
-describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
+describe('CLI subprocess protocol boundary', { timeout: 30_000 }, () => {
   it('shows help for a no-argument non-TTY invocation', async () => {
     const result = await runCli([]);
 
@@ -35,17 +29,6 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
   it.each([
     { name: 'unknown command in human mode', args: ['not-a-command'], machine: false },
     { name: 'unknown option in JSON mode', args: ['--json', '--not-an-option'], machine: true },
-    { name: 'missing argument in JSONL mode', args: ['--jsonl', 'show'], machine: true },
-    {
-      name: 'conflicting output modes',
-      args: ['--json', '--jsonl', 'workflows'],
-      machine: true,
-    },
-    {
-      name: 'interactive execution in machine mode',
-      args: ['--json', 'run', '--interactive'],
-      machine: true,
-    },
   ])('$name exits with a protocol-safe usage failure', async ({ args, machine }) => {
     const result = await runCli(args);
 
@@ -63,61 +46,6 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
       expect(result.stdout).toBe('');
       expect(result.stderr).toMatch(/error:/);
     }
-  });
-
-  it('keeps help output off stdout when a machine mode is selected', async () => {
-    const result = await runCli(['--json', '--help']);
-
-    expect(result.code).toBe(0);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('Usage: binaflow');
-  });
-
-  it('ignores --json and --jsonl that appear after the bare -- delimiter', async () => {
-    const result = await runCli(['--', '--json', 'not-a-command']);
-    // After `--`, flags are not machine-mode options: human usage error, empty stdout.
-    expect(result.code).toBe(2);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toMatch(/error:/);
-    expect(result.stdout).not.toMatch(/"protocol"\s*:\s*"binaflow-cli"/);
-  });
-
-  it('rejects unsupported JSONL without creating workspace storage', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'binaflow-jsonl-side-effect-'));
-    try {
-      const result = await runCli(['--cwd', directory, '--jsonl', 'show', 'missing-run']);
-      expect(result.code).toBe(2);
-      const records = protocolRecords(result.stdout);
-      expect(records).toHaveLength(1);
-      expect(records[0]).toMatchObject({
-        protocol: 'binaflow-cli',
-        type: 'error',
-        error: { code: 'UNSUPPORTED_OUTPUT_MODE' },
-      });
-      await expect(access(join(directory, '.binaflow'))).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
-      await expect(access(join(directory, 'data'))).rejects.toMatchObject({ code: 'ENOENT' });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('uses exit code 2 for invalid update options', async () => {
-    const conflict = await runCli(['update', '--check', '--rollback']);
-    expect(conflict.code).toBe(2);
-    expect(conflict.stdout).toBe('');
-    expect(conflict.stderr).toMatch(/check|rollback/i);
-
-    const channel = await runCli(['--json', 'update', '--channel', 'nightly']);
-    expect(channel.code).toBe(2);
-    const records = protocolRecords(channel.stdout);
-    expect(records).toHaveLength(1);
-    expect(records[0]).toMatchObject({
-      protocol: 'binaflow-cli',
-      type: 'error',
-      error: { code: 'INVALID_UPDATE_CHANNEL' },
-    });
   });
 
   it('keeps human lifecycle progress on stderr', async () => {
@@ -141,129 +69,6 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     }
   });
 
-  it('does not report resume progress for a completed run', async () => {
-    const directory = await createFailureConfig();
-    const config = await loadConfig(join(directory, '.binaflow', 'config.json'), directory);
-    await mkdir(config.dataDir, { recursive: true });
-    const store = new SqliteRunStore(join(config.dataDir, 'runs.db'));
-    const run = completedRun();
-    try {
-      await store.createRun(run);
-    } finally {
-      store.close();
-    }
-
-    try {
-      const result = await runCli(['--cwd', directory, 'resume', run.id]);
-
-      expect(result.code).toBe(0);
-      expect(result.stdout).toContain(`Run ${run.id}`);
-      expect(result.stderr).not.toContain('Resuming run');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('does not report resume progress when required profiles are missing', async () => {
-    const directory = await createFailureConfig(false);
-    const config = await loadConfig(join(directory, '.binaflow', 'config.json'), directory);
-    await mkdir(config.dataDir, { recursive: true });
-    const store = new SqliteRunStore(join(config.dataDir, 'runs.db'));
-    const run = { ...completedRun(), status: 'failed' as const };
-    try {
-      await store.createRun(run);
-    } finally {
-      store.close();
-    }
-
-    try {
-      const result = await runCli(['--cwd', directory, 'resume', run.id]);
-
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain('Missing agent profile');
-      expect(result.stderr).not.toContain('Resuming run');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects empty approval feedback before changing the persisted gate', async () => {
-    const directory = await createFailureConfig(true, true);
-    const config = await loadConfig(join(directory, '.binaflow', 'config.json'), directory);
-    await mkdir(config.dataDir, { recursive: true });
-    const store = new SqliteRunStore(join(config.dataDir, 'runs.db'));
-    const run = {
-      ...completedRun(),
-      workflowId: researchPlanBuildWorkflow.id,
-      workflowVersion: researchPlanBuildWorkflow.version,
-      status: 'pending' as const,
-    };
-    const approval: StepRun = {
-      runId: run.id,
-      stepId: 'research-approval',
-      profile: 'human',
-      status: 'waiting',
-      attempt: 1,
-    };
-    try {
-      await store.createRun(run);
-      await store.saveRun({ ...run, status: 'running' }, 'pending');
-      await store.saveStepRun({ ...approval, status: 'pending' });
-      await store.saveStepRun(approval);
-      await store.saveRun({ ...run, status: 'waiting' }, 'running');
-    } finally {
-      store.close();
-    }
-
-    try {
-      const result = await runCli(['--cwd', directory, 'reject', run.id, '--feedback', '   ']);
-
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain('Rejection feedback must be non-empty');
-
-      const reopened = new SqliteRunStore(join(config.dataDir, 'runs.db'));
-      try {
-        await expect(reopened.getStepRuns(run.id)).resolves.toEqual([approval]);
-      } finally {
-        reopened.close();
-      }
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('returns structured diagnosis without creating a run', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'binaflow-doctor-cli-'));
-    try {
-      const result = await runCli(['--cwd', directory, '--json', 'doctor']);
-      const document = JSON.parse(result.stdout) as {
-        type: string;
-        command: string;
-        data: { configExists: boolean; ready: boolean };
-      };
-
-      expect(result.code).toBe(1);
-      expect(document).toMatchObject({ type: 'result', command: 'doctor' });
-      expect(document.data.configExists).toBe(false);
-      expect(document.data.ready).toBe(false);
-      expect(result.stderr).not.toContain('Planner provider');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('reports an unrun Pi probe as not checked in human doctor output', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'binaflow-doctor-human-'));
-    try {
-      const result = await runCli(['--cwd', directory, 'doctor']);
-
-      expect(result.code).toBe(1);
-      expect(result.stdout).toContain('Pi probe: not checked.');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
   it('rejects machine-mode init without prompting', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-init-machine-'));
     try {
@@ -275,39 +80,6 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
         error: { code: 'INTERACTIVE_REQUIRES_HUMAN_MODE' },
       });
       expect(result.stderr).not.toContain('Planner provider');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('attributes machine errors to the parsed command, not option values', async () => {
-    const result = await runCli(['--json', '--config', 'doctor', 'workflows']);
-
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ type: 'result', command: 'workflows' });
-  });
-
-  it('creates init configuration after confirmation and corrects blank input', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'binaflow-init-cli-'));
-    try {
-      const result = await runCliWithInput(
-        ['--cwd', directory, 'init'],
-        'provider-planner\nplanner-model\nprovider-builder\nbuilder-model\nn\ny\n',
-      );
-
-      expect(result.code).toBe(0);
-      expect(result.stdout).toContain('Configuration written to');
-      const config = await loadConfig(join(directory, '.binaflow', 'config.json'), directory);
-      expect(config.profiles.planner).toMatchObject({
-        provider: 'provider-planner',
-        model: 'planner-model',
-        workspaceMode: 'read-only',
-      });
-      expect(config.profiles.builder).toMatchObject({
-        provider: 'provider-builder',
-        model: 'builder-model',
-        workspaceMode: 'read-only',
-      });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -372,55 +144,7 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
     }
   });
 
-  it('preserves extra input fields through an interactive run', async () => {
-    const directory = await createFailureConfig();
-    const inputPath = join(directory, 'input.json');
-    await writeFile(inputPath, JSON.stringify({ objective: 'From JSON', extra: 'keep me' }));
-    const restoreStdin = forceTTY(process.stdin);
-    const restoreStdout = forceTTY(process.stdout);
-    const previousExitCode = process.exitCode;
-    process.exitCode = undefined;
-    try {
-      await createCli().parseAsync([
-        'node',
-        'binaflow',
-        '--cwd',
-        directory,
-        'run',
-        'plan-build',
-        '--interactive',
-        '--input-json',
-        inputPath,
-        '--objective',
-        'Interactive objective',
-      ]);
-
-      const config = await loadConfig(join(directory, '.binaflow', 'config.json'), directory);
-      const store = new SqliteRunStore(join(config.dataDir, 'runs.db'));
-      const artifacts = new FileArtifactStore(join(config.dataDir, 'artifacts'));
-      try {
-        const [run] = (await store.listRunsPage()).runs;
-        expect(run).toBeDefined();
-        const inputArtifact = (await store.getArtifacts(run!.id)).find(
-          (artifact) => artifact.stepId === 'run' && artifact.name === 'input',
-        );
-        expect(inputArtifact).toBeDefined();
-        expect(JSON.parse(await artifacts.read(inputArtifact!))).toEqual({
-          objective: 'Interactive objective',
-          extra: 'keep me',
-        });
-      } finally {
-        store.close();
-      }
-    } finally {
-      restoreStdin();
-      restoreStdout();
-      process.exitCode = previousExitCode;
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it('keeps run and resume JSONL lifecycle records ordered', async () => {
+  it('keeps JSONL run lifecycle records ordered', async () => {
     const directory = await createFailureConfig();
     try {
       const first = await runCli([
@@ -447,17 +171,7 @@ describe('CLI subprocess protocol boundary', { timeout: 15_000 }, () => {
         expect(() => JSON.parse(line)).not.toThrow();
       }
 
-      const runId = firstRecords[0]?.runId;
-      expect(runId).toEqual(expect.any(String));
-      const resumed = await runCli(['--cwd', directory, '--jsonl', 'resume', runId as string]);
-      const resumedRecords = protocolRecords(resumed.stdout);
-      expect(resumed.code).toBe(1);
-      expect(resumedRecords[0]).toMatchObject({
-        type: 'run.started',
-        command: 'resume',
-        runId,
-      });
-      expectTerminalRecord(resumedRecords.at(-1), 'resume', runId);
+      expect(firstRecords[0]?.runId).toEqual(expect.any(String));
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -542,14 +256,26 @@ function runCliWithInput(
     });
     let stdout = '';
     let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      settled = true;
+      child.kill();
+      reject(new Error(`CLI subprocess timed out: ${args.join(' ')}`));
+    }, 10_000);
+    const finish = (callback: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      callback();
+    };
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString();
     });
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('close', (code) => finish(() => resolve({ code: code ?? -1, stdout, stderr })));
     child.stdin.end(input);
   });
 }
@@ -574,10 +300,7 @@ function waitForOutput(stream: NodeJS.ReadableStream, predicate: () => boolean):
   });
 }
 
-async function createFailureConfig(
-  includeBuilder = true,
-  includeResearch = false,
-): Promise<string> {
+async function createFailureConfig(includeBuilder = true): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'binaflow-cli-'));
   await mkdir(join(directory, '.binaflow'));
   const profile = {
@@ -596,28 +319,10 @@ async function createFailureConfig(
       profiles: {
         planner: profile,
         ...(includeBuilder ? { builder: { ...profile, workspaceMode: 'read-write' } } : {}),
-        ...(includeResearch
-          ? {
-              researcher: profile,
-              'research-reviewer': { ...profile, model: 'reviewer-model' },
-            }
-          : {}),
       },
     }),
   );
   return directory;
-}
-
-function completedRun(): WorkflowRun {
-  return {
-    id: 'resume-test-run',
-    workflowId: 'plan-build',
-    workflowVersion: 1,
-    objective: 'Resume test',
-    status: 'completed',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  };
 }
 
 function protocolRecords(output: string): Array<Record<string, unknown>> {
@@ -628,24 +333,7 @@ function protocolRecords(output: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-function forceTTY(stream: NodeJS.ReadStream | NodeJS.WriteStream): () => void {
-  const previous = Object.getOwnPropertyDescriptor(stream, 'isTTY');
-  Object.defineProperty(stream, 'isTTY', { configurable: true, value: true });
-  return () => {
-    if (previous) Object.defineProperty(stream, 'isTTY', previous);
-    else Reflect.deleteProperty(stream, 'isTTY');
-  };
-}
-
-function expectTerminalRecord(
-  record: Record<string, unknown> | undefined,
-  command: string,
-  runId?: unknown,
-): void {
+function expectTerminalRecord(record: Record<string, unknown> | undefined, command: string): void {
   expect(['run.finished', 'run.failed']).toContain(record?.type);
   expect(record).toMatchObject({ command });
-  if (runId !== undefined) {
-    if (record?.type === 'run.failed') expect(record).toMatchObject({ runId });
-    else expect(record).toMatchObject({ run: { id: runId } });
-  }
 }

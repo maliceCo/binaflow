@@ -205,5 +205,6 @@ export function toWebOperationDto(record: GuidedPreparationRequestRecord): WebOp
     status: record.status,
     ...(record.errorCode ? { errorCode: record.errorCode } : {}),
     ...(record.publishedDocumentId ? { publishedDocumentId: record.publishedDocumentId } : {}),
+    ...(record.result === undefined ? {} : { result: record.result }),
   };
 }

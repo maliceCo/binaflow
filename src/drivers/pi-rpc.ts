@@ -83,6 +83,13 @@ export class PiDriver implements AgentDriver {
     let result: AgentStepResult | undefined;
     let failure: unknown;
     try {
+      if (request.sessionId) {
+        const existingState = await process.request(
+          { type: 'get_state' },
+          { timeoutMs: request.profile.timeoutMs, signal },
+        );
+        assertSessionIdentity(existingState, request.sessionId);
+      }
       // Profile timeout applies independently to each RPC or settling phase.
       const commands = await process.request(
         { type: 'get_commands' },
@@ -108,6 +115,7 @@ export class PiDriver implements AgentDriver {
         { type: 'get_state' },
         { timeoutMs: request.profile.timeoutMs, signal },
       );
+      if (request.sessionId) assertSessionIdentity(state, request.sessionId);
       const stats = await process.request(
         { type: 'get_session_stats' },
         { timeoutMs: request.profile.timeoutMs, signal },
@@ -183,6 +191,7 @@ function buildPiArgs(request: AgentRequest, sessionDir?: string): string[] {
     for (const path of skills.paths) args.push('--skill', path);
   }
   if (sessionDir) args.push('--session-dir', sessionDir);
+  if (request.sessionId) args.push('--session', request.sessionId);
   return args;
 }
 
@@ -316,6 +325,22 @@ function readMessageText(value: unknown): string | undefined {
 function readSessionId(response: JsonObject): string | undefined {
   const data = asRecord(response.data);
   return data && typeof data.sessionId === 'string' ? data.sessionId : undefined;
+}
+
+function assertSessionIdentity(response: JsonObject, expected: string): void {
+  const actual = readSessionId(response);
+  if (!actual) {
+    throw new AgentDriverError(
+      `Pi session ${expected} could not be opened`,
+      'PI_SESSION_NOT_FOUND',
+    );
+  }
+  if (actual !== expected) {
+    throw new AgentDriverError(
+      `Pi opened session ${actual} instead of ${expected}`,
+      'PI_SESSION_MISMATCH',
+    );
+  }
 }
 
 function readUsage(response: JsonObject): AgentUsage | undefined {

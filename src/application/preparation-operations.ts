@@ -6,9 +6,11 @@ import type { AgentDriver } from '../core/agent.js';
 import type { AgentStepResult, AgentProfileSnapshot } from '../core/run.js';
 import type { ApplicationInternals } from './context.js';
 import type { ApplicationPreparationStore } from './ports.js';
+import { renderStructuredOutputInstructions } from '../core/structured-output.js';
 import {
   createPreparationProposal,
   parsePreparationAgentResponse,
+  preparationAgentResponseSchema,
   type PreparationConversation,
   type PreparationDraft,
   type PreparationMessage,
@@ -22,6 +24,7 @@ import { validateAgentProfile } from '../config.js';
 import {
   effectivePreparationReviewMode,
   parsePreparationReviewReport,
+  preparationReviewReportSchema,
 } from './preparation-review.js';
 import { resolveWorkflow } from '../workflows/catalog.js';
 import { validateWorkflowDefinition } from '../core/workflow.js';
@@ -901,7 +904,9 @@ function buildPreparationPrompt(
   const prompt = [
     `Prepare the ${conversation.draft.workflowId} workflow for this workspace: ${conversation.draft.workspace}.`,
     'The user objective may be incomplete. Ask a concise question when clarification is needed.',
-    'Return exactly one JSON object with schemaVersion 1: {"schemaVersion":1,"kind":"message","content":"...","synthesisSuggestion":{...}} or {"schemaVersion":1,"kind":"proposal","content":"...","objective":"...","outputs":[...]}.',
+    renderStructuredOutputInstructions([
+      { name: 'preparation response', schema: preparationAgentResponseSchema },
+    ]),
     'A proposal for plan-build contains exactly {"stepId":"plan","name":"plan","value":<validated BuildPlan>}.',
     'A proposal for plan-build-qa contains validated scope and plan outputs.',
     'A proposal for plan-build-qa-interactive contains validated scope and plan outputs.',
@@ -922,8 +927,10 @@ function buildPreparationReviewPrompt(
   if (!proposal) throw new Error('Preparation proposal is required for review');
   const prompt = [
     'Review this preparation proposal without executing work.',
-    `The effective review policy is ${mode}. Return exactly one JSON object with schemaVersion 1.`,
-    'The report must contain summary and findings. Each finding needs id, severity, title, explanation, impact, evidence, suggestedCorrection, and verifications.',
+    `The effective review policy is ${mode}.`,
+    renderStructuredOutputInstructions([
+      { name: 'preparation review report', schema: preparationReviewReportSchema },
+    ]),
     'Do not include approval, authorization, execution, or decision fields.',
     JSON.stringify({
       objective: proposal.objective,

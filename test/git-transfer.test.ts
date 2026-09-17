@@ -79,7 +79,7 @@ describe('Git transfer adapter', () => {
     });
   });
 
-  it('reports dirty repositories and refuses branch or HEAD divergence', async () => {
+  it('reports dirty repositories and refuses bundle creation', async () => {
     const source = await repository();
     const dirty = await previewRepositoryTransfer(source);
     await writeFile(join(source, 'dirty file.txt'), 'dirty\n');

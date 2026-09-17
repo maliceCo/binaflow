@@ -393,7 +393,7 @@ function profileDocuments(
           : ['ls', 'find', 'read'],
         workspaceMode: writeAccess ? 'read-write' : 'read-only',
         projectTrust: writeAccess ? 'always' : 'never',
-        skills: { mode: 'discover' },
+        skills: { mode: name === 'planner' ? 'none' : 'discover' },
         timeoutMs: 180_000,
         retryLimit: 0,
       };

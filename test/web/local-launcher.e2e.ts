@@ -36,8 +36,12 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await page.getByRole('button', { name: 'Create task' }).click();
     await expect(page.getByRole('heading', { name: /Task / })).toBeVisible();
 
+    await page.getByLabel('Message').fill('What is in scope for this task?');
+    await page.getByRole('button', { name: 'Send message' }).click();
+    await expect(page.getByText('Fixture response')).toBeVisible();
+
     await page.getByRole('button', { name: 'Confirm brief' }).click();
-    await expect(page.getByText('Preparation revision 3.')).toBeVisible();
+    await expect(page.getByText(/Preparation revision \d+\./)).toBeVisible();
     await page.getByRole('button', { name: 'Generate plan' }).click();
     await expect(page.getByText('Plan version 1 is available.')).toBeVisible();
     await page.getByRole('button', { name: 'Approve plan' }).click();

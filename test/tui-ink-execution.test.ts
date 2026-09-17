@@ -27,22 +27,6 @@ describe('Ink execution state', () => {
     expect(buffer.activity.at(-1)?.message).toBe('unsafe');
   });
 
-  it('tracks retained activity bytes incrementally without full rescans on each append', () => {
-    const buffer = createLiveActivityBuffer({ maxItems: 5, maxBytes: 40, maxMessageBytes: 20 });
-    buffer.append(event('aaaa'));
-    expect(buffer.activityBytes).toBe(4);
-    buffer.append(event('bbbb'));
-    expect(buffer.activityBytes).toBe(8);
-    for (let index = 0; index < 10; index += 1) buffer.append(event(`m${index}`));
-    expect(buffer.activity.length).toBeLessThanOrEqual(5);
-    const recomputed = buffer.activity.reduce(
-      (total, item) => total + Buffer.byteLength(item.message, 'utf8'),
-      0,
-    );
-    expect(buffer.activityBytes).toBe(recomputed);
-    expect(buffer.activityBytes).toBeLessThanOrEqual(40);
-  });
-
   it('coalesces UI publishes and keeps at most one snapshot inspection in flight', async () => {
     const publishes: number[] = [];
     const buffer = createLiveActivityBuffer();

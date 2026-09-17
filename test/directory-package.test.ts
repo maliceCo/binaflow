@@ -113,6 +113,9 @@ describe('transfer directory package', () => {
     await writeManifestLast(fixture.staging, fixture.manifest);
     writeFileSync(join(fixture.staging, 'runs.db'), 'tampered');
     await expect(inspectPackage(fixture.staging)).rejects.toThrow(/match manifest/);
+    writeFileSync(join(fixture.staging, 'runs.db'), 'database');
+    writeFileSync(join(fixture.staging, 'unexpected.txt'), 'unexpected');
+    await expect(inspectPackage(fixture.staging)).rejects.toThrow(/manifest|unexpected/i);
 
     const symlinkStaging = await createStagingPackage({
       destination: join(fixture.root, 'symlink-transfer'),

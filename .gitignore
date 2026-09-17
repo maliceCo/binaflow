@@ -4,3 +4,5 @@ coverage/
 .binaflow/
 release/
 testrelease/
+.agents/skills/diagram-design/references/type-waterfall.md
+.agents/skills/diagram-design/

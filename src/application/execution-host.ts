@@ -49,6 +49,7 @@ export interface ExecutionHostClient {
       request: GuidedPreparationOperationRequest,
       options?: { signal?: AbortSignal },
     ): Promise<GuidedPreparationRequestRecord>;
+    recover(contractId: string, requestId: string): Promise<GuidedPreparationRequestRecord>;
     create(contractId: string): Promise<import('./guided-preparation.js').GuidedPreparationState>;
     getState(
       contractId: string,
@@ -309,6 +310,8 @@ export function createExecutionHost(options: CreateExecutionHostOptions): Execut
       ? {
           guidedPreparation: {
             execute: startPreparation,
+            recover: (contractId: string, requestId: string) =>
+              admitQuery(() => options.guidedPreparation!.service.recover!(contractId, requestId)),
             create: (contractId: string) =>
               admitQuery(() => options.guidedPreparation!.service.create!(contractId)),
             getState: (contractId: string) =>

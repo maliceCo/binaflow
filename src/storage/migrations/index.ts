@@ -16,8 +16,10 @@ import { taskContractsMigration } from './012-task-contracts.js';
 import { guidedExecutionMigration } from './013-guided-execution.js';
 import { portabilityMigration } from './014-portability.js';
 import { guidedPreparationMigration } from './015-guided-preparation.js';
+import { guidedPreparationDraftMigration } from './016-guided-preparation-draft.js';
+import { guidedPreparationSessionMigration } from './017-guided-preparation-session.js';
 
-export const currentSchemaVersion = 15;
+export const currentSchemaVersion = 17;
 
 export function applyMigrations(database: Database.Database, databasePath: string): void {
   const hadExistingSchema = tableExists(database, 'runs');
@@ -129,6 +131,16 @@ export function applyMigrations(database: Database.Database, databasePath: strin
     if (version < 15) {
       database.exec(guidedPreparationMigration);
       recordMigration(database, 15);
+    }
+
+    if (version < 16) {
+      database.exec(guidedPreparationDraftMigration);
+      recordMigration(database, 16);
+    }
+
+    if (version < 17) {
+      database.exec(guidedPreparationSessionMigration);
+      recordMigration(database, 17);
     }
 
     const finalVersion = database

@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Binaflow · Tu recorrido por el workflow</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #f5f5f5;
+        --paper-2: #ececec;
+        --ink: #2d3142;
+        --muted: #4f5d75;
+        --soft: #7a8399;
+        --rule: rgba(45, 49, 66, 0.12);
+        --accent: #eb6c36;
+        --accent-tint: rgba(235, 108, 54, 0.08);
+        --sans: 'Geist', system-ui, sans-serif;
+        --serif: 'Instrument Serif', Georgia, serif;
+        --mono: 'Geist Mono', ui-monospace, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        line-height: 1.65;
+      }
+      main {
+        max-width: 1360px;
+        margin: auto;
+        padding: 64px 40px 32px;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-size: clamp(36px, 5vw, 64px);
+        font-weight: 400;
+        line-height: 1.06;
+        margin: 16px 0 24px;
+        max-width: 840px;
+      }
+      h2 {
+        font-size: 22px;
+        font-weight: 600;
+        margin: 0 0 16px;
+      }
+      h3 {
+        font-size: 17px;
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 0 0 16px;
+      }
+      a {
+        color: var(--ink);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 4px;
+      }
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 4px;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .lead {
+        max-width: 840px;
+        font-size: 18px;
+        color: var(--muted);
+      }
+      .scope {
+        padding: 16px 0;
+        border-top: 1px solid var(--rule);
+        border-bottom: 1px solid var(--rule);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 28px;
+        margin: 24px 0 40px;
+        font-size: 14px;
+      }
+      figure {
+        margin: 0;
+      }
+      .canvas {
+        overflow-x: auto;
+      }
+      svg {
+        width: 100%;
+        min-width: 960px;
+        display: block;
+      }
+      svg text {
+        font-family: var(--sans);
+        fill: var(--ink);
+      }
+      svg .figure-title {
+        font-family: var(--serif);
+        font-size: 28px;
+      }
+      svg .name {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      svg .body {
+        font-size: 11px;
+        fill: var(--muted);
+      }
+      svg .tag {
+        font-family: var(--mono);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+        fill: var(--muted);
+      }
+      svg .note {
+        font-size: 11px;
+        fill: var(--muted);
+      }
+      svg .rule {
+        stroke: var(--rule);
+        stroke-width: 1;
+      }
+      svg .flow {
+        fill: none;
+        stroke: var(--muted);
+        stroke-width: 1.2;
+      }
+      svg .focus-flow {
+        stroke: var(--accent);
+      }
+      svg .stage {
+        fill: #ffffff;
+        stroke: var(--ink);
+        stroke-width: 1;
+      }
+      svg .focus {
+        fill: var(--accent-tint);
+        stroke: var(--accent);
+        stroke-width: 1;
+      }
+      figcaption {
+        margin: 0 40px 32px;
+        color: var(--muted);
+        font-size: 13px;
+        max-width: 980px;
+      }
+      .section {
+        padding: 40px 0;
+        border-top: 1px solid var(--rule);
+      }
+      .notes {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr;
+        gap: 24px;
+        margin: 24px 0;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 24px;
+      }
+      .card p:last-child {
+        margin-bottom: 0;
+      }
+      .card p,
+      .card li {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      ul,
+      ol {
+        padding-left: 22px;
+        margin: 8px 0 0;
+      }
+      li + li {
+        margin-top: 8px;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 16px;
+        vertical-align: top;
+        border-bottom: 1px solid var(--rule);
+      }
+      th {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      td:first-child {
+        min-width: 180px;
+      }
+      td:nth-child(2) {
+        min-width: 260px;
+      }
+      td:last-child {
+        min-width: 300px;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+      }
+      .pending {
+        border-left: 2px dashed var(--soft);
+        padding-left: 24px;
+      }
+      .pending li {
+        padding-left: 8px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      details {
+        margin-top: 24px;
+        border-top: 1px solid var(--rule);
+        padding-top: 20px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details p,
+      details ul {
+        font-size: 14px;
+        color: var(--muted);
+        margin-top: 12px;
+      }
+      footer {
+        border-top: 1px solid var(--rule);
+        padding-top: 24px;
+        margin-top: 24px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 32px 16px;
+        }
+        .notes {
+          grid-template-columns: 1fr;
+        }
+        figcaption {
+          margin-left: 0;
+          margin-right: 0;
+        }
+        .lead {
+          font-size: 16px;
+        }
+      }
+      @media print {
+        main {
+          padding: 0;
+        }
+        nav {
+          display: none;
+        }
+        .canvas {
+          overflow: visible;
+        }
+        svg {
+          min-width: 0;
+        }
+        figure,
+        .card {
+          break-inside: avoid;
+        }
+        .section {
+          break-before: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Binaflow / Mapa de interacción / Web personal</p>
+        <h1>Tú decides el trabajo.<br />El workflow lo ejecuta.</h1>
+        <p class="lead">
+          De una idea a una ejecución supervisada: dónde conversas, qué apruebas y cuándo el sistema
+          puede empezar a modificar el proyecto.
+        </p>
+        <p class="scope">
+          <strong>Lectura:</strong> recorrido local del launcher y controles presentes en el código.
+          No es un mockup ni una certificación de funcionamiento. La revisión de cambios, QA y
+          cierre se separan como alcance pendiente.
+        </p>
+        <nav aria-label="Contenido">
+          <a href="#recorrido">01 · Recorrido general</a>
+          <a href="#workflow">02 · Interactuar con el workflow</a>
+          <a href="#controles">Botones reales</a>
+          <a href="#pendiente">Lo que falta</a>
+        </nav>
+      </header>
+
+      <section id="recorrido" aria-label="Recorrido general por la web">
+        <figure>
+          <div
+            class="canvas"
+            role="region"
+            aria-label="Mapa general; desplazamiento horizontal en pantallas pequeñas"
+            tabindex="0"
+          >
+            <svg
+              viewBox="0 0 1280 720"
+              xmlns="http://www.w3.org/2000/svg"
+              role="img"
+              aria-labelledby="web-ui-ux-flow-overview-title web-ui-ux-flow-overview-desc"
+            >
+              <title id="web-ui-ux-flow-overview-title">Del acceso a la ejecución</title>
+              <desc id="web-ui-ux-flow-overview-desc">
+                El usuario accede con un código, abre un proyecto, crea o elige una tarea, prepara
+                su plan y confirma una ejecución cuyo progreso aparece en el mismo espacio de
+                trabajo.
+              </desc>
+              <defs>
+                <marker
+                  id="overview-arrow"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#4f5d75" />
+                </marker>
+                <marker
+                  id="overview-arrow-accent"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#eb6c36" />
+                </marker>
+                <marker
+                  id="overview-arrow-link"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8" />
+                </marker>
+              </defs>
+              <rect width="1280" height="720" fill="#f5f5f5" />
+              <text x="40" y="48" class="tag">01 / PROCESO / RECORRIDO GENERAL</text>
+              <text x="40" y="88" class="figure-title">Una tarea, un espacio de trabajo</text>
+              <text x="40" y="112" class="body">
+                El orden explica el recorrido; no representa cinco páginas distintas.
+              </text>
+              <rect x="176" y="480" width="1048" height="104" rx="4" fill="#ececec" />
+              <line x1="40" y1="240" x2="1240" y2="240" class="rule" />
+              <line x1="40" y1="360" x2="1240" y2="360" class="rule" />
+              <line x1="40" y1="464" x2="1240" y2="464" class="rule" />
+              <line
+                x1="376"
+                y1="188"
+                x2="400"
+                y2="188"
+                class="flow"
+                marker-end="url(#overview-arrow)"
+              />
+              <line
+                x1="584"
+                y1="188"
+                x2="608"
+                y2="188"
+                class="flow"
+                marker-end="url(#overview-arrow)"
+              />
+              <line
+                x1="792"
+                y1="188"
+                x2="816"
+                y2="188"
+                class="flow focus-flow"
+                marker-end="url(#overview-arrow-accent)"
+              />
+              <line
+                x1="1000"
+                y1="188"
+                x2="1024"
+                y2="188"
+                class="flow focus-flow"
+                marker-end="url(#overview-arrow-accent)"
+              />
+              <rect x="192" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="400" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="608" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="816" y="148" width="184" height="80" rx="6" class="focus" />
+              <rect x="1024" y="148" width="184" height="80" rx="6" class="stage" />
+              <text x="208" y="170" class="tag">01 / ENTRADA</text>
+              <text x="208" y="197" class="name">Acceder</text>
+              <text x="416" y="170" class="tag">02 / CONTEXTO</text>
+              <text x="416" y="197" class="name">Abrir proyecto</text>
+              <text x="624" y="170" class="tag">03 / OBJETIVO</text>
+              <text x="624" y="197" class="name">Crear o elegir tarea</text>
+              <text x="832" y="170" class="tag">04 / WORKFLOW</text>
+              <text x="832" y="197" class="name">Preparar el trabajo</text>
+              <text x="1040" y="170" class="tag">05 / SEGUIMIENTO</text>
+              <text x="1040" y="197" class="name">Ejecutar y observar</text>
+
+              <text x="40" y="284" class="name">Tú haces</text>
+              <text x="192" y="284" class="body">
+                <tspan x="192">Introduces el código</tspan>
+                <tspan x="192" dy="20">que muestra el servidor.</tspan>
+              </text>
+              <text x="400" y="284" class="body">
+                <tspan x="400">Registras y abres</tspan>
+                <tspan x="400" dy="20">una carpeta de Binaflow.</tspan>
+              </text>
+              <text x="608" y="284" class="body">
+                <tspan x="608">Escribes un objetivo</tspan>
+                <tspan x="608" dy="20">o eliges una tarea existente.</tspan>
+              </text>
+              <text x="816" y="284" class="body">
+                <tspan x="816">Conversas, confirmas</tspan>
+                <tspan x="816" dy="20">el brief y apruebas el plan.</tspan>
+              </text>
+              <text x="1024" y="284" class="body">
+                <tspan x="1024">Confirmas el inicio;</tspan>
+                <tspan x="1024" dy="20">sigues el avance o cancelas.</tspan>
+              </text>
+
+              <text x="40" y="396" class="name">La web muestra</text>
+              <text x="192" y="396" class="body">
+                <tspan x="192">Acceso; si es el primer uso,</tspan>
+                <tspan x="192" dy="20">preparación local inicial.</tspan>
+              </text>
+              <text x="400" y="396" class="body">
+                <tspan x="400">Catálogo de proyectos</tspan>
+                <tspan x="400" dy="20">y proyecto activo.</tspan>
+              </text>
+              <text x="608" y="396" class="body">
+                <tspan x="608">Lista de tareas y detalle</tspan>
+                <tspan x="608" dy="20">de la tarea seleccionada.</tspan>
+              </text>
+              <text x="816" y="396" class="body">
+                <tspan x="816">Conversación, fuentes</tspan>
+                <tspan x="816" dy="20">y controles de plan / TODO.</tspan>
+              </text>
+              <text x="1024" y="396" class="body">
+                <tspan x="1024">Estado, fases, tareas,</tspan>
+                <tspan x="1024" dy="20">intentos y bloqueos.</tspan>
+              </text>
+
+              <text x="40" y="520" class="name">Resultado</text>
+              <text x="192" y="520" class="name">Sesión abierta</text>
+              <text x="192" y="544" class="body">No crea una ejecución.</text>
+              <text x="400" y="520" class="name">Proyecto activo</text>
+              <text x="400" y="544" class="body">Uno por proceso.</text>
+              <text x="608" y="520" class="name">Tarea seleccionada</text>
+              <text x="608" y="544" class="body">Su fase queda visible.</text>
+              <text x="816" y="520" class="name">Trabajo preparado</text>
+              <text x="816" y="544" class="body">Detalle en el mapa 02.</text>
+              <text x="1024" y="520" class="name">Espera de revisión</text>
+              <text x="1024" y="544" class="body">Final del camino exitoso actual.</text>
+              <text x="40" y="624" class="note">
+                El acceso, setup y catálogo preparan el contexto. La interacción cotidiana se
+                concentra en el detalle de una tarea.
+              </text>
+              <line x1="40" y1="660" x2="1240" y2="660" class="rule" />
+              <text x="40" y="688" class="tag">LECTURA</text>
+              <rect x="160" y="676" width="12" height="12" rx="2" fill="#ffffff" stroke="#2d3142" />
+              <text x="184" y="686" class="note">Etapa actual</text>
+              <rect x="340" y="676" width="12" height="12" rx="2" fill="#f5f5f5" stroke="#eb6c36" />
+              <text x="364" y="686" class="note">Foco: preparar antes de ejecutar</text>
+              <text x="920" y="686" class="note">Etiquetas traducidas al español</text>
+            </svg>
+          </div>
+          <figcaption>
+            El mapa sigue el launcher con catálogo de proyectos. En el modo de workspace ya
+            configurado puede no aparecer ese catálogo. Se omiten los ajustes avanzados y el
+            traslado entre equipos.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section id="workflow" class="section" aria-label="Interacción con el workflow">
+        <figure>
+          <div
+            class="canvas"
+            role="region"
+            aria-label="Detalle del workflow; desplazamiento horizontal en pantallas pequeñas"
+            tabindex="0"
+          >
+            <svg
+              viewBox="0 0 1280 720"
+              xmlns="http://www.w3.org/2000/svg"
+              role="img"
+              aria-labelledby="web-ui-ux-flow-detail-title web-ui-ux-flow-detail-desc"
+            >
+              <title id="web-ui-ux-flow-detail-title">
+                Conversar, aprobar e iniciar son acciones distintas
+              </title>
+              <desc id="web-ui-ux-flow-detail-desc">
+                La tarea avanza desde conversación y confirmación del brief hasta plan aprobado,
+                TODO, previsualización e inicio explícito; durante la ejecución el usuario consulta
+                progreso y puede cancelar cuando esa acción está disponible.
+              </desc>
+              <defs>
+                <marker
+                  id="detail-arrow"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#4f5d75" />
+                </marker>
+                <marker
+                  id="detail-arrow-accent"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#eb6c36" />
+                </marker>
+                <marker
+                  id="detail-arrow-link"
+                  markerWidth="8"
+                  markerHeight="6"
+                  refX="7"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 8 3, 0 6" fill="#2e5aa8" />
+                </marker>
+              </defs>
+              <rect width="1280" height="720" fill="#f5f5f5" />
+              <text x="40" y="48" class="tag">02 / PROCESO / ACCIÓN · RESPUESTA · RESULTADO</text>
+              <text x="40" y="88" class="figure-title">
+                Conversar no aprueba. Aprobar no inicia.
+              </text>
+              <text x="40" y="112" class="body">
+                Recorrido nominal: cada columna distingue tu acción de lo que hace el sistema.
+              </text>
+              <rect x="176" y="480" width="1048" height="104" rx="4" fill="#ececec" />
+              <line x1="40" y1="240" x2="1240" y2="240" class="rule" />
+              <line x1="40" y1="360" x2="1240" y2="360" class="rule" />
+              <line x1="40" y1="464" x2="1240" y2="464" class="rule" />
+              <line
+                x1="376"
+                y1="188"
+                x2="400"
+                y2="188"
+                class="flow focus-flow"
+                marker-end="url(#detail-arrow-accent)"
+              />
+              <line
+                x1="584"
+                y1="188"
+                x2="608"
+                y2="188"
+                class="flow focus-flow"
+                marker-end="url(#detail-arrow-accent)"
+              />
+              <line
+                x1="792"
+                y1="188"
+                x2="816"
+                y2="188"
+                class="flow"
+                marker-end="url(#detail-arrow)"
+              />
+              <line
+                x1="1000"
+                y1="188"
+                x2="1024"
+                y2="188"
+                class="flow"
+                marker-end="url(#detail-arrow)"
+              />
+              <rect x="192" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="400" y="148" width="184" height="80" rx="6" class="focus" />
+              <rect x="608" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="816" y="148" width="184" height="80" rx="6" class="stage" />
+              <rect x="1024" y="148" width="184" height="80" rx="6" class="stage" />
+              <text x="208" y="170" class="tag">01 / EXPLORAR</text>
+              <text x="208" y="197" class="name">Precisar el objetivo</text>
+              <text x="416" y="170" class="tag">02 / DECIDIR</text>
+              <text x="416" y="197" class="name">Acordar un plan</text>
+              <text x="624" y="170" class="tag">03 / PREPARAR</text>
+              <text x="624" y="197" class="name">Generar el TODO</text>
+              <text x="832" y="170" class="tag">04 / AUTORIZAR INICIO</text>
+              <text x="832" y="197" class="name">Previsualizar e iniciar</text>
+              <text x="1040" y="170" class="tag">05 / SUPERVISAR</text>
+              <text x="1040" y="197" class="name">Seguir la ejecución</text>
+
+              <text x="40" y="284" class="name">Tú decides</text>
+              <text x="192" y="284" class="body">
+                <tspan x="192">Conversas y eliges fuentes;</tspan>
+                <tspan x="192" dy="20">confirmas el brief.</tspan>
+              </text>
+              <text x="400" y="284" class="body">
+                <tspan x="400">Generas, comentas y ajustas;</tspan>
+                <tspan x="400" dy="20">apruebas una versión.</tspan>
+              </text>
+              <text x="608" y="284" class="body">
+                <tspan x="608">Solicitas generar el TODO</tspan>
+                <tspan x="608" dy="20">del plan aprobado.</tspan>
+              </text>
+              <text x="816" y="284" class="body">
+                <tspan x="816">Pides la previsualización;</tspan>
+                <tspan x="816" dy="20">confirmas el inicio aparte.</tspan>
+              </text>
+              <text x="1024" y="284" class="body">
+                <tspan x="1024">Consultas el progreso</tspan>
+                <tspan x="1024" dy="20">o cancelas si está habilitado.</tspan>
+              </text>
+
+              <text x="40" y="396" class="name">El sistema hace</text>
+              <text x="192" y="396" class="body">
+                <tspan x="192">Conserva el intercambio</tspan>
+                <tspan x="192" dy="20">y el brief confirmado.</tspan>
+              </text>
+              <text x="400" y="396" class="body">
+                <tspan x="400">Genera nuevas versiones</tspan>
+                <tspan x="400" dy="20">y registra la aprobación.</tspan>
+              </text>
+              <text x="608" y="396" class="body">
+                <tspan x="608">Deriva tareas, límites</tspan>
+                <tspan x="608" dy="20">y verificaciones del plan.</tspan>
+              </text>
+              <text x="816" y="396" class="body">
+                <tspan x="816">Comprueba el workspace;</tspan>
+                <tspan x="816" dy="20">valida la solicitud de inicio.</tspan>
+              </text>
+              <text x="1024" y="396" class="body">
+                <tspan x="1024">Ejecuta fases, verifica</tspan>
+                <tspan x="1024" dy="20">y registra avance o bloqueos.</tspan>
+              </text>
+
+              <text x="40" y="520" class="name">Resultado</text>
+              <text x="192" y="520" class="name">Brief confirmado</text>
+              <text x="192" y="544" class="body">Define qué se va a resolver.</text>
+              <text x="400" y="520" class="name">Plan aprobado</text>
+              <text x="400" y="544" class="body">Una versión, no cualquier plan.</text>
+              <text x="608" y="520" class="name">TODO versionado</text>
+              <text x="608" y="544" class="body">Instrucciones para ejecutar.</text>
+              <text x="816" y="520" class="name">Ejecución iniciada</text>
+              <text x="816" y="544" class="body">Solo si el inicio es aceptado.</text>
+              <text x="1024" y="520" class="name">Espera de revisión</text>
+              <text x="1024" y="544" class="body">Si la implementación termina.</text>
+              <text x="40" y="610" class="note">
+                Iteración: comentar y regenerar mantiene el trabajo en planificación; después
+                apruebas la versión elegida.
+              </text>
+              <text x="40" y="632" class="note">
+                Salidas alternativas: bloqueo, fallo o cancelación. Este mapa no implica una
+                reanudación automática.
+              </text>
+              <line x1="40" y1="660" x2="1240" y2="660" class="rule" />
+              <text x="40" y="688" class="tag">LECTURA</text>
+              <rect x="160" y="676" width="12" height="12" rx="2" fill="#ffffff" stroke="#2d3142" />
+              <text x="184" y="686" class="note">Etapa actual</text>
+              <rect x="340" y="676" width="12" height="12" rx="2" fill="#f5f5f5" stroke="#eb6c36" />
+              <text x="364" y="686" class="note">Foco: aprobación explícita</text>
+              <text x="920" y="686" class="note">La previsualización no ejecuta</text>
+            </svg>
+          </div>
+          <figcaption>
+            Patrón: etapas con campos consistentes de acción, respuesta y resultado. Las columnas
+            agrupan controles del panel actual, no una navegación obligatoria entre pantallas. Las
+            validaciones finales corresponden al servidor.
+          </figcaption>
+        </figure>
+
+        <div class="notes">
+          <article class="card">
+            <p class="eyebrow">El límite de tu autorización</p>
+            <h3>Son tres actos distintos</h3>
+            <ul>
+              <li>
+                <strong>Conversar o comentar:</strong> aportar contexto o pedir otra versión. No
+                autoriza cambios.
+              </li>
+              <li>
+                <strong>Aprobar el plan:</strong> aceptar una versión concreta. No inicia el
+                builder.
+              </li>
+              <li>
+                <strong>Confirmar e iniciar:</strong> solicitar la ejecución asociada al TODO y a la
+                previsualización.
+              </li>
+            </ul>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Continuidad</p>
+            <h3>El navegador observa; el servidor ejecuta</h3>
+            <p>
+              Cerrar la pestaña no equivale a cancelar. Al volver puedes consultar la tarea mientras
+              el servidor siga activo.
+            </p>
+            <p>
+              Si el servidor cae, no se promete continuidad ni reanudación automática. Cancelar es
+              una acción explícita, no un efecto de salir de la web.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="controles" class="section" aria-labelledby="controls-title">
+        <p class="eyebrow">Del mapa a la interfaz actual</p>
+        <h2 id="controls-title">Qué botón corresponde a cada decisión</h2>
+        <p class="muted">
+          Los nombres de los botones se conservan en inglés para que puedas encontrarlos en la web.
+        </p>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Quiero...</th>
+                <th scope="col">Control actual</th>
+                <th scope="col">Qué significa</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Empezar una tarea</td>
+                <td><code>Create task</code></td>
+                <td>Escribes el objetivo. Crear la tarea no inicia la implementación.</td>
+              </tr>
+              <tr>
+                <td>Explorar y añadir contexto</td>
+                <td>
+                  <code>Send message</code><br /><code>Search sources</code> /
+                  <code>Read source</code>
+                </td>
+                <td>
+                  Conversas, buscas o lees una URL y seleccionas fuentes. La búsqueda depende de su
+                  configuración.
+                </td>
+              </tr>
+              <tr>
+                <td>Fijar el alcance</td>
+                <td><code>Confirm brief</code></td>
+                <td>Confirma el brief actual con el contexto seleccionado.</td>
+              </tr>
+              <tr>
+                <td>Pedir y refinar un plan</td>
+                <td><code>Generate plan</code><br /><code>Comment and regenerate</code></td>
+                <td>El comentario solicita otra versión; puedes repetir antes de aprobar.</td>
+              </tr>
+              <tr>
+                <td>Aceptar el plan</td>
+                <td><code>Approve plan</code></td>
+                <td>Registra la aprobación para esa versión. No equivale a ejecutar.</td>
+              </tr>
+              <tr>
+                <td>Preparar instrucciones</td>
+                <td><code>Generate TODO</code></td>
+                <td>
+                  Genera el contrato de tareas. El panel leído no ofrece un botón independiente de
+                  aprobación del TODO.
+                </td>
+              </tr>
+              <tr>
+                <td>Comprobar antes de arrancar</td>
+                <td><code>Preview execution</code></td>
+                <td>
+                  Muestra el digest de la previsualización, si Git está limpio y un contador de
+                  cambios detectados.
+                </td>
+              </tr>
+              <tr>
+                <td>Autorizar el arranque</td>
+                <td><code>Confirm and start execution</code></td>
+                <td>
+                  Envía la confirmación. El servidor puede rechazarla si las condiciones no son
+                  válidas.
+                </td>
+              </tr>
+              <tr>
+                <td>Detener el trabajo</td>
+                <td><code>Cancel execution</code></td>
+                <td>
+                  Aparece cuando el estado permite cancelar. No es una pausa con continuación
+                  automática.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="pendiente" class="section" aria-labelledby="pending-title">
+        <p class="eyebrow">Visión de producto / No disponible aún como recorrido completo</p>
+        <h2 id="pending-title">Después de ejecutar: revisión, QA y cierre</h2>
+        <p class="muted">
+          Hoy el camino exitoso llega al aviso de espera de revisión. Los siguientes pasos describen
+          la intención documentada, no botones ya implementados.
+        </p>
+        <ol class="pending">
+          <li>
+            <strong>Revisar cambios.</strong> Ver el diff real por archivo, comentar y editar
+            manualmente; revisar el parche concreto con el LLM antes de aprobar.
+          </li>
+          <li>
+            <strong>Decidir sobre QA.</strong> Conversar sobre cada hallazgo y elegir entre
+            autorizar su corrección, descartarlo o aceptar el riesgo.
+          </li>
+          <li>
+            <strong>Aplicar solo lo autorizado.</strong> Generar <code>QA_TODO.md</code>, ejecutar
+            las correcciones elegidas y verificar sus resultados.
+          </li>
+          <li>
+            <strong>Cerrar o volver a revisar.</strong> Pedir otra revisión completa opcional o
+            aprobar el cierre, conservando versiones, decisiones y commits.
+          </li>
+        </ol>
+        <div class="notes">
+          <article class="card">
+            <p class="eyebrow">Brecha de UX observada en el código</p>
+            <h3>Aprobar requiere poder inspeccionar</h3>
+            <p>
+              El panel actual anuncia que hay una versión del plan, pero no renderiza su contenido
+              completo. Tampoco ofrece un visor del TODO. El recorrido de aprobación existe, pero la
+              revisión informada de esos documentos necesita una experiencia más completa.
+            </p>
+          </article>
+          <article class="card">
+            <p class="eyebrow">Bloqueos y evidencia</p>
+            <h3>Mostrar un bloqueo no lo resuelve</h3>
+            <p>
+              La ejecución muestra motivo y referencias de evidencia. Este componente no presenta
+              controles para resolver el bloqueo o reanudar. Los artefactos aparecen por nombre y
+              tamaño, no como enlaces de lectura.
+            </p>
+          </article>
+        </div>
+        <details>
+          <summary>Fuentes, alcance y simplificaciones</summary>
+          <ul>
+            <li>
+              Interfaz leída: <code>src/web/client/App.tsx</code>, <code>TaskCreate.tsx</code>,
+              <code>TaskPreparation.tsx</code> y <code>TaskExecution.tsx</code>.
+            </li>
+            <li>
+              Recorrido local contrastado con la secuencia de
+              <code>test/web/local-launcher.e2e.ts</code>; leer el test no equivale a haberlo
+              ejecutado en esta revisión.
+            </li>
+            <li>
+              Visión y límites: <code>docs/web-workflow-vision.md</code> y
+              <code>docs/personal-web.md</code>. Las notas históricas sobre regresiones no se toman
+              como una verificación nueva del estado actual.
+            </li>
+            <li>
+              Se agrupan conversación y fuentes, y previsualización e inicio. Sus acciones siguen
+              siendo independientes.
+            </li>
+            <li>
+              Se omiten configuración técnica, LAN/TLS, emparejamiento, traslado entre equipos y la
+              máquina de estados exhaustiva. No se añade funcionalidad.
+            </li>
+            <li>
+              Formato: un HTML estático con SVG accesible. Dos mapas de proceso con campos
+              semánticos, tamaño <code>doc-wide</code> (1280 × 720), estilo claro predeterminado.
+            </li>
+            <li>
+              Las fuentes de Google son opcionales: sin conexión se usan las familias de respaldo
+              del navegador; la tipografía puede variar.
+            </li>
+          </ul>
+        </details>
+      </section>
+      <footer>
+        Binaflow · Flujo UI/UX · Documentación visual, no interfaz ejecutable · Sin JavaScript
+      </footer>
+    </main>
+  </body>
+</html>

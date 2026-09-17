@@ -18,6 +18,24 @@ import type {
 export const GUIDED_EXECUTION_COORDINATOR_VERSION = 1 as const;
 export const GUIDED_EXECUTION_WORKFLOW_ID = 'guided-task-build' as const;
 
+export type GuidedExecutionErrorCode =
+  | 'preparation-not-confirmed'
+  | 'stale-revision'
+  | 'not-ready'
+  | 'execution-profile-invalid'
+  | 'workspace-not-ready'
+  | 'conflict';
+
+export class GuidedExecutionError extends Error {
+  readonly code: GuidedExecutionErrorCode;
+
+  constructor(code: GuidedExecutionErrorCode, message: string) {
+    super(message);
+    this.name = 'GuidedExecutionError';
+    this.code = code;
+  }
+}
+
 export type GuidedExecutionStage = 'execution' | 'changes-review';
 export type GuidedExecutionDecision = 'done' | 'blocked';
 export type GuidedResumeDecision =

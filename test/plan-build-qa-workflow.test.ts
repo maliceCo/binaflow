@@ -152,6 +152,12 @@ describe('plan-build-qa workflow', () => {
     });
 
     expect(run.status).toBe('completed');
+    expect(driver.calls.find((call) => call.stepId === 'qa')?.prompt).toContain(
+      'The complete JSON Schema for report is:',
+    );
+    expect(driver.calls.find((call) => call.stepId === 'qa')?.prompt).toContain(
+      'Return exactly one JSON object and no markdown or explanatory text.',
+    );
     expect(driver.calls.map((call) => call.stepId)).toEqual([
       'scope',
       'plan',
@@ -195,6 +201,38 @@ describe('plan-build-qa workflow', () => {
       'fixed',
       'verified',
     ]);
+    store.close();
+  });
+
+  it('repairs one invalid structured QA response with the schema error', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-plan-build-qa-repair-'));
+    directories.push(directory);
+    const store = new SqliteRunStore(join(directory, 'run.db'));
+    const artifacts = new FileArtifactStore(join(directory, 'artifacts'));
+    const driver = new FakeDriver([
+      scopeResult(),
+      planResult(),
+      buildResult(),
+      json({ decision: 'unknown' }),
+      qaResult('pass'),
+    ]);
+    const runtime = createWorkflowRuntime(store, artifacts, driver, undefined, {
+      interpretDisposition: interpretWorkflowDisposition,
+    });
+    const coordinator = new PlanBuildQaCoordinator(runtime, store, artifacts);
+
+    const run = await coordinator.execute(planBuildQaWorkflow, {
+      runId: 'qa-repair-run',
+      objective: 'Repair an invalid QA response',
+      profiles,
+    });
+
+    expect(run.status).toBe('completed');
+    expect(driver.calls.map((call) => call.stepId)).toEqual(['scope', 'plan', 'build', 'qa', 'qa']);
+    expect(driver.calls[4]?.prompt).toContain(
+      'The previous response failed structured-output validation.',
+    );
+    expect(driver.calls[4]?.prompt).toContain('Validation error:');
     store.close();
   });
 

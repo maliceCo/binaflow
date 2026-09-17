@@ -17,15 +17,33 @@ describe('web settings API', () => {
   it('returns safe settings and updates them only from loopback', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-settings-api-'));
     directories.push(directory);
-    const settings = defaultWebSettings();
+    const settings = {
+      ...defaultWebSettings(),
+      web: {
+        ...defaultWebSettings().web,
+        tls: { certFile: '/private/cert.pem', keyFile: '/private/key.pem' },
+      },
+      projectRoots: [{ rootId: 'root-1', label: 'Projects', path: '/private/projects' }],
+    };
     const controller = createWebSettingsController(join(directory, 'web.json'), settings);
     const api = { settings: controller };
 
-    await expect(
-      handleWebApi({ method: 'GET', path: '/api/v1/settings' }, api),
-    ).resolves.toMatchObject({
+    await expect(handleWebApi({ method: 'GET', path: '/api/v1/settings' }, api)).resolves.toEqual({
       status: 200,
-      body: { data: { setupRequired: true, projectRoots: [] } },
+      body: {
+        version: 1,
+        data: {
+          setupRequired: true,
+          deviceName: 'Binaflow',
+          web: {
+            host: '127.0.0.1',
+            port: 4317,
+            origin: 'http://127.0.0.1:4317',
+            tlsConfigured: true,
+          },
+          projectRoots: [{ id: 'root-1', label: 'Projects' }],
+        },
+      },
     });
     await expect(
       handleWebApi(

@@ -58,10 +58,10 @@ const todo: TaskContractTodo = {
 };
 
 describe('guided task contract rules', () => {
-  it('parses the minimum valid brief, plan, and TODO without changing text', () => {
-    expect(parseTaskContractBrief(brief)).toBe(brief);
-    expect(parseTaskContractPlan(plan)).toBe(plan);
-    expect(parseTaskContractTodo(todo)).toBe(todo);
+  it('parses the minimum valid brief, plan, and TODO', () => {
+    expect(parseTaskContractBrief(brief)).toEqual(brief);
+    expect(parseTaskContractPlan(plan)).toEqual(plan);
+    expect(parseTaskContractTodo(todo)).toEqual(todo);
   });
 
   it('rejects whitespace-only content, invalid paths, duplicate IDs, and extra fields', () => {

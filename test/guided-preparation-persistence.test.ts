@@ -148,4 +148,113 @@ describe('guided preparation persistence', () => {
       brief('Reviewed objective'),
     );
   });
+
+  it('persists assistant metadata, the draft brief, and the active operation', async () => {
+    const store = createStore();
+    const workspace = '/tmp/guided-preparation-workspace';
+    const contractId = randomUUID();
+    const requestId = randomUUID();
+    await store.createTaskContract({ contractId, workspace, brief: brief('Initial objective') });
+    await store.createGuidedPreparation({ workspace, contractId });
+
+    const draft = brief('Draft objective');
+    await store.appendGuidedPreparationMessage({
+      workspace,
+      contractId,
+      role: 'assistant',
+      content: 'I have a draft for review.',
+      requestId,
+      metadata: {
+        questions: ['Which users are affected?'],
+        citedSourceIds: ['source-1'],
+        briefSuggestion: draft,
+      },
+      draftBrief: draft,
+    });
+
+    expect(await store.listGuidedPreparationMessages({ workspace, contractId })).toMatchObject({
+      items: [
+        {
+          content: 'I have a draft for review.',
+          metadata: {
+            questions: ['Which users are affected?'],
+            citedSourceIds: ['source-1'],
+            briefSuggestion: draft,
+          },
+        },
+      ],
+    });
+    expect((await store.getGuidedPreparation(workspace, contractId))?.draftBrief).toEqual(draft);
+
+    const operation = {
+      schemaVersion: 1 as const,
+      requestId,
+      contractId,
+      expectedRevision: 1,
+      expectedPreparationRevision: 2,
+      kind: 'reply' as const,
+      message: 'Please continue.',
+      sourceIds: [],
+    };
+    await store.beginGuidedPreparationRequest({
+      workspace,
+      operation,
+      operationId: randomUUID(),
+      requestHash: 'hash-active',
+      ownerToken: 'owner-active',
+    });
+
+    expect(
+      (await store.getGuidedPreparation(workspace, contractId))?.activeOperation,
+    ).toMatchObject({
+      requestId,
+      kind: 'reply',
+      status: 'pending',
+    });
+  });
+
+  it('keeps at most 50 messages after the confirmed history is compacted', async () => {
+    const store = createStore();
+    const workspace = '/tmp/guided-preparation-workspace';
+    const contractId = randomUUID();
+    await store.createTaskContract({ contractId, workspace, brief: brief('Bounded history') });
+    await store.createGuidedPreparation({ workspace, contractId });
+
+    for (let sequence = 1; sequence <= 50; sequence += 1) {
+      await store.appendGuidedPreparationMessage({
+        workspace,
+        contractId,
+        role: 'assistant',
+        content: `Message ${sequence}`,
+        requestId: randomUUID(),
+      });
+    }
+    await store.confirmGuidedBrief({
+      workspace,
+      contractId,
+      expectedPreparationRevision: 51,
+      brief: brief('Bounded history'),
+      throughSequence: 50,
+      sourceIds: [],
+    });
+    await store.appendGuidedPreparationMessage({
+      workspace,
+      contractId,
+      role: 'assistant',
+      content: 'Message 51',
+      requestId: randomUUID(),
+    });
+
+    const messages = await store.listGuidedPreparationMessages({
+      workspace,
+      contractId,
+      limit: 50,
+    });
+    expect(messages.items).toHaveLength(50);
+    expect(messages.items[0]).toMatchObject({ sequence: 2, content: 'Message 2' });
+    expect(messages.items.at(-1)).toMatchObject({ sequence: 51, content: 'Message 51' });
+    expect(await store.getGuidedPreparation(workspace, contractId)).toMatchObject({
+      messagesCompactedThroughSequence: 1,
+    });
+  });
 });

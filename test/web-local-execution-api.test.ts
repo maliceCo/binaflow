@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { GuidedExecutionError } from '../src/application/guided-execution.js';
 import { handleWebApi, type WebExecutionCapabilities } from '../src/web/routes.js';
 
 const contractId = '123e4567-e89b-42d3-a456-426614174000';
@@ -25,7 +26,14 @@ const execution = {
     git: { clean: true, changes: [], workspace: '/secret/workspace' },
     digest: 'a'.repeat(64),
   })),
-  previewResume: vi.fn(),
+  previewResume: vi.fn(async () => ({
+    runId,
+    revision: 3,
+    status: 'waiting' as const,
+    activeBlock: null,
+    allowedDecisions: ['retry-task' as const],
+    digest: 'b'.repeat(64),
+  })),
   get: vi.fn(async () => progress),
   list: vi.fn(async () => ({ items: [progress] })),
   start: vi.fn(async () => progress),
@@ -38,6 +46,56 @@ const execution = {
 } as unknown as WebExecutionCapabilities;
 
 describe('local execution API', () => {
+  it('previews a waiting execution resume without exposing internal paths', async () => {
+    const response = await handleWebApi(
+      {
+        method: 'GET',
+        path: `/api/v1/executions/${runId}/resume/preview`,
+      },
+      { execution },
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        version: 1,
+        data: {
+          runId,
+          revision: 3,
+          status: 'waiting',
+          allowedDecisions: ['retry-task'],
+          digest: 'b'.repeat(64),
+        },
+      },
+    });
+  });
+
+  it('maps a task that is not ready to a specific conflict', async () => {
+    const response = await handleWebApi(
+      {
+        method: 'POST',
+        path: `/api/v1/tasks/${contractId}/execution/preview`,
+        body: { expectedRevision: 2, todoVersion: 1 },
+      },
+      {
+        execution: {
+          ...execution,
+          previewStart: vi.fn(async () => {
+            throw new GuidedExecutionError('not-ready', 'internal readiness detail');
+          }),
+        } as unknown as WebExecutionCapabilities,
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: {
+        version: 1,
+        error: { code: 'not-ready', message: 'The task is not ready for execution.' },
+      },
+    });
+  });
+
   it('previews and starts without exposing workspace paths', async () => {
     const api = { execution };
     const preview = await handleWebApi(

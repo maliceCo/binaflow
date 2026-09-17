@@ -24,7 +24,7 @@ import {
 } from '../../web/settings-store.js';
 import { createWebServer } from '../../web/server.js';
 import { projectWebSource } from '../../web/contracts.js';
-import { toWebTaskDto } from '../../web/dto.js';
+import { toWebOperationDto, toWebTaskDto } from '../../web/dto.js';
 import type { WebApiCapabilities } from '../../web/routes.js';
 import { rootOptions } from './common.js';
 import { createLauncherTransferResources } from './web-transfer.js';
@@ -123,41 +123,60 @@ export function registerWebCommand(cli: Command): void {
                 },
                 guidedPreparation: {
                   execute: (request, options) => activePreparation().execute(request, options),
+                  recover: (contractId, requestId) =>
+                    activePreparation().recover!(contractId, requestId),
                   create: (contractId) => activePreparation().create(contractId),
                   getState: (contractId) => activePreparation().getState(contractId),
-                  listMessages: (contractId, afterSequence) =>
-                    activePreparation().listMessages(contractId, afterSequence),
-                  listSources: (contractId, afterSequence) =>
-                    activePreparation().listSources(contractId, afterSequence),
+                  listMessages: (contractId, afterSequence, limit) =>
+                    activePreparation().listMessages(contractId, afterSequence, limit),
+                  listSources: (contractId, afterSequence, limit) =>
+                    activePreparation().listSources(contractId, afterSequence, limit),
                 },
                 getTaskDetail: async (taskId) => {
                   const task = await activeApplication().taskContracts!.get(taskId);
                   const preparation = activePreparation();
                   const state = await preparation.getState(taskId);
                   const [messages, sources] = await Promise.all([
-                    preparation.listMessages(taskId),
-                    preparation.listSources(taskId),
+                    preparation.listMessages(taskId, undefined, 50),
+                    preparation.listSources(taskId, undefined, 50),
                   ]);
                   const brief = await activeApplication().taskContracts!.getDocument({
                     contractId: taskId,
                     kind: 'brief',
                     version: task.currentBrief.version,
                   });
+                  const planDocument = task.currentPlan
+                    ? await activeApplication().taskContracts!.getDocument({
+                        contractId: taskId,
+                        kind: 'plan',
+                        version: task.currentPlan.version,
+                      })
+                    : null;
                   return {
                     ...toWebTaskDto(task),
                     currentBrief: brief.body as TaskContractBrief,
+                    draftBrief: state?.draftBrief ?? (brief.body as TaskContractBrief),
+                    planDocument: planDocument?.body as
+                      import('../../application/task-contract.js').TaskContractPlan | null,
+                    briefConfirmedThroughSequence: state?.briefConfirmedThroughSequence ?? 0,
+                    messagesCompactedThroughSequence: state?.messagesCompactedThroughSequence ?? 0,
+                    ...(state?.sessionRecoveredAt
+                      ? { sessionRecoveredAt: state.sessionRecoveredAt }
+                      : {}),
                     messages: messages.items,
                     sources: sources.items.map(projectWebSource),
                     preparationRevision: state?.revision ?? 0,
                     lastSequence: state?.lastSequence ?? 0,
                     confirmedSourceIds: state?.confirmedSourceIds ?? [],
-                    activeOperation: null,
+                    activeOperation: state?.activeOperation
+                      ? toWebOperationDto(state.activeOperation)
+                      : null,
                   };
                 },
-                listMessages: (contractId, afterSequence) =>
-                  activePreparation().listMessages(contractId, afterSequence),
-                listSources: (contractId, afterSequence) =>
-                  activePreparation().listSources(contractId, afterSequence),
+                listMessages: (contractId, afterSequence, limit) =>
+                  activePreparation().listMessages(contractId, afterSequence, limit),
+                listSources: (contractId, afterSequence, limit) =>
+                  activePreparation().listSources(contractId, afterSequence, limit),
                 execution: {
                   previewStart: (request) => activeExecution().previewStart(request),
                   previewResume: (runId) => activeExecution().previewResume(runId),

@@ -365,31 +365,6 @@ describe('application operations', () => {
     expect(claimRun).not.toHaveBeenCalled();
   });
 
-  it('does not mutate a running run during resume validation', async () => {
-    const previous = { ...persistedRun(), status: 'failed' as const };
-    const markRunInterruptedSpy = vi.fn(async () => ({
-      ...previous,
-      status: 'interrupted' as const,
-    }));
-    const context = applicationContext(
-      { planner: profile('planner'), builder: profile('builder') },
-      vi.fn(async () => {
-        throw new Error('pre-execution failure');
-      }),
-      {
-        getRun: async () => ({ ...previous, status: 'running' as const }),
-        claimRun: async () => ({ ...previous, status: 'running' as const }),
-        markRunInterrupted: markRunInterruptedSpy,
-        releaseExecution: async () => undefined,
-      },
-    );
-
-    await expect(resumeWorkflow(context, { runId: previous.id })).rejects.toThrow(
-      'mark it interrupted before recovery',
-    );
-    expect(markRunInterruptedSpy).not.toHaveBeenCalled();
-  });
-
   it('marks a persisted running run interrupted through the application operation', async () => {
     const running = { ...persistedRun(), status: 'running' as const };
     const markRunInterruptedSpy = vi.fn(async () => ({

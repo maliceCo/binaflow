@@ -276,7 +276,7 @@ The generated configuration has this shape:
       "tools": ["ls", "find", "read"],
       "workspaceMode": "read-only",
       "projectTrust": "never",
-      "skills": { "mode": "discover" },
+      "skills": { "mode": "none" },
       "timeoutMs": 180000,
       "retryLimit": 0
     },
@@ -315,6 +315,9 @@ The analyst, planner, and QA profiles are read-only and must not enable shell,
 write, or edit tools. QA reviews the builder's declared verification results; it
 does not execute shell commands itself. The builder is the only profile that may
 modify the workspace or run shell commands, so use a test repository first.
+
+The planner used for guided preparation must keep skills disabled (`none`) so
+skill instructions cannot influence its read-only planning contract.
 
 Each profile can set `skills` to `discover` (Pi's normal discovery), `none`, or
 `only` with explicit skill paths and optional required skill names. The `only`

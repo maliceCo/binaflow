@@ -1,3 +1,4 @@
+import { Ajv } from 'ajv';
 import type { AgentProfileSnapshot } from '../core/run.js';
 import type { AgentModel } from '../core/agent.js';
 import { randomUUID } from 'node:crypto';
@@ -444,9 +445,81 @@ export interface PreparationAgentProposalResponse {
 export type PreparationAgentResponse =
   PreparationAgentMessageResponse | PreparationAgentProposalResponse;
 
+export const preparationAgentResponseSchema = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'content'],
+      properties: {
+        schemaVersion: { type: 'integer', const: 1 },
+        kind: { type: 'string', const: 'message' },
+        content: { type: 'string', minLength: 1 },
+        synthesisSuggestion: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['baseVersion', 'synthesis', 'coveredThroughSequence'],
+          properties: {
+            baseVersion: { type: 'integer', minimum: 1 },
+            synthesis: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['objective', 'agreements', 'constraints', 'assumptions', 'questions'],
+              properties: {
+                objective: { type: 'string', minLength: 1 },
+                agreements: { type: 'array', items: { type: 'string', minLength: 1 } },
+                constraints: { type: 'array', items: { type: 'string', minLength: 1 } },
+                assumptions: { type: 'array', items: { type: 'string', minLength: 1 } },
+                questions: { type: 'array', items: { type: 'string', minLength: 1 } },
+              },
+            },
+            coveredThroughSequence: { type: 'integer', minimum: 0 },
+          },
+        },
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kind', 'content', 'objective', 'outputs'],
+      properties: {
+        schemaVersion: { type: 'integer', const: 1 },
+        kind: { type: 'string', const: 'proposal' },
+        content: { type: 'string', minLength: 1 },
+        objective: { type: 'string', minLength: 1 },
+        outputs: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['stepId', 'name', 'value'],
+            properties: {
+              stepId: { type: 'string', enum: ['scope', 'plan'] },
+              name: { type: 'string', enum: ['scope', 'plan'] },
+              value: { type: 'object' },
+            },
+          },
+        },
+      },
+    },
+  ],
+} as const;
+
+const validatePreparationAgentResponse = new Ajv({ allErrors: true }).compile(
+  preparationAgentResponseSchema,
+);
+
 export function parsePreparationAgentResponse(value: unknown): PreparationAgentResponse {
   if (!isRecord(value) || (value.kind !== 'message' && value.kind !== 'proposal')) {
     throw new Error('Invalid preparation agent response');
+  }
+  rejectAuthorizationFields(value);
+  if (!validatePreparationAgentResponse(value)) {
+    const detail = validatePreparationAgentResponse.errors
+      ?.map((error) => `${error.instancePath} ${error.message}`)
+      .join('; ');
+    throw new Error(`Invalid preparation agent response${detail ? `: ${detail}` : ''}`);
   }
   if ('schemaVersion' in value && value.schemaVersion !== 1) {
     throw new Error('Unsupported preparation response schema version');

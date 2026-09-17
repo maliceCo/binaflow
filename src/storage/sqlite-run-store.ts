@@ -725,11 +725,17 @@ export class SqliteRunStore
       this.database
         .prepare(
           `INSERT INTO guided_preparations
-             (contract_id, revision, last_sequence, brief_confirmed_through_sequence,
-              confirmed_source_ids_json, active_request_id, created_at, updated_at)
-           VALUES (?, 1, 0, 0, '[]', NULL, ?, ?)`,
+              (contract_id, revision, last_sequence, brief_confirmed_through_sequence,
+               confirmed_source_ids_json, draft_brief_json, active_request_id, created_at, updated_at)
+            VALUES (?, 1, 0, 0, '[]', ?, NULL, ?, ?)`,
         )
-        .run(contract.id, now, now);
+        .run(
+          contract.id,
+          this.getTaskContractDocumentRow(contract.id, contract.current_brief_id)?.body_json ??
+            '{}',
+          now,
+          now,
+        );
       return this.requireGuidedPreparationState(request.workspace, request.contractId);
     });
   }
@@ -768,6 +774,25 @@ export class SqliteRunStore
         validateGuidedPreparationSource(source);
         if (source.contractId !== request.contractId) {
           throw new GuidedPreparationError('source-invalid', 'Source belongs to another task');
+        }
+        const duplicateSequence = this.database
+          .prepare(
+            `SELECT 1 AS present
+               FROM guided_preparation_messages
+              WHERE contract_id = ? AND sequence = ?
+             UNION ALL
+             SELECT 1 AS present
+               FROM guided_preparation_sources
+              WHERE contract_id = ? AND sequence = ?
+              LIMIT 1`,
+          )
+          .get(request.contractId, source.sequence, request.contractId, source.sequence) as
+          { present: number } | undefined;
+        if (duplicateSequence?.present === 1) {
+          throw new GuidedPreparationError(
+            'invalid-input',
+            'Guided preparation sequences must be unique',
+          );
         }
         lastSequence = Math.max(lastSequence, source.sequence);
         this.database
@@ -810,6 +835,8 @@ export class SqliteRunStore
     role: GuidedPreparationMessage['role'];
     content: string;
     requestId: string;
+    metadata?: import('../application/guided-preparation.js').GuidedPreparationMessageMetadata;
+    draftBrief?: TaskContractBrief;
   }): Promise<GuidedPreparationState> {
     if (
       new TextEncoder().encode(request.content).byteLength >
@@ -825,12 +852,14 @@ export class SqliteRunStore
       this.assertGuidedPreparationNotConsumed(request.contractId);
       const preparation = this.requireGuidedPreparationRow(request.contractId);
       const now = new Date().toISOString();
+      this.pruneGuidedPreparationMessages(request.contractId, preparation);
       const sequence = preparation.last_sequence + 1;
+      if (request.draftBrief) parseTaskContractBrief(request.draftBrief);
       this.database
         .prepare(
           `INSERT INTO guided_preparation_messages
-             (id, contract_id, sequence, role, content, request_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (id, contract_id, sequence, role, content, request_id, metadata_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           randomUUID(),
@@ -839,8 +868,18 @@ export class SqliteRunStore
           request.role,
           request.content,
           request.requestId,
+          request.metadata ? canonicalizeJson(request.metadata) : null,
           now,
         );
+      if (request.draftBrief) {
+        this.database
+          .prepare(
+            `UPDATE guided_preparations
+                SET draft_brief_json = ?
+              WHERE contract_id = ?`,
+          )
+          .run(canonicalizeJson(request.draftBrief), request.contractId);
+      }
       this.database
         .prepare(
           `UPDATE guided_preparations
@@ -857,6 +896,7 @@ export class SqliteRunStore
     contractId: string;
     afterSequence?: number;
     limit?: number;
+    latest?: boolean;
   }): Promise<{ items: GuidedPreparationMessage[]; nextCursor?: number }> {
     this.requireGuidedPreparationState(request.workspace, request.contractId);
     const limit = validateGuidedPreparationLimit(request.limit);
@@ -864,7 +904,7 @@ export class SqliteRunStore
       .prepare(
         `SELECT * FROM guided_preparation_messages
           WHERE contract_id = ? ${request.afterSequence === undefined ? '' : 'AND sequence > ?'}
-          ORDER BY sequence ASC LIMIT ?`,
+          ORDER BY sequence ${request.latest ? 'DESC' : 'ASC'} LIMIT ?`,
       )
       .all(
         request.contractId,
@@ -872,7 +912,9 @@ export class SqliteRunStore
         limit + 1,
       ) as GuidedPreparationMessageRow[];
     const hasNext = rows.length > limit;
-    const items = (hasNext ? rows.slice(0, limit) : rows).map(fromGuidedPreparationMessageRow);
+    const items = (hasNext ? rows.slice(0, limit) : rows)
+      .map(fromGuidedPreparationMessageRow)
+      .sort((left, right) => left.sequence - right.sequence);
     return {
       items,
       ...(hasNext ? { nextCursor: items[items.length - 1]!.sequence } : {}),
@@ -958,6 +1000,7 @@ export class SqliteRunStore
       const nextSequence =
         operation.kind === 'reply' ? preparation.last_sequence + 1 : preparation.last_sequence;
       if (operation.kind === 'reply') {
+        this.pruneGuidedPreparationMessages(operation.contractId, preparation);
         this.database
           .prepare(
             `INSERT INTO guided_preparation_messages
@@ -979,8 +1022,9 @@ export class SqliteRunStore
              (contract_id, request_id, operation_id, kind, request_json, request_hash,
               preparation_revision, contract_revision, status, owner_token,
               profile_snapshot_json, result_json, error_code, published_document_id,
-              created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, ?, ?)`,
+              requested_external_session_id, result_external_session_id,
+              result_session_through_sequence, compacted_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, ?, NULL, NULL, NULL, ?, ?)`,
         )
         .run(
           operation.contractId,
@@ -993,6 +1037,7 @@ export class SqliteRunStore
           contract.revision,
           request.ownerToken,
           request.profileSnapshot ? canonicalizeJson(request.profileSnapshot) : null,
+          preparation.external_session_id,
           now,
           now,
         );
@@ -1030,16 +1075,68 @@ export class SqliteRunStore
       if (current.ownerToken !== request.ownerToken) {
         throw new GuidedPreparationError('invalid-target', 'Guided preparation owner is invalid');
       }
+      if (current.operationId !== request.operationId) {
+        throw new GuidedPreparationError(
+          'invalid-target',
+          'Guided preparation operation is invalid',
+        );
+      }
       if (request.result !== undefined) {
         if (operation.kind === 'reply') parseGuidedReplyOutput(request.result);
         if (operation.kind === 'generate-plan') parseGuidedPlanOutput(request.result);
         if (operation.kind === 'generate-todo') parseGuidedTodoOutput(request.result);
       }
+      if (request.assistantMessage) {
+        if (operation.kind !== 'reply' || request.status !== 'completed') {
+          throw new GuidedPreparationError(
+            'invalid-input',
+            'Assistant message effects are only valid for completed replies',
+          );
+        }
+        if (
+          new TextEncoder().encode(request.assistantMessage.content).byteLength >
+          GUIDED_PREPARATION_LIMITS.assistantMessageBytes
+        ) {
+          throw new GuidedPreparationError(
+            'invalid-input',
+            'Preparation message exceeds its size limit',
+          );
+        }
+        if (request.assistantMessage.draftBrief)
+          parseTaskContractBrief(request.assistantMessage.draftBrief);
+      }
       const now = new Date().toISOString();
+      const nextSequence = request.assistantMessage
+        ? preparation.last_sequence + 1
+        : preparation.last_sequence;
+      if (request.assistantMessage) {
+        this.pruneGuidedPreparationMessages(operation.contractId, preparation);
+        this.database
+          .prepare(
+            `INSERT INTO guided_preparation_messages
+               (id, contract_id, sequence, role, content, request_id, metadata_json, created_at)
+             VALUES (?, ?, ?, 'assistant', ?, ?, ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            operation.contractId,
+            nextSequence,
+            request.assistantMessage.content,
+            operation.requestId,
+            canonicalizeJson(request.assistantMessage.metadata),
+            now,
+          );
+        if (request.assistantMessage.draftBrief) {
+          this.database
+            .prepare(`UPDATE guided_preparations SET draft_brief_json = ? WHERE contract_id = ?`)
+            .run(canonicalizeJson(request.assistantMessage.draftBrief), operation.contractId);
+        }
+      }
       this.database
         .prepare(
           `UPDATE guided_preparation_requests
-              SET status = ?, result_json = ?, error_code = ?, published_document_id = ?, updated_at = ?
+              SET status = ?, result_json = ?, error_code = ?, published_document_id = ?,
+                  result_external_session_id = ?, result_session_through_sequence = ?, updated_at = ?
             WHERE contract_id = ? AND request_id = ?`,
         )
         .run(
@@ -1047,18 +1144,104 @@ export class SqliteRunStore
           request.result === undefined ? null : canonicalizeJson(request.result),
           request.errorCode ?? null,
           request.publishedDocumentId ?? null,
+          request.status === 'completed' ? (request.resultExternalSessionId ?? null) : null,
+          request.status === 'completed' ? (request.resultSessionThroughSequence ?? null) : null,
           now,
           operation.contractId,
           operation.requestId,
         );
+      if (request.status === 'completed' && request.resultExternalSessionId) {
+        const profile = current.profileSnapshot as { driver?: string } | undefined;
+        this.database
+          .prepare(
+            `UPDATE guided_preparations
+                SET external_session_driver = ?, external_session_id = ?,
+                    session_synced_through_sequence = ?, session_recovered_at = NULL,
+                    last_sequence = ?, revision = revision + 1, active_request_id = NULL,
+                    updated_at = ?
+              WHERE contract_id = ? AND revision = ? AND active_request_id = ?`,
+          )
+          .run(
+            profile?.driver ?? null,
+            request.resultExternalSessionId,
+            request.resultSessionThroughSequence ?? nextSequence,
+            nextSequence,
+            now,
+            operation.contractId,
+            preparation.revision,
+            operation.requestId,
+          );
+      } else if (request.status === 'completed' && operation.kind !== 'reply') {
+        this.database
+          .prepare(
+            `UPDATE guided_preparations
+                SET last_sequence = ?, revision = revision + 1, active_request_id = NULL,
+                    updated_at = ?
+              WHERE contract_id = ? AND revision = ? AND active_request_id = ?`,
+          )
+          .run(nextSequence, now, operation.contractId, preparation.revision, operation.requestId);
+      } else {
+        this.database
+          .prepare(
+            `UPDATE guided_preparations
+              SET external_session_id = NULL, session_synced_through_sequence = NULL,
+                  session_recovered_at = CASE WHEN ? = 'completed' THEN session_recovered_at ELSE ? END,
+                  last_sequence = ?, revision = revision + 1, active_request_id = NULL,
+                  updated_at = ?
+            WHERE contract_id = ? AND revision = ? AND active_request_id = ?`,
+          )
+          .run(
+            request.status,
+            now,
+            nextSequence,
+            now,
+            operation.contractId,
+            preparation.revision,
+            operation.requestId,
+          );
+      }
+      return this.requireGuidedPreparationRequest(operation.contractId, operation.requestId);
+    });
+  }
+
+  async recoverGuidedPreparationRequest(request: {
+    workspace: string;
+    contractId: string;
+    requestId: string;
+    recoveryOwnerToken: string;
+  }): Promise<GuidedPreparationRequestRecord> {
+    if (!request.recoveryOwnerToken) {
+      throw new GuidedPreparationError('invalid-input', 'Recovery owner is required');
+    }
+    return this.withImmediateTransaction(() => {
+      this.requireTaskContractForWrite(request.workspace, request.contractId);
+      const preparation = this.requireGuidedPreparationRow(request.contractId);
+      const current = this.requireGuidedPreparationRequest(request.contractId, request.requestId);
+      if (preparation.active_request_id !== request.requestId) {
+        return current;
+      }
+      const now = new Date().toISOString();
+      const updated = this.database
+        .prepare(
+          `UPDATE guided_preparation_requests
+              SET status = 'interrupted', error_code = 'recovery-required',
+                  owner_token = NULL, updated_at = ?
+            WHERE contract_id = ? AND request_id = ?
+              AND status IN ('pending', 'running')`,
+        )
+        .run(now, request.contractId, request.requestId);
+      if (updated.changes !== 1)
+        return this.requireGuidedPreparationRequest(request.contractId, request.requestId);
       this.database
         .prepare(
           `UPDATE guided_preparations
-              SET revision = revision + 1, active_request_id = NULL, updated_at = ?
+              SET external_session_id = NULL, session_synced_through_sequence = NULL,
+                  session_recovered_at = ?, revision = revision + 1,
+                  active_request_id = NULL, updated_at = ?
             WHERE contract_id = ? AND revision = ? AND active_request_id = ?`,
         )
-        .run(now, operation.contractId, preparation.revision, operation.requestId);
-      return this.requireGuidedPreparationRequest(operation.contractId, operation.requestId);
+        .run(now, now, request.contractId, preparation.revision, request.requestId);
+      return this.requireGuidedPreparationRequest(request.contractId, request.requestId);
     });
   }
 
@@ -1108,6 +1291,7 @@ export class SqliteRunStore
           `UPDATE guided_preparations
               SET revision = CASE WHEN active_request_id = ? THEN revision ELSE revision + 1 END,
                   brief_confirmed_through_sequence = ?, confirmed_source_ids_json = ?,
+                  draft_brief_json = ?,
                   updated_at = ?
             WHERE contract_id = ? AND revision = ?`,
         )
@@ -1115,6 +1299,7 @@ export class SqliteRunStore
           request.requestId ?? null,
           request.throughSequence,
           JSON.stringify(request.sourceIds),
+          canonicalizeJson(brief),
           now,
           request.contractId,
           preparation.revision,
@@ -1640,7 +1825,36 @@ export class SqliteRunStore
       lastSequence: row.last_sequence,
       briefConfirmedThroughSequence: row.brief_confirmed_through_sequence,
       confirmedSourceIds: parseStringArray(row.confirmed_source_ids_json),
+      draftBrief: row.draft_brief_json
+        ? parseTaskContractBrief(JSON.parse(row.draft_brief_json))
+        : (this.requireTaskContractDocument(
+            row.contract_id,
+            contract?.current_brief_id ?? null,
+            'brief',
+          ).body as TaskContractBrief),
       activeRequestId: row.active_request_id,
+      activeOperation: row.active_request_id
+        ? (() => {
+            const active = this.database
+              .prepare(
+                'SELECT * FROM guided_preparation_requests WHERE contract_id = ? AND request_id = ?',
+              )
+              .get(row.contract_id, row.active_request_id) as
+              GuidedPreparationRequestRow | undefined;
+            return active ? fromGuidedPreparationRequestRow(active) : null;
+          })()
+        : null,
+      ...(row.external_session_driver === null
+        ? {}
+        : { externalSessionDriver: row.external_session_driver }),
+      ...(row.external_session_id === null ? {} : { externalSessionId: row.external_session_id }),
+      ...(row.session_synced_through_sequence === null
+        ? {}
+        : { sessionSyncedThroughSequence: row.session_synced_through_sequence }),
+      messagesCompactedThroughSequence: row.messages_compacted_through_sequence,
+      ...(row.session_recovered_at === null
+        ? {}
+        : { sessionRecoveredAt: row.session_recovered_at }),
       planVersion,
       todoVersion,
     };
@@ -1665,6 +1879,43 @@ export class SqliteRunStore
     if (consumed?.present === 1) {
       throw new GuidedPreparationError('invalid-target', 'The task contract has been consumed');
     }
+  }
+
+  private pruneGuidedPreparationMessages(
+    contractId: string,
+    preparation: GuidedPreparationRow,
+  ): void {
+    const count = this.database
+      .prepare('SELECT COUNT(*) AS count FROM guided_preparation_messages WHERE contract_id = ?')
+      .get(contractId) as { count: number };
+    if (count.count < GUIDED_PREPARATION_LIMITS.maxMessages) return;
+
+    const removable = this.database
+      .prepare(
+        `SELECT sequence
+           FROM guided_preparation_messages
+          WHERE contract_id = ? AND sequence <= ?
+          ORDER BY sequence ASC
+          LIMIT 1`,
+      )
+      .get(contractId, preparation.brief_confirmed_through_sequence) as
+      { sequence: number } | undefined;
+    if (!removable) {
+      throw new GuidedPreparationError(
+        'context-limit',
+        'Confirm the brief before adding more than fifty conversation messages',
+      );
+    }
+    this.database
+      .prepare('DELETE FROM guided_preparation_messages WHERE contract_id = ? AND sequence = ?')
+      .run(contractId, removable.sequence);
+    this.database
+      .prepare(
+        `UPDATE guided_preparations
+            SET messages_compacted_through_sequence = MAX(messages_compacted_through_sequence, ?)
+          WHERE contract_id = ?`,
+      )
+      .run(removable.sequence, contractId);
   }
 
   private assertGuidedSourceIds(contractId: string, sourceIds: readonly string[]): void {
@@ -4367,7 +4618,15 @@ interface GuidedPreparationRow {
   last_sequence: number;
   brief_confirmed_through_sequence: number;
   confirmed_source_ids_json: string;
+  draft_brief_json: string | null;
   active_request_id: string | null;
+  external_session_driver: string | null;
+  external_session_id: string | null;
+  session_synced_through_sequence: number | null;
+  external_session_profile_hash: string | null;
+  external_session_brief_hash: string | null;
+  messages_compacted_through_sequence: number;
+  session_recovered_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -4379,6 +4638,7 @@ interface GuidedPreparationMessageRow {
   role: GuidedPreparationMessage['role'];
   content: string;
   request_id: string;
+  metadata_json: string | null;
   created_at: string;
 }
 
@@ -4411,6 +4671,10 @@ interface GuidedPreparationRequestRow {
   result_json: string | null;
   error_code: string | null;
   published_document_id: string | null;
+  requested_external_session_id: string | null;
+  result_external_session_id: string | null;
+  result_session_through_sequence: number | null;
+  compacted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -5543,6 +5807,7 @@ function fromGuidedPreparationMessageRow(
     content: row.content,
     requestId: row.request_id,
     createdAt: row.created_at,
+    ...(row.metadata_json === null ? {} : { metadata: JSON.parse(row.metadata_json) }),
   };
 }
 
@@ -5583,6 +5848,16 @@ function fromGuidedPreparationRequestRow(
     ...(row.published_document_id === null
       ? {}
       : { publishedDocumentId: row.published_document_id }),
+    ...(row.requested_external_session_id === null
+      ? {}
+      : { requestedExternalSessionId: row.requested_external_session_id }),
+    ...(row.result_external_session_id === null
+      ? {}
+      : { resultExternalSessionId: row.result_external_session_id }),
+    ...(row.result_session_through_sequence === null
+      ? {}
+      : { resultSessionThroughSequence: row.result_session_through_sequence }),
+    ...(row.compacted_at === null ? {} : { compactedAt: row.compacted_at }),
   };
 }
 

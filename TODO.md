@@ -437,7 +437,7 @@ no duplicar mensajes. No porcentajes estimados ni claims de progreso por tokens.
   - **Verificacion / TDD:** paquete fixture 14 importable; manifest/DB mismatch rechazado; paquete 15 viaja A -> B -> A con chat/fuentes; pending bloquea; futura version rechazada. `pnpm exec vitest run test/portability-contracts.test.ts test/portability-persistence.test.ts test/sqlite-portability.test.ts test/portability-integration.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: preserve transfer compatibility for guided conversations`
 
-- [ ] **Tarea 2.3: Consultar fuentes publicas con proteccion SSRF**
+- [x] **Tarea 2.3: Consultar fuentes publicas con proteccion SSRF**
   - **Archivo:** nuevo `src/research/public-sources.ts`; nuevo `test/public-sources.test.ts`.
   - **Funciones:** createPublicSourceReader, search, readUrl, validacion URL/DNS/IP y extraccion de texto acotado.
   - **Descripcion:** implementar D usando https nativo, ipaddr.js y parse5. Endpoint Brave fijo, IP fijada al conectar, certificado normal, sin redirects/proxies/cookies. Clave solo en header al endpoint autorizado. Transporte/resolucion inyectables estrechamente para tests sin red real.
@@ -749,9 +749,15 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Orden actual: 5.4-5.13 completadas. Ejecutar ahora 5.14 -> 5.17, una tarea y
-  un commit a la vez, hasta aceptar toda la app en una computadora. Solo despues
-  ejecutar el happy path A -> B de 5.18; 5.19 permanece diferida.
+- Estado actualizado contra `c90077d`: 5.4-5.17 completadas segun sus registros;
+  5.18 pendiente y 5.19 diferida. Esta revision de estado no ejecuta ninguna de ellas.
+- Revalidacion actual: format, lint, typecheck y build pasan. Vitest: 482 pasan,
+  1 omitido y 1 timeout CLI; ese caso pasa aislado con el timeout original.
+  Playwright: pasa el launcher local completo y falla browser.e2e.ts tras login,
+  tambien aislado. Hay regresion de compatibilidad abierta, no cierre verde.
+- Chromium ya esta disponible. La Tarea 2.3 se marca completada conforme a su
+  registro previo, el adapter presente y sus seis tests actuales pasando.
+  El detalle vigente esta en docs/web-workflow-vision.md.
 - Origen de la extension: una prueba manual necesito crear `binaweb.json` y pasar
   `--web-config`; el archivo de prueba fue eliminado a peticion del owner y nunca
   se versiono. El producto final debe arrancar sin ese paso.

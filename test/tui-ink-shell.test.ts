@@ -1199,6 +1199,7 @@ class FakeOutput extends EventEmitter {
   columns = 80;
   rows = 24;
   private readonly chunks: string[] = [];
+  private readonly waitCounts = new Map<string, number>();
 
   write(chunk: string): boolean {
     this.chunks.push(chunk);
@@ -1210,20 +1211,30 @@ class FakeOutput extends EventEmitter {
   }
 
   async waitFor(value: string, attempts = 200): Promise<void> {
-    for (
-      let attempt = 0;
-      attempt < attempts && !stripAnsi(this.text()).includes(value);
-      attempt += 1
-    ) {
+    const occurrence = this.waitCounts.get(value) ?? 0;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (countOccurrences(stripAnsi(this.text()), value) > occurrence) break;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    expect(stripAnsi(this.text())).toContain(value);
+    expect(countOccurrences(stripAnsi(this.text()), value)).toBeGreaterThan(occurrence);
+    this.waitCounts.set(value, occurrence + 1);
   }
 }
 
 function stripAnsi(value: string): string {
   const escape = String.fromCharCode(27);
   return value.replace(new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, 'g'), '');
+}
+
+function countOccurrences(value: string, needle: string): number {
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const index = value.indexOf(needle, offset);
+    if (index === -1) return count;
+    count += 1;
+    offset = index + needle.length;
+  }
 }
 
 function createTerminal(): { input: FakeInput; output: FakeOutput } {

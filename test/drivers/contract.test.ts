@@ -8,9 +8,12 @@ import { MAX_AGENT_RESULT_BYTES, PiDriver } from '../../src/drivers/pi-rpc.js';
 import { JsonlProcess, MAX_JSONL_RECORD_BYTES } from '../../src/process/jsonl-process.js';
 
 const children: JsonlProcess[] = [];
+const directories: string[] = [];
 
 afterEach(async () => {
   for (const child of children.splice(0)) await child.terminate();
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 const fakeJsonl = String.raw`
@@ -231,6 +234,7 @@ function processIsAlive(pid: number): boolean {
 describe('PiDriver', () => {
   it('passes explicit skill paths and verifies required skills before prompting', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-skills-'));
+    directories.push(directory);
     const promptFile = join(directory, 'prompted');
     const argsFile = join(directory, 'args');
     const driver = new PiDriver({
@@ -261,6 +265,7 @@ describe('PiDriver', () => {
 
   it('fails before prompting when a required skill is unavailable', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-missing-skill-'));
+    directories.push(directory);
     const promptFile = join(directory, 'prompted');
     const driver = new PiDriver({
       command: process.execPath,
@@ -308,6 +313,35 @@ describe('PiDriver', () => {
     });
     expect(events.some((event) => event.type === 'text' && event.message === 'hello')).toBe(true);
     expect(events.some((event) => event.message.includes('tool=read id=call-1'))).toBe(true);
+  });
+
+  it('reopens and verifies an explicit session before prompting', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-session-'));
+    directories.push(directory);
+    const argsFile = join(directory, 'args');
+    const promptFile = join(directory, 'prompted');
+    const driver = new PiDriver({
+      command: process.execPath,
+      commandArgs: ['test/drivers/skill-aware-pi.mjs'],
+      env: {
+        ...process.env,
+        BINAFLOW_ARGS_FILE: argsFile,
+        BINAFLOW_PROMPT_FILE: promptFile,
+        BINAFLOW_SKILL_NAME: 'read',
+      },
+    });
+
+    const result = await driver.execute(
+      { ...requestFor(), sessionId: 'session-1' },
+      () => undefined,
+      new AbortController().signal,
+    );
+
+    expect(result.text).toBe('done');
+    expect(JSON.parse(readFileSync(argsFile, 'utf8'))).toEqual(
+      expect.arrayContaining(['--session', 'session-1']),
+    );
+    expect(existsSync(promptFile)).toBe(true);
   });
 
   it('reports an unavailable Pi executable as an actionable driver error', async () => {

@@ -1,18 +1,16 @@
 # Binaflow web: objetivo e hitos
 
-Estado: los Hitos 1, 2, 3 y 3.5 estan implementados y verificados localmente. El
-Hito 4 tiene listener, autenticacion de un usuario, API versionada, cliente React
-y composicion `web`; la prueba Chromium queda pendiente porque el ejecutable no
-esta instalado en este entorno. El acceso LAN real, certificados y modelos
-siguen siendo validaciones del operador. La regresion local de servidor, API,
-arquitectura, typecheck, build y suite Vitest pasa; Playwright no se pudo iniciar
-porque falta el ejecutable Chromium.
-El Hito 2 cubre el contrato persistido de tareas guiadas; el Hito 3 agrega handoff
-autorizado, ejecucion secuencial, checkpoints Git, leases y recovery explicito.
-El Hito 3.5 agrega traslado portable con un solo equipo activo. La verificacion
-local cubre backend, HTTP, DTOs, arquitectura y build; no confunde esos checks
-con navegador real o despliegue remoto. Documento de continuidad para recuperar
-el proposito cuando falte contexto de la conversacion.
+Estado: los Hitos 1, 2, 3, 3.5 y 4 estan implementados en su alcance local.
+El recorrido completo del launcher del Hito 4 pasa en Chromium con un Pi falso,
+SQLite, Git y artefactos temporales. Chromium ya esta instalado; la indicacion
+anterior de que faltaba estaba desactualizada.
+La revision contra `c90077d` encontro una regresion reproducible al cargar tareas
+en el modo web anterior, y un timeout CLI en la suite completa que paso aislado.
+Por tanto, implementado no significa que la regresion actual este toda en verde.
+El handoff web entre servidores sigue con aceptacion pendiente; no confundirlo
+con la portabilidad offline ya completada en 3.5. LAN/TLS entre equipos y modelos
+reales siguen siendo validaciones del operador. Los hitos 5 y 6 del roadmap
+(revision de codigo y QA/cierre) permanecen pendientes.
 
 ## Objetivo
 
@@ -22,7 +20,8 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 ## Decisiones acordadas
 
-- Un solo usuario inicialmente, con acceso desde distintos equipos.
+- Un solo usuario inicialmente, con acceso desde distintos equipos. El launcher
+  puede catalogar varios proyectos, pero solo uno esta activo por proceso.
 - Repositorio, Pi y Binaflow en una maquina anfitriona activa; normalmente fija,
   con traslado explicito a otro equipo para viajar y retorno al regresar.
   No trabajar simultaneamente sobre ambas copias ni fusionarlas automaticamente.
@@ -58,7 +57,7 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
 
 ## Seguimiento de hitos
 
-### Completados localmente
+### Implementados (validaciones y regresiones detalladas abajo)
 
 - [x] **1. Ejecucion independiente de la interfaz:** cambiar de cliente sin
       detener ni duplicar trabajo, consultar estado y cancelar explicitamente.
@@ -73,17 +72,57 @@ y la TUI; no los sustituye ni los utiliza como intermediarios.
       Un solo equipo activo, sin sincronizacion bidireccional. Ver
       [portabilidad de datos](data-portability.md).
 
-### Pendientes, en orden
+- [x] **4. Web personal y preparacion local:** autenticacion, API, React, fuentes,
+      contratos guiados, inicio/seguimiento y launcher con setup/catalogo. El E2E
+      local llega a `waiting/changes-review`. Hay una regresion de compatibilidad
+      abierta; no implica aceptacion de LAN real ni handoff entre servidores.
 
-- [ ] **4. Web personal y preparacion:** la base local de listener, autenticacion,
-      API y cliente esta implementada; falta aceptar el recorrido en Chromium y
-      validar acceso desde otro equipo LAN. Incluye chat de exploracion, consulta
-      de fuentes, plan con feedback/aprobacion e inicio/seguimiento. Sin VPN como
-      requisito inicial.
+### Validacion y extension del Hito 4 pendientes
+
+- [ ] Resolver la carga inicial de tareas del modo web sin capacidades de launcher:
+      `test/web/browser.e2e.ts` falla tambien aislado tras login.
+- [ ] Obtener suite completa verde: el caso CLI de opciones update invalidas
+      excedio 15 s en suite, pero paso aislado sin cambiar su timeout.
+- [ ] Aceptar handoff web A -> B: Tarea 5.18 del TODO. Existe implementacion de
+      transporte/pairing; no sustituye la prueba del recorrido entre launchers.
+- [ ] Recovery/retorno B -> A del handoff web: Tarea 5.19 diferida hasta promocion
+      explicita. TLS peer y LAN real siguen pendientes.
+- [ ] Registrar validacion del operador en LAN/TLS y con modelos reales cuando
+      se autorice; los tests locales usan loopback y agentes simulados.
+
+Las tareas `5.x` del TODO son numeracion interna de la extension del Hito 4.
+No son el **Hito 5** de revision de codigo de este roadmap.
+
+### Hitos siguientes, aun pendientes
+
 - [ ] **5. Revision de codigo:** diffs por archivo, comentarios, edicion manual
       y revision del parche sobre versiones concretas.
 - [ ] **6. QA y cierre:** tickets conversables, decisiones selectivas, QA_TODO
       autorizado, verificacion, revision adicional opcional y resumen final.
+
+## Evidencia de la revision de estado
+
+Revision de implementacion y checks contra `c90077d`, sin fixes funcionales:
+
+| Comprobacion                         | Resultado observado                                                                           |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- |
+| format:check, lint, typecheck, build | Pasan.                                                                                        |
+| pnpm run test                        | 482 pasan, 1 omitido, 1 falla por timeout en CLI (96 archivos).                               |
+| Caso CLI aislado                     | Pasa en 13,56 s con timeout original de 15 s; no convierte la suite completa en verde.        |
+| pnpm run test:web                    | 1 pasa y 1 falla; Chromium disponible.                                                        |
+| local-launcher.e2e.ts                | Setup, proyecto, brief, plan/TODO, preview e implementacion hasta waiting pasan con Pi falso. |
+| browser.e2e.ts                       | Falla al mostrar la tarea tras login; reproducido con un solo worker.                         |
+
+En `src/web/client/App.tsx`, refreshWorkspace exige settings/proyecto activo y
+vacia tareas cuando falla esa consulta. La fixture del modo anterior solo expone
+taskContracts; GET settings devuelve Operation is not available. Esto explica el
+fallo reproducido y senala la compatibilidad del arranque sin launcher que hay
+que revisar. No se modificaron codigo, expectativas ni timeouts para ocultarlo.
+
+La primera ejecucion de tests se interrumpio por el limite externo de 300 s;
+los resultados de la tabla corresponden a la repeticion que si finalizo.
+El lector de fuentes existe y sus seis tests pasan; el check vacio de la Tarea
+2.3 del TODO era un desfase documental, no una funcionalidad ausente.
 
 ## Hito 3.5: decision de portabilidad
 
@@ -127,8 +166,9 @@ portabilidad Windows ni despliegue remoto.
 - Preservar CLI/TUI, protocolo CLI v1 y compatibilidad de runs existentes.
 - No introducir multiusuario, workers remotos, microservicios ni otra base de
   datos en esta primera etapa.
-- Definir autenticacion, acceso seguro y alcance del workspace antes de exponer
-  la web. Aun no se ha elegido framework ni mecanismo de despliegue.
+- La web usa React y servidor Node en primer plano. HTTP de la UI solo en
+  loopback; LAN exige HTTPS. El launcher posee un proyecto activo a la vez.
+  El transporte peer experimental no cambia las reglas de acceso de la UI.
 
 ## Punto de partida
 
@@ -136,17 +176,15 @@ La base actual ofrece preparacion conversacional, pasos persistidos, revisiones
 interactivas y un anfitrion de ejecucion independiente de sus clientes. El Hito 1
 verifica cambio de cliente, consultas persistidas, replay, cancelacion explicita
 y resume explicito con un agente simulado. El Hito 3 agrega control por fase e
-integracion Git. Siguen pendientes la web, la revision de codigo y las
-decisiones selectivas de QA; no hay recuperacion automatica tras una caida
+integracion Git. El Hito 4 y su extension local agregan web, setup, catalogo y
+preparacion/ejecucion desde el navegador. Schema 15 ya esta implementado; los
+paquetes schema14 siguen admitidos. Siguen pendientes la revision de codigo y
+las decisiones selectivas de QA; no hay recuperacion automatica tras una caida
 abrupta.
 
-El `TODO.md` del **Hito 4** esta aprobado para implementacion tarea por tarea.
-El plan propone React, servidor Node en primer plano, acceso por codigo de sesion,
-HTTPS para LAN, fuentes publicas por URL y busqueda Brave opcional. La Tarea 1.1
-verifico el baseline completo: format, lint, typecheck, 407 tests (1 omitido) y
-build pasan; schema vigente 14 y schema 15 esta libre. Incluye conectar la
-preparacion al contrato guiado y conservar la portabilidad de los datos nuevos.
-No asumir que los Hitos 1-3.5 cubren autenticacion o despliegue remoto.
+Siguiente paso recomendado: resolver la regresion de compatibilidad web y repetir
+los checks antes de dar el cierre tecnico actual por verde. No ejecutar ni
+promover automaticamente las tareas de handoff o los Hitos 5/6 por esta revision.
 
 Diagramas: [arquitectura actual](binaflow_arch.drawio) y
 [flujo web propuesto](binaflow_web_flow.drawio).

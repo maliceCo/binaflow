@@ -28,21 +28,31 @@ const api = {
 
 describe('web device API', () => {
   it('projects device records and keeps pairing actions explicit', async () => {
-    await expect(
-      handleWebApi({ method: 'GET', path: '/api/v1/devices' }, api),
-    ).resolves.toMatchObject({
+    await expect(handleWebApi({ method: 'GET', path: '/api/v1/devices' }, api)).resolves.toEqual({
       status: 200,
-      body: { data: { items: [{ id: device.deviceId, name: 'Laptop', status: 'paired' }] } },
+      body: {
+        version: 1,
+        data: { items: [{ id: device.deviceId, name: 'Laptop', status: 'paired' }] },
+      },
     });
     await expect(
       handleWebApi({ method: 'POST', path: '/api/v1/devices/pairing', body: {} }, api),
-    ).resolves.toMatchObject({ status: 200, body: { data: { code: '12345678' } } });
+    ).resolves.toEqual({
+      status: 200,
+      body: {
+        version: 1,
+        data: { pairingId: 'pair-1', code: '12345678', deviceId: 'c'.repeat(64), expiresAt: 1000 },
+      },
+    });
     await expect(
       handleWebApi(
         { method: 'POST', path: '/api/v1/devices/revoke', body: { deviceId: device.deviceId } },
         api,
       ),
-    ).resolves.toMatchObject({ status: 200, body: { data: { revoked: true } } });
+    ).resolves.toEqual({
+      status: 200,
+      body: { version: 1, data: { revoked: true } },
+    });
   });
 
   it('rejects arbitrary device ids and unknown action fields', async () => {

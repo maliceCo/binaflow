@@ -1,4 +1,6 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -24,11 +26,23 @@ describe('device identity', () => {
       expect((await stat(first.privateKeyPath)).mode & 0o777).toBe(0o600);
   });
 
-  it('rejects an incomplete or mismatched key pair', async () => {
+  it('rejects an incomplete key pair', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'binaflow-device-'));
     directories.push(directory);
     const identity = await loadOrCreateDeviceIdentity({ directory });
     await rm(identity.publicKeyPath);
     await expect(loadOrCreateDeviceIdentity({ directory })).rejects.toThrow(/incomplete/i);
+  });
+
+  it('rejects a mismatched key pair', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-device-'));
+    directories.push(directory);
+    const identity = await loadOrCreateDeviceIdentity({ directory });
+    const other = generateKeyPairSync('ed25519')
+      .publicKey.export({ type: 'spki', format: 'pem' })
+      .toString();
+    await writeFile(identity.publicKeyPath, other);
+
+    await expect(loadOrCreateDeviceIdentity({ directory })).rejects.toThrow(/does not match/i);
   });
 });

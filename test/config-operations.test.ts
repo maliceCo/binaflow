@@ -233,7 +233,7 @@ describe('configuration operations', () => {
       model: 'planner-model',
       workspaceMode: 'read-only',
       projectTrust: 'never',
-      skills: { mode: 'discover' },
+      skills: { mode: 'none' },
     });
     expect(loaded.profiles.qa).toMatchObject({
       provider: 'provider-a',

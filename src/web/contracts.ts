@@ -7,6 +7,7 @@ import {
 import type {
   TaskContractBrief,
   TaskContractDocumentHeader,
+  TaskContractPlan,
   TaskContractReadiness,
 } from '../application/task-contract.js';
 
@@ -47,6 +48,11 @@ export interface WebMessageDto {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  metadata?: {
+    questions: string[];
+    citedSourceIds: string[];
+    briefSuggestion?: TaskContractBrief;
+  };
 }
 
 export interface WebSourceDto {
@@ -68,10 +74,16 @@ export interface WebOperationDto {
   status: GuidedPreparationRequestStatus;
   errorCode?: string;
   publishedDocumentId?: string;
+  result?: unknown;
 }
 
 export interface WebTaskDetailDto extends WebTaskDto {
   currentBrief: TaskContractBrief;
+  draftBrief: TaskContractBrief;
+  planDocument: TaskContractPlan | null;
+  briefConfirmedThroughSequence: number;
+  messagesCompactedThroughSequence: number;
+  sessionRecoveredAt?: string;
   messages: WebMessageDto[];
   sources: WebSourceDto[];
   activeOperation: WebOperationDto | null;

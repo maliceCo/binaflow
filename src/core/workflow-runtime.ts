@@ -18,6 +18,10 @@ import { resolveStepOrder } from './references.js';
 import { validateWorkflowDefinition, type AgentStep, type WorkflowDefinition } from './workflow.js';
 import type { ExecuteWorkflowRequest } from './execute-request.js';
 import { WorkflowVersionMismatchError } from './execute-request.js';
+import {
+  renderStructuredOutputInstructions,
+  renderStructuredOutputRepair,
+} from './structured-output.js';
 
 const schemaValidators = new WeakMap<object, ValidateFunction>();
 const ajv = new Ajv({ allErrors: true });
@@ -241,7 +245,7 @@ export class WorkflowRuntime {
     request: ExecuteWorkflowRequest,
   ): Promise<{ stepRun: StepRun; artifacts: ArtifactReference[] }> {
     let pending = await this.prepareStep(run.id, step, existing);
-    let repairAttempted = false;
+    let repairReason: string | undefined;
 
     while (true) {
       const startedAt = new Date().toISOString();
@@ -270,7 +274,7 @@ export class WorkflowRuntime {
               runId: run.id,
               stepId: step.id,
               profile,
-              prompt: renderPrompt(step.prompt, resolvedInputs, repairAttempted),
+              prompt: renderPrompt(step.prompt, resolvedInputs, step, repairReason),
             },
             eventQueue.emit,
             request.signal ?? new AbortController().signal,
@@ -312,11 +316,11 @@ export class WorkflowRuntime {
       } catch (error) {
         if (completedPersisted) throw error;
         await this.removeArtifacts(savedArtifacts, run.id, step.id);
-        if (error instanceof PlannerSchemaError && !repairAttempted) {
+        if (error instanceof PlannerSchemaError && repairReason === undefined) {
           await this.recordAttemptFailure(step, running, error, true);
           pending = createPendingRetry(running);
           await this.runStore.saveStepRun(pending);
-          repairAttempted = true;
+          repairReason = error.message;
           continue;
         }
         if (error instanceof PlannerSchemaError) {
@@ -624,15 +628,21 @@ function validateJsonOutput(value: unknown, schema: Record<string, unknown>): vo
 function renderPrompt(
   prompt: string,
   inputs: Record<string, string>,
-  repairAttempted: boolean,
+  step: AgentStep,
+  repairReason?: string,
 ): string {
   const inputText = Object.entries(inputs)
     .map(([name, value]) => `${name}:\n${value}`)
     .join('\n\n');
-  const repairText = repairAttempted
-    ? '\nThe previous response failed schema validation. Return only valid JSON matching the requested structured output schema.'
-    : '';
-  return `${prompt}${repairText}\n\nInputs:\n${inputText}`;
+  const outputInstructions = renderStructuredOutputInstructions(
+    step.outputs
+      .filter((output) => output.format === 'json')
+      .map((output) => ({ name: output.name, schema: output.schema })),
+  );
+  const repairText = repairReason ? renderStructuredOutputRepair(repairReason) : '';
+  return [prompt, outputInstructions, repairText, `Inputs:\n${inputText}`]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
