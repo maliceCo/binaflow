@@ -15,6 +15,7 @@ import type { LiveState } from './execution.js';
 import { workflowInputFields } from './launch.js';
 import { visibleFolderEntries, type FolderEntry, type TuiState } from './model.js';
 import { workflowItems } from './screens/workflows.js';
+import { GuidedTasksScreen } from './screens/guided-tasks.js';
 import { BRAND_LOGO } from './brand.js';
 import { createTuiTheme, isNarrowTui } from './theme.js';
 
@@ -30,6 +31,7 @@ const KEYMAP = [
   'd / r  refresh the configuration diagnosis',
   'c  edit analyst/planner/qa/builder profiles',
   'b  show QA history',
+  'g  show guided tasks (read-only)',
   '?  show this help',
   'Tab / h / l  switch the focused pane',
   'j / k / arrows  move the selection or scroll',
@@ -65,8 +67,9 @@ export function StudioLayout({
     return `${run.id} ${run.workflowId} ${status}  ${truncateDisplay(run.objective, 24)}`;
   });
   const paneRows = Math.max(2, size.rows - (narrow ? 16 : 14));
-  const workflowsRows = Math.max(1, Math.floor((paneRows - 4) / 2));
-  const runsRows = Math.max(1, paneRows - workflowsRows - 4);
+  const workflowsRows = Math.max(1, Math.floor((paneRows - 6) / 3));
+  const runsRows = workflowsRows;
+  const guidedTasksRows = Math.max(1, paneRows - workflowsRows - runsRows - 6);
   const showNavigation = !narrow || state.focus !== 'detail';
   const showDetail = !narrow || state.focus === 'detail' || state.detail === 'empty';
   return (
@@ -135,6 +138,13 @@ export function StudioLayout({
                 <SafeText dimColor>No runs yet.</SafeText>
               )}
             </PaneSection>
+            <GuidedTasksScreen
+              colors={colors}
+              tasks={state.guidedTasks ?? []}
+              selected={state.guidedTaskSelected}
+              offset={state.guidedTaskOffset}
+              visibleRows={guidedTasksRows}
+            />
           </Panel>
         ) : null}
         {showDetail ? (
@@ -218,6 +228,12 @@ function footerHints(state: TuiState): Array<[string, string]> {
       ['Enter', state.reviewFocus === 'editor' ? 'send message' : 'select action'],
       ['Esc', 'back'],
     ];
+  if (state.detail === 'guided-task')
+    return [
+      ['j/k', 'scroll'],
+      ['r', 'refresh'],
+      ['q', 'back'],
+    ];
   if (state.detail === 'preparation')
     return [
       ['Tab', 'editor/actions'],
@@ -259,6 +275,7 @@ function footerHints(state: TuiState): Array<[string, string]> {
     ['d', 'status'],
     ['c', 'agents'],
     ['b', 'QA history'],
+    ['g', 'guided tasks'],
     ['?', 'help'],
     ['Tab', 'switch'],
     ['q', 'quit'],

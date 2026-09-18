@@ -709,7 +709,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** lista vacia/con datos, detail desconocido, salida humana sanitizada, JSON versionado exacto, rechazo JSONL pre-storage y lease unico; `pnpm exec vitest run test/cli-tasks.test.ts test/cli-protocol.test.ts test/cli-output.test.ts`; `pnpm run typecheck`; `pnpm run build`.
   - **Commit Msg:** `feat: inspect guided tasks from the cli`
 
-- [ ] **Tarea 5.23: Exponer tareas guiadas de solo lectura en la TUI**
+- [x] **Tarea 5.23: Exponer tareas guiadas de solo lectura en la TUI**
   - **Archivo:** nuevos `src/tui/screens/guided-tasks.tsx`, `src/tui/screens/guided-task.tsx`; `src/tui/model.ts`, `src/tui/reduce.ts`, `src/tui/shell-input.ts`, `src/tui/shell-controller.tsx`, `src/tui/shell-view.tsx`, `src/tui/layout.tsx`; nuevo `test/tui-guided-tasks.test.tsx`; ampliar `test/tui-ink-shell.test.ts`, `test/tui-reduce.test.ts`.
   - **Funciones:** eventos/estado para listar, seleccionar, abrir, refrescar y volver; pantallas `GuidedTasksScreen` y `GuidedTaskScreen` basadas solo en `GuidedTaskSummaryView`/`GuidedTaskDetailView`.
   - **Descripcion:** agregar entrada visible `Guided tasks` y tecla documentada para observar las mismas tareas de la web. Mostrar brief/plan/TODO, revision/readiness, mensajes recientes acotados, fases/tareas, bloqueos y artefactos por metadata, con viewport existente. La pantalla es explicitamente read-only y, al llegar a preparacion o revision rica, indica usar `binaflow web`; no ofrece aprobacion invisible. Las queries usan `ApplicationQueries`, `lifecycle.trackRequest` y el contexto ya montado; navegar, resize o volver no crea owner, driver ni polling. Conservar preparaciones/runs legacy para historial y ejecucion directa, pero etiquetarlos como tales en la presentacion.
@@ -842,9 +842,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.22 permanecen completadas;
-  5.23-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. Las Tareas 5.19-5.22 conservan solo lectura,
+- Estado actualizado para la convergencia: 5.4-5.23 permanecen completadas;
+  5.24-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. Las Tareas 5.19-5.23 conservan solo lectura,
   contratos compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
@@ -975,5 +975,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.22 completada: CLI expone `tasks` y `task <id>` en modo humano y
   JSON versionado, reutiliza `openStorageContext` y las vistas canónicas, y
   rechaza JSONL antes de abrir storage sin agregar mutaciones guiadas.
-- Siguiente accion: ejecutar Tarea 5.23 solo tras autorizacion del owner; no
+- Tarea 5.23 completada: TUI incorpora la entrada `Guided tasks`, selección,
+  apertura, refresco y retorno usando `GuidedTaskView` mediante el contexto
+  existente; la pantalla es observación segura y remite a Web para mutaciones.
+- Siguiente accion: ejecutar Tarea 5.24 solo tras autorizacion del owner; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.

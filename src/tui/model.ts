@@ -23,6 +23,10 @@ import type { QaFindingSeverity } from '../workflows/plan-build-qa.js';
 import type { RunStatus, WorkflowRun } from '../core/run.js';
 import type { WorkflowContract } from '../application/operations.js';
 import type {
+  GuidedTaskDetailView,
+  GuidedTaskSummaryView,
+} from '../application/guided-task-view.js';
+import type {
   LaunchInputState,
   SetupProfileName,
   SetupProfileValuesByName,
@@ -134,7 +138,7 @@ export function parsePreparationSynthesis(value: string): PreparationSynthesis |
   };
 }
 
-export type FocusPane = 'workflows' | 'runs' | 'detail';
+export type FocusPane = 'workflows' | 'runs' | 'guided-tasks' | 'detail';
 
 export type Overlay =
   | 'none'
@@ -162,6 +166,7 @@ export type DetailMode =
   | 'review-thread'
   | 'qa-review'
   | 'preparation'
+  | 'guided-task'
   | 'proposal'
   | 'qa-report';
 
@@ -197,6 +202,10 @@ export interface TuiState {
   diagnosis?: ConfigurationDiagnosis;
   workflows?: WorkflowContract[];
   runs?: WorkflowRun[];
+  guidedTasks?: GuidedTaskSummaryView[];
+  guidedTask?: GuidedTaskDetailView;
+  guidedTaskSelected: number;
+  guidedTaskOffset: number;
   setupModels?: AgentModel[];
   activeRunId?: string;
   cancellationRequested: boolean;
@@ -280,6 +289,8 @@ export function createInitialTuiState(options: TuiModelOptions = {}): TuiState {
     workflowOffset: 0,
     runSelected: 0,
     runOffset: 0,
+    guidedTaskSelected: 0,
+    guidedTaskOffset: 0,
     cancellationRequested: false,
     pendingFolderDiagnosis: false,
     quitRequested: false,
@@ -407,6 +418,12 @@ export type TuiEvent =
   | { type: 'close-help' }
   | { type: 'workflows-loaded'; workflows: WorkflowContract[] }
   | { type: 'runs-loaded'; runs: WorkflowRun[] }
+  | { type: 'guided-tasks-loaded'; tasks: GuidedTaskSummaryView[] }
+  | { type: 'open-guided-tasks' }
+  | { type: 'open-guided-task' }
+  | { type: 'guided-task-set'; task: GuidedTaskDetailView }
+  | { type: 'guided-task-back' }
+  | { type: 'guided-task-refresh' }
   | { type: 'folder-listed'; entries: FolderEntry[] }
   | { type: 'run-view-set'; view: RunView; clarifications: string[] }
   | { type: 'task-outcome-set'; outcome: TaskOutcome }

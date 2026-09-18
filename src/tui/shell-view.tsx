@@ -18,6 +18,7 @@ import { TodoSelectionScreen } from './screens/todo-select.js';
 import { PreparationScreen } from './screens/preparation.js';
 import { ProposalScreen } from './screens/proposal.js';
 import { QaReportScreen } from './screens/qa-report.js';
+import { GuidedTaskScreen } from './screens/guided-task.js';
 
 export interface ShellDetailViewProps {
   colors: boolean;
@@ -202,6 +203,17 @@ export function renderShellDetail({
           value={state.inputValue}
           {...(state.status ? { status: state.status } : {})}
           {...(state.error ? { error: state.error } : {})}
+        />
+      );
+      break;
+    case 'guided-task':
+      right = (
+        <GuidedTaskScreen
+          colors={colors}
+          {...(state.guidedTask ? { task: state.guidedTask } : {})}
+          offset={state.offset}
+          visibleRows={Math.max(1, size.rows - 10)}
+          {...(state.status ? { status: state.status } : {})}
         />
       );
       break;

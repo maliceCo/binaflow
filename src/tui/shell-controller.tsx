@@ -102,6 +102,8 @@ export function InkShellController({
   const active = useRef(true);
   const diagnosisRequest = useRef(0);
   const runsRequest = useRef(0);
+  const guidedTasksRequest = useRef(0);
+  const guidedTaskRequest = useRef(0);
   const folderRequest = useRef(0);
   const inspectionRequest = useRef(0);
   const artifactRequest = useRef(0);
@@ -287,6 +289,66 @@ export function InkShellController({
           dispatch({ type: 'runs-loaded', runs: [] });
       }
     })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
+  const loadGuidedTasks = async (): Promise<void> => {
+    const requestId = ++guidedTasksRequest.current;
+    const requestCwd = stateRef.current.cwd;
+    const request = (async () => {
+      try {
+        const application = await ensureContext();
+        const page = application.listGuidedTaskViews
+          ? await application.listGuidedTaskViews({ limit: 50 })
+          : { items: [] };
+        if (
+          active.current &&
+          requestId === guidedTasksRequest.current &&
+          stateRef.current.cwd === requestCwd
+        )
+          dispatch({ type: 'guided-tasks-loaded', tasks: page.items });
+      } catch (reason) {
+        if (
+          active.current &&
+          requestId === guidedTasksRequest.current &&
+          stateRef.current.cwd === requestCwd
+        ) {
+          dispatch({
+            type: 'error-set',
+            message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+          });
+        }
+      }
+    })();
+    lifecycle.trackRequest(request);
+    await request;
+  };
+
+  const loadGuidedTask = async (taskId: string): Promise<void> => {
+    const requestId = ++guidedTaskRequest.current;
+    const requestCwd = stateRef.current.cwd;
+    const request = (async () => {
+      const application = await ensureContext();
+      if (!application.getGuidedTaskView) throw new Error('Guided task inspection is unavailable.');
+      const task = await application.getGuidedTaskView(taskId);
+      if (
+        active.current &&
+        requestId === guidedTaskRequest.current &&
+        stateRef.current.cwd === requestCwd
+      )
+        dispatch({ type: 'guided-task-set', task });
+    })().catch((reason: unknown) => {
+      if (
+        active.current &&
+        requestId === guidedTaskRequest.current &&
+        stateRef.current.cwd === requestCwd
+      )
+        dispatch({
+          type: 'error-set',
+          message: explainUserError(reason instanceof Error ? reason.message : String(reason)),
+        });
+    });
     lifecycle.trackRequest(request);
     await request;
   };
@@ -1196,7 +1258,10 @@ export function InkShellController({
           return;
         case 'diagnosed':
         case 'use-folder':
-          if (next.overlay === 'none' && next.diagnosis?.configValid) await loadRuns();
+          if (next.overlay === 'none' && next.diagnosis?.configValid) {
+            await loadRuns();
+            await loadGuidedTasks();
+          }
           break;
         case 'open-folder-picker':
         case 'folder-picker-path':
@@ -1221,6 +1286,20 @@ export function InkShellController({
           if (candidate && workflow && next.diagnosis) {
             await prepareTodoLaunch(workflow, next.diagnosis, candidate.path);
           }
+          break;
+        }
+        case 'open-guided-tasks':
+          if (next.focus === 'guided-tasks') await loadGuidedTasks();
+          break;
+        case 'open-guided-task': {
+          const task = next.guidedTasks?.[next.guidedTaskSelected];
+          if (next.detail === 'guided-task' && task) await loadGuidedTask(task.id);
+          break;
+        }
+        case 'guided-task-refresh': {
+          if (next.detail === 'guided-task' && next.guidedTask)
+            await loadGuidedTask(next.guidedTask.id);
+          else if (next.focus === 'guided-tasks') await loadGuidedTasks();
           break;
         }
         case 'open-bugs':

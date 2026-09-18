@@ -313,6 +313,51 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...state, detail: 'diagnosis', focus: 'detail', effect: 'diagnose-cwd' };
     case 'focus-pane':
       return { ...state, focus: event.pane };
+    case 'open-guided-tasks':
+      if (state.overlay !== 'none' || state.detail === 'live') return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'guidedTask'),
+        focus: 'guided-tasks',
+        detail: 'empty',
+        guidedTaskSelected: 0,
+        guidedTaskOffset: 0,
+        status: 'Loading guided tasks...',
+      };
+    case 'open-guided-task': {
+      if (state.overlay !== 'none' || state.focus !== 'guided-tasks') return state;
+      const task = state.guidedTasks?.[state.guidedTaskSelected];
+      if (!task) return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'guidedTask'),
+        focus: 'detail',
+        detail: 'guided-task',
+        status: 'Loading guided task...',
+      };
+    }
+    case 'guided-task-set':
+      return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        guidedTask: event.task,
+        detail: 'guided-task',
+        focus: 'detail',
+        selection: 0,
+        offset: 0,
+      };
+    case 'guided-task-back':
+      if (state.detail !== 'guided-task') return state;
+      return {
+        ...clearField(clearField(state, 'error'), 'guidedTask'),
+        detail: 'empty',
+        focus: 'guided-tasks',
+        status: undefined,
+      };
+    case 'guided-task-refresh':
+      if (state.overlay !== 'none' || state.detail === 'live') return state;
+      return {
+        ...state,
+        status: 'Loading guided tasks...',
+        ...(state.detail === 'guided-task' ? { detail: 'guided-task' as const } : {}),
+      };
     case 'move':
       return move(state, event.direction, event.visibleRows);
     case 'open-bugs':
@@ -1002,6 +1047,13 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       return { ...state, workflows: event.workflows };
     case 'runs-loaded':
       return { ...state, runs: event.runs };
+    case 'guided-tasks-loaded':
+      return {
+        ...clearField(clearField(state, 'status'), 'error'),
+        guidedTasks: event.tasks,
+        guidedTaskSelected: Math.min(state.guidedTaskSelected, Math.max(0, event.tasks.length - 1)),
+        guidedTaskOffset: event.tasks.length === 0 ? 0 : state.guidedTaskOffset,
+      };
     case 'input-change':
       if (state.inputValue === event.value) return state;
       return { ...state, inputValue: event.value };
@@ -1099,6 +1151,17 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
         visibleRows,
       ).offset,
     };
+  }
+  if (state.focus === 'guided-tasks') {
+    const count = state.guidedTasks?.length ?? 0;
+    if (count === 0) return state;
+    const moved = moveSelection(
+      { offset: state.guidedTaskOffset, selected: state.guidedTaskSelected },
+      direction,
+      count,
+      visibleRows,
+    );
+    return { ...state, guidedTaskSelected: moved.selected, guidedTaskOffset: moved.offset };
   }
 
   switch (state.detail) {
@@ -1240,6 +1303,8 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     }
     case 'proposal':
       return state;
+    case 'guided-task':
+      return { ...state, offset: Math.max(0, state.offset + direction) };
     case 'empty':
     case 'live':
       return state;
