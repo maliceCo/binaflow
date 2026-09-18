@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { discoverWorkflows } from '../application/operations.js';
+import { discoverWorkflows, supportForWorkflowSurface } from '../application/operations.js';
 import { isApplicationEntrypoint } from '../application/runtime.js';
 import { registerResumeCommand } from './commands/resume.js';
 import { registerRunCommand } from './commands/run.js';
@@ -124,8 +124,9 @@ function registerWorkflowCommand(cli: Command): void {
         return;
       }
       for (const workflow of workflows) {
+        const support = supportForWorkflowSurface(workflow.id, 'cli');
         console.log(
-          `${workflow.id}${workflow.experimental ? '  [Experimental]' : ''}  ${workflow.description}`,
+          `${workflow.id}${workflow.experimental ? '  [Experimental]' : ''}  [Direct/legacy]  ${support?.mode ?? 'unsupported'}  ${workflow.description}`,
         );
       }
     });

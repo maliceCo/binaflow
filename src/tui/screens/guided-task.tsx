@@ -19,7 +19,7 @@ export function GuidedTaskScreen({
   return (
     <ScreenFrame
       title="Guided task"
-      subtitle="Canonical application view (read-only)"
+      subtitle="Guided  |  Observe only  |  Use Web for preparation and changes"
       status={status}
       footer="j/k scroll | r refresh | q back"
       colors={colors}

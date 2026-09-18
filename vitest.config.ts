@@ -28,6 +28,7 @@ export default defineConfig({
             'test/research-workflow.test.ts',
             'test/task-contract*.test.ts',
             'test/todo-build-qa-workflow.test.ts',
+            'test/workflow-surface-contract.test.ts',
           ],
         },
       },

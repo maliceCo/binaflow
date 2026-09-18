@@ -41,3 +41,12 @@ export {
   type WorkflowConfigurationDiagnosis,
   type WorkflowContract,
 } from './workflow-operations.js';
+export {
+  WORKFLOW_SURFACE_CONTRACT_VERSION,
+  discoverWorkflowSurfaceContracts,
+  supportForWorkflowSurface,
+  type WorkflowSurface,
+  type WorkflowSurfaceCapability,
+  type WorkflowSurfaceContract,
+  type WorkflowSurfaceMode,
+} from './workflow-surface.js';

@@ -46,8 +46,8 @@ export function PreparationScreen({
       title="Preparation"
       subtitle={
         preparation
-          ? `${preparation.draft.workflowId}  revision ${preparation.draft.revision}`
-          : 'Opening draft'
+          ? `${preparation.draft.workflowId}  [Direct/legacy]  revision ${preparation.draft.revision}`
+          : 'Opening draft  [Direct/legacy]'
       }
       status={error ?? status}
       footer="Tab focus | Ctrl+Enter save synthesis | Enter select | Esc back"

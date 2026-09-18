@@ -717,7 +717,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** lista, apertura, tarea sin plan, progreso waiting, texto malicioso, terminal estrecho, retorno con seleccion y ausencia de comandos mutantes; `pnpm exec vitest run test/tui-guided-tasks.test.tsx test/tui-ink-shell.test.ts test/tui-reduce.test.ts`; `pnpm run typecheck`; `pnpm run build`.
   - **Commit Msg:** `feat: inspect canonical guided tasks in the tui`
 
-- [ ] **Tarea 5.24: Publicar soporte real por workflow y superficie**
+- [x] **Tarea 5.24: Publicar soporte real por workflow y superficie**
   - **Archivo:** nuevo `src/application/workflow-surface.ts`; `src/application/workflow-operations.ts`, `src/application/operations.ts`, `src/workflows/catalog.ts`; `src/cli/index.ts`, `src/tui/screens/workflows.tsx`, `src/tui/screens/preparation.tsx`, `src/tui/screens/guided-task.tsx`; nuevo `test/workflow-surface-contract.test.ts`; ampliar `test/application-operations.test.ts`, `test/cli-protocol.test.ts`, `test/tui-guided-tasks.test.tsx`.
   - **Funciones:** `WORKFLOW_SURFACE_CONTRACT_VERSION`, `discoverWorkflowSurfaceContracts` y `supportForWorkflowSurface`; tipos cerrados de surface, mode y capabilities.
   - **Descripcion:** publicar un manifiesto separado de `WorkflowDefinition`: workflows directos actuales con CLI/TUI `operate` y Web `unsupported`; `guided-task-build` con Web `operate` hasta changes-review y CLI/TUI `observe`. Capacidades cerradas: `create-task`, `prepare-task`, `approve-plan`, `execute-task`, `observe-execution`, `resume-execution`, `cancel-execution`, `view-change-summary`, `view-structured-diff`, `comment-diff`, `edit-files`, `approve-changes`, `review-qa`, `decide-qa`. Solo anunciar las implementadas; diff/comentarios/edicion/QA siguen ausentes hasta sus hitos. Usar el manifiesto para etiquetas humanas `Guided`, `Direct/legacy`, `Observe only` y mensajes de handoff de interfaz. `discoverWorkflows` y `binaflow workflows --json` no cambian.
@@ -842,10 +842,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.23 permanecen completadas;
-  5.24-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. Las Tareas 5.19-5.23 conservan solo lectura,
-  contratos compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
+- Estado actualizado para la convergencia: 5.4-5.24 permanecen completadas;
+  5.25 es el cierre de convergencia previo a revision, 5.26 queda retenida y
+  5.27 diferida. Las Tareas 5.19-5.24 conservan solo lectura, contratos
+  compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
   test/cli-protocol.test.ts` paso (16 tests). Los fallos registrados contra
@@ -978,5 +978,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.23 completada: TUI incorpora la entrada `Guided tasks`, selección,
   apertura, refresco y retorno usando `GuidedTaskView` mediante el contexto
   existente; la pantalla es observación segura y remite a Web para mutaciones.
-- Siguiente accion: ejecutar Tarea 5.24 solo tras autorizacion del owner; no
+- Tarea 5.24 completada: el manifiesto versionado de superficie distingue
+  workflows directos/legacy de `guided-task-build`, publica capacidades cerradas
+  por Web/TUI/CLI y no anuncia diff, comentarios, edición ni QA inexistentes.
+- Siguiente accion: ejecutar Tarea 5.25 como cierre de convergencia; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.
