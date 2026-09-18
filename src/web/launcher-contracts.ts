@@ -1,4 +1,17 @@
 import { WebContractError } from './contracts.js';
+import type {
+  WebDeviceSummaryDto,
+  WebLauncherSettingsDto,
+  WebProjectSummaryDto,
+  WebTransferSummaryDto,
+} from './api-contract.js';
+
+export type {
+  WebDeviceSummaryDto,
+  WebLauncherSettingsDto,
+  WebProjectSummaryDto,
+  WebTransferSummaryDto,
+} from './api-contract.js';
 
 export const LAUNCHER_SCHEMA_VERSION = 1 as const;
 
@@ -118,36 +131,6 @@ export interface PeerTransferReceipt {
   receivedBytes: number;
   completedAt?: string;
   errorCode?: string;
-}
-
-export interface WebProjectSummaryDto {
-  id: string;
-  name: string;
-  ownership: ProjectOwnership['status'];
-  updatedAt: string;
-}
-
-export interface WebDeviceSummaryDto {
-  id: string;
-  name: string;
-  status: DeviceStatus;
-}
-
-export interface WebTransferSummaryDto {
-  id: string;
-  projectId: string;
-  sourceDeviceId: string;
-  targetDeviceId: string;
-  status: PeerTransferStatus;
-  receivedBytes: number;
-}
-
-export interface WebLauncherSettingsDto {
-  setupRequired: boolean;
-  deviceName: string;
-  web: { host: string; port: number; origin: string; tlsConfigured: boolean };
-  projectRoots: Array<{ id: string; label: string }>;
-  peerTransport?: PeerTransportSettings;
 }
 
 export function parseLauncherSettings(value: unknown): LauncherSettings {

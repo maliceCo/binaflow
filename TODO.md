@@ -685,7 +685,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** primero crear casos para detalle completo, tarea sin preparacion/ejecucion, paginacion, artefacto sin path y contrato desconocido; luego `pnpm exec vitest run test/guided-task-view.test.ts test/application-runtime.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: expose a canonical guided task view`
 
-- [ ] **Tarea 5.20: Compartir el contrato HTTP entre servidor y navegador**
+- [x] **Tarea 5.20: Compartir el contrato HTTP entre servidor y navegador**
   - **Archivo:** nuevo `src/web/api-contract.ts`; `src/web/contracts.ts`, `src/web/dto.ts`, `src/web/launcher-contracts.ts`, `src/web/client/api.ts`; nuevo `test/web-api-contract.test.ts`; ampliar `test/web-launcher-contracts.test.ts`, `test/architecture-boundaries.test.ts`.
   - **Funciones:** tipos puros versionados para envelopes, sesion, settings, proyectos, devices, transferencias, tareas, preparacion y ejecucion; mantener parsers/proyectores en sus modulos actuales.
   - **Descripcion:** mover a un modulo browser-safe las interfaces publicas hoy redeclaradas entre servidor y `client/api.ts`. `TaskDetail` debe incluir explicitamente `preparationRevision`, `lastSequence` y `confirmedSourceIds`, hoy esperados por React pero ausentes de `WebTaskDetailDto`. Reexportar nombres compatibles donde reduzca cambios; `ApiClient`, `fetch`, CSRF y `ApiRequestError` permanecen en el cliente. El contrato puede referenciar las vistas de aplicacion solo mediante `import type`; su bundle no puede contener imports Node, storage, Pi ni filesystem. No cambiar nombres JSON, version 1, opcionalidad ni envelopes en esta tarea.
@@ -842,10 +842,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.19 permanecen completadas;
-  5.20-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. La Tarea 5.19 agrega solo proyecciones de lectura,
-  sin cambios de schema ni mutaciones nuevas.
+- Estado actualizado para la convergencia: 5.4-5.20 permanecen completadas;
+  5.21-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. Las Tareas 5.19-5.20 conservan solo lectura y
+  contratos compartidos, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
   test/cli-protocol.test.ts` paso (16 tests). Los fallos registrados contra
@@ -964,5 +964,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   contratos, preparacion y ejecucion para los contextos completo y storage-only;
   tests cubren detalle, ausencia de estado, paginacion, contrato desconocido y
   eliminacion de campos privados. No abre otro lease, agrega SQL ni mutaciones.
-- Siguiente accion: ejecutar Tarea 5.20 solo tras autorizacion del owner; no
+- Tarea 5.20 completada: `src/web/api-contract.ts` centraliza los tipos HTTP
+  versionados para servidor y navegador; los aliases legacy conservan nombres y
+  los parsers, DTO projections, fetch, CSRF y errores permanecen en sus adapters.
+  Se verifican campos de detalle, browser-safety y ausencia de paths/secrets.
+- Siguiente accion: ejecutar Tarea 5.21 solo tras autorizacion del owner; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.

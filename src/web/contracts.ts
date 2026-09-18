@@ -1,102 +1,23 @@
-import {
-  parseGuidedPreparationOperation,
-  type GuidedPreparationOperationRequest,
-  type GuidedPreparationRequestStatus,
-  type GuidedPreparationSource,
-} from '../application/guided-preparation.js';
-import type {
-  TaskContractBrief,
-  TaskContractDocumentHeader,
-  TaskContractPlan,
-  TaskContractReadiness,
-} from '../application/task-contract.js';
+import { parseGuidedPreparationOperation } from '../application/guided-preparation.js';
+import type { GuidedPreparationSource } from '../application/guided-preparation.js';
+import type { WebOperationRequest, WebSourceDto, WebTaskCreateRequest } from './api-contract.js';
 
-export const WEB_API_VERSION = 1 as const;
+export { WEB_API_VERSION } from './api-contract.js';
+export type {
+  WebApiError,
+  WebApiSuccess,
+  WebMessageDto,
+  WebOperationDto,
+  WebOperationRequest,
+  WebSessionDto,
+  WebSourceDto,
+  WebTaskCreateRequest,
+  WebTaskDetailDto,
+  WebTaskDto,
+} from './api-contract.js';
+
 export const WEB_PAGE_LIMIT_DEFAULT = 20;
 export const WEB_PAGE_LIMIT_MAX = 50;
-
-export interface WebApiSuccess<T> {
-  version: typeof WEB_API_VERSION;
-  data: T;
-}
-
-export interface WebApiError {
-  version: typeof WEB_API_VERSION;
-  error: { code: string; message: string };
-}
-
-export interface WebSessionDto {
-  authenticated: boolean;
-  csrfToken?: string;
-}
-
-export interface WebTaskDto {
-  id: string;
-  revision: number;
-  readiness: TaskContractReadiness;
-  phase: 'exploration' | 'planning' | 'todo';
-  brief: TaskContractDocumentHeader;
-  plan: TaskContractDocumentHeader | null;
-  approvedPlan: TaskContractDocumentHeader | null;
-  todo: TaskContractDocumentHeader | null;
-  executionRunId?: string;
-}
-
-export interface WebMessageDto {
-  id: string;
-  sequence: number;
-  role: 'user' | 'assistant';
-  content: string;
-  createdAt: string;
-  metadata?: {
-    questions: string[];
-    citedSourceIds: string[];
-    briefSuggestion?: TaskContractBrief;
-  };
-}
-
-export interface WebSourceDto {
-  id: string;
-  sequence: number;
-  kind: 'search-result' | 'page';
-  url: string;
-  title: string;
-  excerpt: string;
-  query?: string;
-  retrievedAt: string;
-  truncated: boolean;
-}
-
-export interface WebOperationDto {
-  requestId: string;
-  operationId: string;
-  kind: string;
-  status: GuidedPreparationRequestStatus;
-  errorCode?: string;
-  publishedDocumentId?: string;
-  result?: unknown;
-}
-
-export interface WebTaskDetailDto extends WebTaskDto {
-  currentBrief: TaskContractBrief;
-  draftBrief: TaskContractBrief;
-  planDocument: TaskContractPlan | null;
-  briefConfirmedThroughSequence: number;
-  messagesCompactedThroughSequence: number;
-  sessionRecoveredAt?: string;
-  messages: WebMessageDto[];
-  sources: WebSourceDto[];
-  activeOperation: WebOperationDto | null;
-}
-
-export interface WebTaskCreateRequest {
-  contractId: string;
-  objective: string;
-}
-
-export interface WebOperationRequest {
-  operation: GuidedPreparationOperationRequest;
-}
 
 export function parseWebOperationRequest(value: unknown): WebOperationRequest {
   if (!isRecord(value) || Object.keys(value).length !== 1 || !('operation' in value)) {

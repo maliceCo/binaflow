@@ -1,197 +1,50 @@
-export interface ApiSuccess<T> {
-  version: 1;
-  data: T;
-}
+import type {
+  WebApiSuccess,
+  WebDeviceSummaryDto,
+  WebExecutionArtifactDto,
+  WebExecutionPreviewDto,
+  WebExecutionProgressDto,
+  WebExecutionResumePreviewDto,
+  WebLauncherSettingsDto,
+  WebMessagePageResponse,
+  WebMessageDto,
+  WebOperationDto,
+  WebPairingDto,
+  WebProjectDirectoryDto,
+  WebProjectDirectoryPageDto,
+  WebProjectSummaryDto,
+  WebProjectCurrentDto,
+  WebSessionDto,
+  WebSettingsUpdateDto,
+  WebSetupRootCandidateDto,
+  WebSourcePageResponse,
+  WebSourceDto,
+  WebTaskDetailDto,
+  WebTaskListResponse,
+  WebTaskDto,
+  WebTransferDto,
+  WebItemsResponse,
+} from '../api-contract.js';
 
-export interface SessionData {
-  authenticated: boolean;
-  csrfToken?: string;
-}
-
-export interface Message {
-  id: string;
-  sequence: number;
-  role: 'user' | 'assistant';
-  content: string;
-  createdAt: string;
-  metadata?: {
-    questions: string[];
-    citedSourceIds: string[];
-    briefSuggestion?: {
-      objective: string;
-      conclusions: string[];
-      constraints: string[];
-      outOfScope: string[];
-    };
-  };
-}
-
-export interface Source {
-  id: string;
-  sequence: number;
-  kind: 'search-result' | 'page';
-  url: string;
-  title: string;
-  excerpt: string;
-  query?: string;
-  retrievedAt: string;
-  truncated: boolean;
-}
-
-export interface TaskDetail extends Task {
-  currentBrief: {
-    objective: string;
-    conclusions: string[];
-    constraints: string[];
-    outOfScope: string[];
-  };
-  draftBrief: {
-    objective: string;
-    conclusions: string[];
-    constraints: string[];
-    outOfScope: string[];
-  };
-  planDocument: {
-    briefVersion: number;
-    summary: string;
-    items: Array<{
-      id: string;
-      title: string;
-      description: string;
-      files: Array<{ path: string; reason: string }>;
-      acceptanceCriteria: string[];
-    }>;
-    verification: string[];
-  } | null;
-  briefConfirmedThroughSequence: number;
-  messagesCompactedThroughSequence: number;
-  sessionRecoveredAt?: string;
-  messages: Message[];
-  sources: Source[];
-  preparationRevision: number;
-  lastSequence: number;
-  confirmedSourceIds: string[];
-  activeOperation: Operation | null;
-}
-
-export interface Task {
-  id: string;
-  revision: number;
-  readiness: string;
-  phase: string;
-  brief: { id: string; version: number; createdAt: string };
-  plan: { id: string; version: number; createdAt: string } | null;
-  approvedPlan: { id: string; version: number; createdAt: string } | null;
-  todo: { id: string; version: number; createdAt: string } | null;
-  executionRunId?: string;
-}
-
-export interface Operation {
-  requestId: string;
-  operationId: string;
-  kind: string;
-  status: string;
-  errorCode?: string;
-  result?: unknown;
-}
-
-export interface LauncherSettings {
-  setupRequired: boolean;
-  deviceName: string;
-  web: { host: string; port: number; origin: string; tlsConfigured: boolean };
-  projectRoots: Array<{ id: string; label: string }>;
-  peerTransport?: {
-    mode: 'off' | 'lan-experimental';
-    host: string;
-    port: number;
-    warningAccepted: boolean;
-  };
-}
-
-export interface ProjectSummary {
-  id: string;
-  name: string;
-  ownership: string;
-  updatedAt: string;
-}
-
-export interface SetupRootCandidate {
-  id: string;
-  label: string;
-}
-
-export interface ProjectDirectory {
-  name: string;
-  segments: string[];
-  hasBinaflowConfig: boolean;
-}
-
-export interface DeviceSummary {
-  id: string;
-  name: string;
-  status: 'paired' | 'revoked';
-}
-
-export interface ExecutionPreview {
-  digest: string;
-  todoFileName: 'TODO.md';
-  gitClean: boolean;
-  blockerCount: number;
-}
-
-export interface ExecutionResumePreview {
-  runId: string;
-  revision: number;
-  status: string;
-  allowedDecisions: string[];
-  digest: string;
-}
-
-export interface ExecutionArtifact {
-  id: string;
-  runId: string;
-  stepId: string;
-  name: string;
-  kind: 'json' | 'text';
-  mediaType: string;
-  sizeBytes: number;
-}
-
-export interface ExecutionProgress {
-  runId: string;
-  contractId: string;
-  revision: number;
-  stage: 'execution' | 'changes-review';
-  status: string;
-  phases: Array<{
-    id: string;
-    ordinal: number;
-    title: string;
-    status: string;
-    tasks: Array<{
-      id: string;
-      status: string;
-      attempt: number;
-      resultArtifact?: ExecutionArtifact;
-      verificationArtifact?: ExecutionArtifact;
-    }>;
-    commitSha?: string;
-    noChanges?: boolean;
-  }>;
-  activeBlock: { type: string; reason: string; evidence: ExecutionArtifact[] } | null;
-  nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
-}
-
-export interface TransferStatus {
-  transferId: string;
-  projectId: string;
-  stage: string;
-  bytesSent: number;
-  bytesReceived: number;
-  totalBytes?: number;
-  packageDigest?: string;
-  errorCode?: string;
-}
+export type ApiSuccess<T> = WebApiSuccess<T>;
+export type SessionData = WebSessionDto;
+export type Message = WebMessageDto;
+export type Source = WebSourceDto;
+export type TaskDetail = WebTaskDetailDto;
+export type Task = WebTaskDto;
+export type Operation = WebOperationDto;
+export type LauncherSettings = WebLauncherSettingsDto;
+export type ProjectSummary = WebProjectSummaryDto;
+export type SetupRootCandidate = WebSetupRootCandidateDto;
+export type ProjectDirectory = WebProjectDirectoryDto;
+export type DeviceSummary = WebDeviceSummaryDto;
+export type ExecutionPreview = WebExecutionPreviewDto;
+export type ExecutionResumePreview = WebExecutionResumePreviewDto;
+export type ExecutionArtifact = WebExecutionArtifactDto;
+export type ExecutionProgress = WebExecutionProgressDto;
+export type TransferStatus = WebTransferDto;
+export type ProjectDirectoryPage = WebProjectDirectoryPageDto;
+export type Pairing = WebPairingDto;
 
 export class ApiRequestError extends Error {
   constructor(
@@ -296,7 +149,7 @@ export function createApiClient(): ApiClient {
       csrfToken = undefined;
     },
     async listTasks() {
-      const result = await request<{ items: Task[]; nextAfterId: string | null }>('/api/v1/tasks');
+      const result = await request<WebTaskListResponse>('/api/v1/tasks');
       return result.data.items;
     },
     async createTask(objective, contractId = crypto.randomUUID()) {
@@ -314,14 +167,14 @@ export function createApiClient(): ApiClient {
     },
     async listMessages(taskId, afterSequence) {
       const query = afterSequence === undefined ? '' : `?afterSequence=${afterSequence}`;
-      const result = await request<{ items: Message[]; nextCursor?: number }>(
+      const result = await request<WebMessagePageResponse>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/messages${query}`,
       );
       return result.data;
     },
     async listSources(taskId, afterSequence) {
       const query = afterSequence === undefined ? '' : `?afterSequence=${afterSequence}`;
-      const result = await request<{ items: Source[]; nextCursor?: number }>(
+      const result = await request<WebSourcePageResponse>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/sources${query}`,
       );
       return result.data;
@@ -331,7 +184,7 @@ export function createApiClient(): ApiClient {
       return result.data;
     },
     async updateSettings(input) {
-      const result = await request<{ settings: LauncherSettings; restartRequired: boolean }>(
+      const result = await request<WebSettingsUpdateDto>(
         '/api/v1/settings',
         'PUT',
         input,
@@ -340,7 +193,7 @@ export function createApiClient(): ApiClient {
       return result.data;
     },
     async uploadTls(certificatePem, keyPem) {
-      const result = await request<{ settings: LauncherSettings; restartRequired: boolean }>(
+      const result = await request<WebSettingsUpdateDto>(
         '/api/v1/settings/tls',
         'POST',
         { certificatePem, keyPem },
@@ -349,41 +202,42 @@ export function createApiClient(): ApiClient {
       return result.data.settings;
     },
     async listProjects() {
-      const result = await request<{ items: ProjectSummary[] }>('/api/v1/projects');
+      const result = await request<WebItemsResponse<ProjectSummary>>('/api/v1/projects');
       return result.data.items;
     },
     async listProjectRoots() {
-      const result = await request<{ items: Array<{ id: string; label: string }> }>(
-        '/api/v1/project-roots',
-      );
+      const result =
+        await request<WebItemsResponse<{ id: string; label: string }>>('/api/v1/project-roots');
       return result.data.items;
     },
     async listSetupRoots() {
-      const result = await request<{ items: SetupRootCandidate[] }>('/api/v1/setup-roots');
+      const result = await request<WebItemsResponse<SetupRootCandidate>>('/api/v1/setup-roots');
       return result.data.items;
     },
     async authorizeSetupRoot(candidateId) {
-      const result = await request<{
-        settings: LauncherSettings;
-        restartRequired: boolean;
-      }>('/api/v1/setup-roots', 'POST', { candidateId }, csrfToken);
+      const result = await request<WebSettingsUpdateDto>(
+        '/api/v1/setup-roots',
+        'POST',
+        { candidateId },
+        csrfToken,
+      );
       return result.data;
     },
     async revokeProjectRoot(rootId) {
-      const result = await request<{
-        settings: LauncherSettings;
-        restartRequired: boolean;
-      }>(`/api/v1/project-roots/${encodeURIComponent(rootId)}`, 'DELETE', {}, csrfToken);
+      const result = await request<WebSettingsUpdateDto>(
+        `/api/v1/project-roots/${encodeURIComponent(rootId)}`,
+        'DELETE',
+        {},
+        csrfToken,
+      );
       return result.data;
     },
     async listProjectDirectory(rootId, segments, offset = 0) {
       const query = new URLSearchParams({ rootId, offset: String(offset), limit: '50' });
       for (const segment of segments) query.append('segment', segment);
-      const result = await request<{
-        hasBinaflowConfig: boolean;
-        items: ProjectDirectory[];
-        nextOffset: number | null;
-      }>(`/api/v1/project-directories?${query.toString()}`);
+      const result = await request<WebProjectDirectoryPageDto>(
+        `/api/v1/project-directories?${query.toString()}`,
+      );
       return result.data;
     },
     async registerProject(rootId, segments, projectId) {
@@ -396,7 +250,7 @@ export function createApiClient(): ApiClient {
       return result.data;
     },
     async getActiveProject() {
-      const result = await request<{ project: ProjectSummary | null }>('/api/v1/projects/current');
+      const result = await request<WebProjectCurrentDto>('/api/v1/projects/current');
       return result.data.project;
     },
     async selectProject(projectId) {
@@ -412,16 +266,11 @@ export function createApiClient(): ApiClient {
       await request('/api/v1/projects/current/close', 'POST', {}, csrfToken);
     },
     async listDevices() {
-      const result = await request<{ items: DeviceSummary[] }>('/api/v1/devices');
+      const result = await request<WebItemsResponse<DeviceSummary>>('/api/v1/devices');
       return result.data.items;
     },
     async beginPairing() {
-      const result = await request<{
-        pairingId: string;
-        code: string;
-        deviceId: string;
-        expiresAt: number;
-      }>('/api/v1/devices/pairing', 'POST', {}, csrfToken);
+      const result = await request<WebPairingDto>('/api/v1/devices/pairing', 'POST', {}, csrfToken);
       return result.data;
     },
     async revokeDevice(deviceId) {

@@ -139,6 +139,7 @@ describe('architecture boundaries', () => {
       'src/web/client/main.tsx',
       'src/web/client/TransferWizard.tsx',
       'src/web/client/Transfers.tsx',
+      'src/web/api-contract.ts',
       'src/web/server.ts',
       'src/web/routes.ts',
       'src/web/dto.ts',

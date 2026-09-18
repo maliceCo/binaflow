@@ -1,7 +1,7 @@
 import type { GuidedPreparationRequestRecord } from '../application/guided-preparation.js';
 import type { GuidedExecutionProgress } from '../application/guided-execution.js';
 import type { TaskContractView } from '../application/task-contract.js';
-import type { WebOperationDto, WebTaskDto } from './contracts.js';
+import type { WebOperationDto, WebTaskDto } from './api-contract.js';
 
 export interface WebExecutionPreviewDto {
   digest: string;
