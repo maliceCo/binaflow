@@ -374,7 +374,7 @@ export function TaskPreparation(props: {
               }
               disabled={busy || briefReady}
             >
-              {briefReady ? 'Brief confirmed' : 'Confirm reviewed brief'}
+              {briefReady ? 'Brief confirmed' : 'Confirm brief'}
             </button>
             <button
               type="button"
@@ -385,7 +385,7 @@ export function TaskPreparation(props: {
             </button>
             {detail.planDocument && (
               <div className="plan-review">
-                <h4>Plan version {detail.plan?.version}</h4>
+                <h4>Plan version {detail.plan?.version} is available.</h4>
                 <p>{detail.planDocument.summary}</p>
                 <ol>
                   {detail.planDocument.items.map((item) => (

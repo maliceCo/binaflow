@@ -317,14 +317,14 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
       if (state.overlay !== 'none' || state.detail === 'live') return state;
       return {
         ...clearField(clearField(state, 'error'), 'guidedTask'),
-        focus: 'guided-tasks',
-        detail: 'empty',
+        focus: 'detail',
+        detail: 'guided-tasks',
         guidedTaskSelected: 0,
         guidedTaskOffset: 0,
         status: 'Loading guided tasks...',
       };
     case 'open-guided-task': {
-      if (state.overlay !== 'none' || state.focus !== 'guided-tasks') return state;
+      if (state.overlay !== 'none' || state.detail !== 'guided-tasks') return state;
       const task = state.guidedTasks?.[state.guidedTaskSelected];
       if (!task) return state;
       return {
@@ -346,9 +346,16 @@ export function reduce(state: TuiState, event: TuiEvent): TuiState {
     case 'guided-task-back':
       if (state.detail !== 'guided-task') return state;
       return {
+        ...clearField(clearField(state, 'error'), 'status'),
+        detail: 'guided-tasks',
+        focus: 'detail',
+      };
+    case 'guided-tasks-back':
+      if (state.detail !== 'guided-tasks') return state;
+      return {
         ...clearField(clearField(state, 'error'), 'guidedTask'),
         detail: 'empty',
-        focus: 'guided-tasks',
+        focus: 'workflows',
         status: undefined,
       };
     case 'guided-task-refresh':
@@ -1152,18 +1159,6 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
       ).offset,
     };
   }
-  if (state.focus === 'guided-tasks') {
-    const count = state.guidedTasks?.length ?? 0;
-    if (count === 0) return state;
-    const moved = moveSelection(
-      { offset: state.guidedTaskOffset, selected: state.guidedTaskSelected },
-      direction,
-      count,
-      visibleRows,
-    );
-    return { ...state, guidedTaskSelected: moved.selected, guidedTaskOffset: moved.offset };
-  }
-
   switch (state.detail) {
     case 'diagnosis':
       return {
@@ -1303,6 +1298,17 @@ function move(state: TuiState, direction: -1 | 1, visibleRows: number): TuiState
     }
     case 'proposal':
       return state;
+    case 'guided-tasks': {
+      const count = state.guidedTasks?.length ?? 0;
+      if (count === 0) return state;
+      const moved = moveSelection(
+        { offset: state.guidedTaskOffset, selected: state.guidedTaskSelected },
+        direction,
+        count,
+        visibleRows,
+      );
+      return { ...state, guidedTaskSelected: moved.selected, guidedTaskOffset: moved.offset };
+    }
     case 'guided-task':
       return { ...state, offset: Math.max(0, state.offset + direction) };
     case 'empty':

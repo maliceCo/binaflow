@@ -725,7 +725,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** matriz exacta, ningun workflow desconocido anunciado, guided no ejecutable por `run`, etiquetas consistentes y snapshot protocol-v1 intacto; `pnpm exec vitest run test/workflow-surface-contract.test.ts test/application-operations.test.ts test/cli-protocol.test.ts test/tui-guided-tasks.test.tsx`; `pnpm run typecheck`.
   - **Commit Msg:** `feat: declare workflow support by client surface`
 
-- [ ] **Tarea 5.25: Aceptar la convergencia antes de iniciar revision de codigo**
+- [x] **Tarea 5.25: Aceptar la convergencia antes de iniciar revision de codigo**
   - **Archivo:** `test/architecture-boundaries.test.ts`; `README.md`, `docs/interface-capabilities.md`, `docs/web-workflow-vision.md`, `docs/tui-experience.md`, `TODO.md`; fixes solo si una verificacion demuestra una desviacion y el owner aprueba ajustar esta tarea.
   - **Funciones:** ninguna nueva; cierre documental y regresion.
   - **Descripcion:** verificar el recorrido existente de Web, la inspeccion de la misma tarea por CLI/TUI y la compatibilidad de workflows directos. Registrar evidencia real y dejar escrito que Hito 5 debe introducir primero un change-set estructurado/versionado en aplicacion; HTML, ANSI y editores son proyecciones de superficie. Confirmar que no existen tipos de tarea/progreso duplicados en `client/api.ts`, que Web no ensambla negocio en `commands/web.ts` y que CLI protocol-v1/persistencia no cambiaron. No retirar codigo legacy ni TODO en este cierre.
@@ -842,9 +842,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.24 permanecen completadas;
-  5.25 es el cierre de convergencia previo a revision, 5.26 queda retenida y
-  5.27 diferida. Las Tareas 5.19-5.24 conservan solo lectura, contratos
+- Estado actualizado para la convergencia: 5.4-5.25 permanecen completadas;
+  Hito 5 queda listo para iniciar revision de codigo; 5.26 queda retenida y
+  5.27 diferida. Las Tareas 5.19-5.25 conservan solo lectura, contratos
   compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
@@ -981,5 +981,14 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 - Tarea 5.24 completada: el manifiesto versionado de superficie distingue
   workflows directos/legacy de `guided-task-build`, publica capacidades cerradas
   por Web/TUI/CLI y no anuncia diff, comentarios, edición ni QA inexistentes.
-- Siguiente accion: ejecutar Tarea 5.25 como cierre de convergencia; no
-  iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.
+- Tarea 5.25 completada: la convergencia Web/TUI/CLI queda aceptada con
+  manifiesto de superficies, vistas canónicas, fronteras verificadas y
+  compatibilidad de workflows directos. Se corrigieron dos etiquetas Web que
+  el E2E local ya exigía; no se agregaron capacidades de diff, QA ni edición.
+- Evidencia de cierre: `pnpm run format:check`, `pnpm run lint`,
+  `pnpm run typecheck`, `pnpm run test` (95 archivos, 492 tests, 1 omitido),
+  `pnpm run build` y `pnpm run test:web` (2 tests) pasan. La prueba enfocada
+  `guided-task-view`, `web-api-contract`, `cli-tasks`, `tui-guided-tasks` y
+  `workflow-surface-contract` también pasa.
+- Siguiente accion: iniciar Hito 5 (revision de codigo y QA); no ejecutar 5.26
+  ni promover 5.27 sin una decision separada.

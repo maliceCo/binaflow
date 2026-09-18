@@ -1258,10 +1258,7 @@ export function InkShellController({
           return;
         case 'diagnosed':
         case 'use-folder':
-          if (next.overlay === 'none' && next.diagnosis?.configValid) {
-            await loadRuns();
-            await loadGuidedTasks();
-          }
+          if (next.overlay === 'none' && next.diagnosis?.configValid) await loadRuns();
           break;
         case 'open-folder-picker':
         case 'folder-picker-path':
@@ -1289,7 +1286,7 @@ export function InkShellController({
           break;
         }
         case 'open-guided-tasks':
-          if (next.focus === 'guided-tasks') await loadGuidedTasks();
+          if (next.detail === 'guided-tasks') await loadGuidedTasks();
           break;
         case 'open-guided-task': {
           const task = next.guidedTasks?.[next.guidedTaskSelected];
@@ -1299,7 +1296,7 @@ export function InkShellController({
         case 'guided-task-refresh': {
           if (next.detail === 'guided-task' && next.guidedTask)
             await loadGuidedTask(next.guidedTask.id);
-          else if (next.focus === 'guided-tasks') await loadGuidedTasks();
+          else if (next.detail === 'guided-tasks') await loadGuidedTasks();
           break;
         }
         case 'open-bugs':

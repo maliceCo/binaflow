@@ -132,6 +132,20 @@ describe('architecture boundaries', () => {
     expect(storage![0]).not.toMatch(/WorkflowEngine|PiDriver|ResearchPlanBuildCoordinator/);
   });
 
+  it('keeps shared guided task projections at the application boundary', async () => {
+    const webCommand = await readFile(join(root, 'src/cli/commands/web.ts'), 'utf8');
+    const cliTasks = await readFile(join(root, 'src/cli/commands/tasks.ts'), 'utf8');
+    const tuiGuidedTask = await readFile(join(root, 'src/tui/screens/guided-task.tsx'), 'utf8');
+    const clientApi = await readFile(join(root, 'src/web/client/api.ts'), 'utf8');
+    expect(webCommand).toContain('taskViews');
+    expect(webCommand).not.toContain('getTaskDetail');
+    expect(webCommand).not.toContain('getDocument');
+    expect(cliTasks).toContain('listGuidedTaskViews');
+    expect(cliTasks).toContain('getGuidedTaskView');
+    expect(tuiGuidedTask).toContain('GuidedTaskDetailView');
+    expect(clientApi).not.toMatch(/(?:interface|type)\s+Web(?:Task|Message|Source|Execution)/);
+  });
+
   it('keeps browser and HTTP adapters free of storage and Pi details', async () => {
     const files = [
       'src/web/client/App.tsx',

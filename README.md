@@ -37,7 +37,8 @@ New guided tasks use one canonical chain: `TaskContract` ->
 currently creates, prepares, approves, executes, and observes that chain through
 `waiting/changes-review`; change review and guided QA remain future milestones.
 During the convergence phase, TUI and CLI gain read-only listing and inspection,
-not duplicate mutation flows. See the versioned
+not duplicate mutation flows. The application publishes the versioned workflow
+surface manifest used to label direct/legacy and observe-only paths. See the
 [interface capability matrix](docs/interface-capabilities.md).
 
 Existing `plan-build*`, `todo-build-qa`, and `research-plan-build` launch paths

@@ -58,6 +58,13 @@ Durante 5D, TUI y CLI reciben una proyeccion comun para listar e inspeccionar
 tareas guiadas. Esa lectura no permite crear, preparar, aprobar, ejecutar,
 reanudar, cancelar ni revisar una tarea guiada desde esas superficies.
 
+La matriz ejecutable se publica como un manifiesto versionado en
+`src/application/workflow-surface.ts`. `guided-task-build` aparece como
+`operate` en Web y `observe` en TUI/CLI; los workflows directos/legacy aparecen
+como `operate` en CLI/TUI y `unsupported` en Web. El manifiesto solo anuncia
+capacidades implementadas y no convierte una etiqueta de superficie en una
+autorizacion de aplicacion.
+
 ## Capacidad No Disponible
 
 Cuando una interfaz no soporta una operacion debe:

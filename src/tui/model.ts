@@ -138,7 +138,7 @@ export function parsePreparationSynthesis(value: string): PreparationSynthesis |
   };
 }
 
-export type FocusPane = 'workflows' | 'runs' | 'guided-tasks' | 'detail';
+export type FocusPane = 'workflows' | 'runs' | 'detail';
 
 export type Overlay =
   | 'none'
@@ -166,6 +166,7 @@ export type DetailMode =
   | 'review-thread'
   | 'qa-review'
   | 'preparation'
+  | 'guided-tasks'
   | 'guided-task'
   | 'proposal'
   | 'qa-report';
@@ -421,6 +422,7 @@ export type TuiEvent =
   | { type: 'guided-tasks-loaded'; tasks: GuidedTaskSummaryView[] }
   | { type: 'open-guided-tasks' }
   | { type: 'open-guided-task' }
+  | { type: 'guided-tasks-back' }
   | { type: 'guided-task-set'; task: GuidedTaskDetailView }
   | { type: 'guided-task-back' }
   | { type: 'guided-task-refresh' }

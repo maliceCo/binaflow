@@ -19,6 +19,7 @@ import { PreparationScreen } from './screens/preparation.js';
 import { ProposalScreen } from './screens/proposal.js';
 import { QaReportScreen } from './screens/qa-report.js';
 import { GuidedTaskScreen } from './screens/guided-task.js';
+import { GuidedTasksScreen } from './screens/guided-tasks.js';
 
 export interface ShellDetailViewProps {
   colors: boolean;
@@ -203,6 +204,17 @@ export function renderShellDetail({
           value={state.inputValue}
           {...(state.status ? { status: state.status } : {})}
           {...(state.error ? { error: state.error } : {})}
+        />
+      );
+      break;
+    case 'guided-tasks':
+      right = (
+        <GuidedTasksScreen
+          colors={colors}
+          tasks={state.guidedTasks ?? []}
+          selected={state.guidedTaskSelected}
+          offset={state.guidedTaskOffset}
+          visibleRows={Math.max(1, size.rows - 10)}
         />
       );
       break;

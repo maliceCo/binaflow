@@ -24,9 +24,12 @@ inspeccion de solo lectura para tareas guiadas; no crea, prepara, aprueba,
 ejecuta, reanuda, cancela ni revisa esas tareas.
 
 Las capacidades de preparacion, ejecucion y revision descritas en el resto de
-este documento pertenecen a los workflows directos/legacy existentes. Se
-conservan para compatibilidad de ejecucion, historial y recuperacion, pero no son
-una implementacion alternativa de los futuros Hitos 5/6. `legacy` distingue la
+este documento pertenecen a los workflows directos/legacy existentes. El
+manifiesto `src/application/workflow-surface.ts` los etiqueta como `operate`,
+mientras que la pantalla de tarea guiada se anuncia como `observe` y remite a
+Web para mutaciones. Se conservan para compatibilidad de ejecucion, historial y
+recuperacion, pero no son una implementacion alternativa de los futuros Hitos
+5/6. `legacy` distingue la
 ruta de interfaz: no declara obsoletos sus runs, borradores ni artefactos.
 
 Si una accion canonica no esta disponible, la TUI conserva el estado, explica la

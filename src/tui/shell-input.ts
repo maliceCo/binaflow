@@ -372,6 +372,15 @@ export function handleShellInput({
     return;
   }
 
+  if (current.detail === 'guided-tasks') {
+    if (input === 'q' || key.escape) dispatch({ type: 'guided-tasks-back' });
+    else if (input === 'r') dispatch({ type: 'guided-task-refresh' });
+    else if (direction !== 0)
+      dispatch({ type: 'move', direction, visibleRows: Math.max(1, size.rows - 10) });
+    else if (input === '\r' || key.return) dispatch({ type: 'open-guided-task' });
+    return;
+  }
+
   if (current.detail === 'guided-task') {
     if (input === 'q' || key.escape) dispatch({ type: 'guided-task-back' });
     else if (input === 'r') dispatch({ type: 'guided-task-refresh' });
@@ -464,8 +473,6 @@ export function handleShellInput({
   } else if (input === 'n') dispatch({ type: 'new-run' });
   else if (input === 'c') dispatch({ type: 'open-agent-configuration' });
   else if (input === 'w') dispatch({ type: 'open-folder-picker' });
-  else if (input === 'r' && current.focus === 'guided-tasks')
-    dispatch({ type: 'guided-task-refresh' });
   else if (input === 'd' || input === 'r') dispatch({ type: 'refresh-diagnosis' });
   else if (input === 'b') dispatch({ type: 'open-bugs' });
   else if (input === 'g') dispatch({ type: 'open-guided-tasks' });
@@ -475,13 +482,7 @@ export function handleShellInput({
     dispatch({
       type: 'focus-pane',
       pane:
-        current.focus === 'workflows'
-          ? 'runs'
-          : current.focus === 'runs'
-            ? 'guided-tasks'
-            : current.focus === 'guided-tasks'
-              ? 'detail'
-              : 'workflows',
+        current.focus === 'workflows' ? 'runs' : current.focus === 'runs' ? 'detail' : 'workflows',
     });
   } else if (input === 'h') dispatch({ type: 'focus-pane', pane: 'workflows' });
   else if (input === 'l') dispatch({ type: 'focus-pane', pane: 'detail' });
@@ -493,8 +494,6 @@ export function handleShellInput({
     } else if (current.focus === 'runs') {
       const run = current.runs?.[current.runSelected];
       if (run) dispatch({ type: 'open-run', runId: run.id, status: run.status });
-    } else if (current.focus === 'guided-tasks') {
-      dispatch({ type: 'open-guided-task' });
     }
   } else if (input === 'q' || key.escape) dispatch({ type: 'quit' });
 }

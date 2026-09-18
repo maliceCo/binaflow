@@ -47,7 +47,8 @@ describe('guided task TUI state', () => {
     state = reduce(state, { type: 'diagnosed', diagnosis: validDiagnosis() });
     state = reduce(state, { type: 'use-folder' });
     state = reduce(state, { type: 'open-guided-tasks' });
-    expect(state.focus).toBe('guided-tasks');
+    expect(state.focus).toBe('detail');
+    expect(state.detail).toBe('guided-tasks');
     expect(state.status).toContain('Loading guided tasks');
 
     state = reduce(state, { type: 'guided-tasks-loaded', tasks: [summary] });
@@ -61,19 +62,19 @@ describe('guided task TUI state', () => {
     expect(state.guidedTask?.id).toBe('task-1');
 
     state = reduce(state, { type: 'guided-task-back' });
-    expect(state.focus).toBe('guided-tasks');
-    expect(state.detail).toBe('empty');
-    expect(state.guidedTask).toBeUndefined();
+    expect(state.focus).toBe('detail');
+    expect(state.detail).toBe('guided-tasks');
+    expect(state.guidedTask?.id).toBe('task-1');
   });
 
   it('moves guided task selection independently and scrolls its detail', () => {
     let state = reduce(createInitialTuiState(), { type: 'diagnosed', diagnosis: validDiagnosis() });
     state = reduce(state, { type: 'use-folder' });
+    state = reduce(state, { type: 'open-guided-tasks' });
     state = reduce(state, {
       type: 'guided-tasks-loaded',
       tasks: [summary, { ...summary, id: 'task-2' }],
     });
-    state = reduce(state, { type: 'focus-pane', pane: 'guided-tasks' });
     state = reduce(state, { type: 'move', direction: 1, visibleRows: 1 });
     expect(state.guidedTaskSelected).toBe(1);
     state = reduce(state, { type: 'guided-task-set', task: detail });

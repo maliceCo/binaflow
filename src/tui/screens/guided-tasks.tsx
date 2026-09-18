@@ -1,5 +1,5 @@
 import type { GuidedTaskSummaryView } from '../../application/guided-task-view.js';
-import { PaneSection, SafeText, SelectionList } from '../components.js';
+import { SafeText, ScreenFrame, SelectionList } from '../components.js';
 
 export function GuidedTasksScreen({
   colors,
@@ -19,7 +19,13 @@ export function GuidedTasksScreen({
       `${task.id}  ${task.phase}  ${task.readiness}${task.executionRunId ? `  run:${task.executionRunId}` : ''}`,
   );
   return (
-    <PaneSection title="Guided tasks" colors={colors}>
+    <ScreenFrame
+      title="Guided tasks"
+      subtitle="Guided  |  Observe only  |  Use Web for preparation and changes"
+      footer="j/k move | Enter open | r refresh | q back"
+      colors={colors}
+      border={false}
+    >
       {items.length > 0 ? (
         <SelectionList
           items={items}
@@ -30,7 +36,6 @@ export function GuidedTasksScreen({
       ) : (
         <SafeText dimColor>No guided tasks in this workspace.</SafeText>
       )}
-      <SafeText dimColor>Read-only. Use binaflow web for preparation and changes.</SafeText>
-    </PaneSection>
+    </ScreenFrame>
   );
 }

@@ -34,8 +34,10 @@ TUI y CLI solo reciben listado e inspeccion de tareas guiadas. Sus workflows
 directos/legacy siguen compatibles, pero no forman una segunda implementacion
 del flujo canonico.
 
-Los schemas de agente y las vistas de aplicacion son comunes. HTTP v1, CLI
-protocol-v1 y los renderizadores React, Ink y texto conservan contratos propios.
+Los schemas de agente y las vistas de aplicacion son comunes. El manifiesto
+versionado `src/application/workflow-surface.ts` publica el alcance real por
+workflow y superficie sin persistirlo en runs. HTTP v1, CLI protocol-v1 y los
+renderizadores React, Ink y texto conservan contratos propios.
 Una superficie sin una capacidad no avanza esa etapa y dirige al usuario a la
 Web; la matriz no sustituye la autorizacion de aplicacion.
 
