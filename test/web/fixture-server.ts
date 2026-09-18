@@ -26,63 +26,55 @@ export async function startBrowserFixture(): Promise<BrowserFixture> {
       css: readFileSync(resolve('dist/web/styles.css'), 'utf8'),
     },
     api: {
-      taskContracts: {
-        async list() {
+      taskViews: {
+        async listGuidedTaskViews() {
           return {
             items: [
               {
                 id,
-                kind: 'guided-task',
-                workspace: '/workspace',
-                contractVersion: 1,
                 revision: 1,
-                phase: 'exploration',
-                currentBriefId: id,
-                currentPlanId: null,
-                approvedPlanId: null,
-                currentTodoId: null,
-                currentBlockId: null,
-                createdAt: '',
-                updatedAt: '',
+                readiness: 'needs-plan' as const,
+                phase: 'exploration' as const,
+                brief: {
+                  id,
+                  contractId: id,
+                  kind: 'brief' as const,
+                  version: 1,
+                  sourceDocumentId: null,
+                  createdAt: '',
+                },
+                plan: null,
+                approvedPlan: null,
+                todo: null,
               },
             ],
           };
         },
-        async get() {
+        async getGuidedTaskView() {
           return {
-            contract: {
-              id,
-              kind: 'guided-task',
-              workspace: '/workspace',
-              contractVersion: 1,
-              revision: 1,
-              phase: 'exploration',
-              currentBriefId: id,
-              currentPlanId: null,
-              approvedPlanId: null,
-              currentTodoId: null,
-              currentBlockId: null,
-              createdAt: '',
-              updatedAt: '',
-            },
-            readiness: 'needs-plan',
-            currentBrief: {
+            id,
+            revision: 1,
+            readiness: 'needs-plan' as const,
+            phase: 'exploration' as const,
+            brief: {
               id,
               contractId: id,
-              kind: 'brief',
+              kind: 'brief' as const,
               version: 1,
               sourceDocumentId: null,
               createdAt: '',
+              body: { objective: 'Fixture task', conclusions: [], constraints: [], outOfScope: [] },
             },
-            currentPlan: null,
+            plan: null,
             approvedPlan: null,
-            currentTodo: null,
-            approval: null,
-            activeBlock: null,
+            todo: null,
+            createdAt: '',
+            updatedAt: '',
+            contractVersion: 1,
+            actions: { items: [] },
+            preparation: null,
+            execution: null,
           };
-        },
-        async create() {
-          throw new Error('not used');
         },
       },
     },

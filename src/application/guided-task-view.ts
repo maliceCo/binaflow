@@ -110,6 +110,8 @@ export interface GuidedPreparationView {
   lastSequence: number;
   briefConfirmedThroughSequence: number;
   confirmedSourceIds: string[];
+  messagesCompactedThroughSequence: number;
+  sessionRecoveredAt?: string;
   draftBrief?: TaskContractBrief;
   activeOperation: GuidedPreparationOperationView | null;
   planVersion: number | null;
@@ -421,6 +423,10 @@ export async function getGuidedTaskView(
           lastSequence: preparationState.lastSequence,
           briefConfirmedThroughSequence: preparationState.briefConfirmedThroughSequence,
           confirmedSourceIds: [...preparationState.confirmedSourceIds],
+          messagesCompactedThroughSequence: preparationState.messagesCompactedThroughSequence ?? 0,
+          ...(preparationState.sessionRecoveredAt
+            ? { sessionRecoveredAt: preparationState.sessionRecoveredAt }
+            : {}),
           ...(preparationState.draftBrief ? { draftBrief: preparationState.draftBrief } : {}),
           activeOperation: preparationState.activeOperation
             ? toPreparationOperationView(preparationState.activeOperation)

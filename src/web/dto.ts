@@ -1,62 +1,52 @@
 import type { GuidedPreparationRequestRecord } from '../application/guided-preparation.js';
 import type { GuidedExecutionProgress } from '../application/guided-execution.js';
+import type {
+  GuidedExecutionProgressView,
+  GuidedPreparationMessageView,
+  GuidedPreparationOperationView,
+  GuidedPreparationSourceView,
+  GuidedTaskDetailView,
+  GuidedTaskSummaryView,
+} from '../application/guided-task-view.js';
 import type { TaskContractView } from '../application/task-contract.js';
-import type { WebOperationDto, WebTaskDto } from './api-contract.js';
+import type {
+  WebExecutionArtifactDto,
+  WebExecutionProgressDto,
+  WebMessageDto,
+  WebOperationDto,
+  WebTaskDetailDto,
+  WebSourceDto,
+  WebTaskDto,
+  WebTransferDto,
+  WebTransferPreviewDto,
+} from './api-contract.js';
 
-export interface WebExecutionPreviewDto {
-  digest: string;
-  todoFileName: 'TODO.md';
-  gitClean: boolean;
-  blockerCount: number;
-}
+type WebArtifactDto = WebExecutionArtifactDto;
+type WebGuidedExecutionProgressDto = WebExecutionProgressDto;
 
-export interface WebArtifactDto {
-  id: string;
-  runId: string;
-  stepId: string;
-  name: string;
-  kind: 'json' | 'text';
-  mediaType: string;
-  sizeBytes: number;
-}
-
-export interface WebGuidedExecutionProgressDto {
-  runId: string;
-  contractId: string;
-  revision: number;
-  stage: 'execution' | 'changes-review';
-  status: string;
-  phases: Array<{
-    id: string;
-    ordinal: number;
-    title: string;
-    status: string;
-    tasks: Array<{
-      id: string;
-      phaseId: string;
-      ordinal: number;
-      status: string;
-      attempt: number;
-      resultArtifact?: WebArtifactDto;
-      verificationArtifact?: WebArtifactDto;
-    }>;
-    commitSha?: string;
-    noChanges?: boolean;
-  }>;
-  activeBlock: {
-    id: string;
-    revision: number;
-    phaseId: string;
-    taskId?: string;
-    type: string;
-    reason: string;
-    evidence: WebArtifactDto[];
-  } | null;
-  nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
-}
+export type {
+  WebExecutionArtifactDto,
+  WebExecutionPreviewDto,
+  WebExecutionProgressDto,
+  WebExecutionResumePreviewDto,
+  WebTransferDto,
+  WebTransferPreviewDto,
+} from './api-contract.js';
 
 export function toWebGuidedExecutionProgress(
   progress: GuidedExecutionProgress,
+): WebGuidedExecutionProgressDto {
+  return toWebProgress(progress);
+}
+
+export function toWebGuidedExecutionProgressView(
+  progress: GuidedExecutionProgressView,
+): WebGuidedExecutionProgressDto {
+  return toWebProgress(progress);
+}
+
+function toWebProgress(
+  progress: GuidedExecutionProgress | GuidedExecutionProgressView,
 ): WebGuidedExecutionProgressDto {
   return {
     runId: progress.runId,
@@ -98,7 +88,7 @@ export function toWebGuidedExecutionProgress(
   };
 }
 
-function toWebArtifact(reference: import('../core/run.js').ArtifactReference): WebArtifactDto {
+function toWebArtifact(reference: WebExecutionArtifactDto): WebArtifactDto {
   return {
     id: reference.id,
     runId: reference.runId,
@@ -108,26 +98,6 @@ function toWebArtifact(reference: import('../core/run.js').ArtifactReference): W
     mediaType: reference.mediaType,
     sizeBytes: reference.sizeBytes,
   };
-}
-
-export interface WebTransferDto {
-  transferId: string;
-  projectId: string;
-  stage: string;
-  bytesSent: number;
-  bytesReceived: number;
-  totalBytes?: number;
-  packageDigest?: string;
-  errorCode?: string;
-}
-
-export interface WebTransferPreviewDto {
-  transferId: string;
-  requestId: string;
-  projectId: string;
-  blockers: string[];
-  digest?: string;
-  totalBytes?: number;
 }
 
 export function toWebTaskDto(view: TaskContractView): WebTaskDto {
@@ -141,6 +111,81 @@ export function toWebTaskDto(view: TaskContractView): WebTaskDto {
     approvedPlan: view.approvedPlan,
     todo: view.currentTodo,
     ...(view.execution ? { executionRunId: view.execution.runId } : {}),
+  };
+}
+
+export function toWebTaskSummaryDto(view: GuidedTaskSummaryView): WebTaskDto {
+  return {
+    id: view.id,
+    revision: view.revision,
+    readiness: view.readiness,
+    phase: view.phase,
+    brief: view.brief,
+    plan: view.plan,
+    approvedPlan: view.approvedPlan,
+    todo: view.todo,
+    ...(view.executionRunId ? { executionRunId: view.executionRunId } : {}),
+  };
+}
+
+export function toWebTaskDetailDto(view: GuidedTaskDetailView): WebTaskDetailDto {
+  const preparation = view.preparation;
+  return {
+    ...toWebTaskSummaryDto(view),
+    currentBrief: view.brief.body,
+    draftBrief: preparation?.draftBrief ?? view.brief.body,
+    planDocument: view.plan?.body ?? null,
+    briefConfirmedThroughSequence: preparation?.briefConfirmedThroughSequence ?? 0,
+    messagesCompactedThroughSequence: preparation?.messagesCompactedThroughSequence ?? 0,
+    ...(preparation?.sessionRecoveredAt
+      ? { sessionRecoveredAt: preparation.sessionRecoveredAt }
+      : {}),
+    messages: preparation?.messages.items.map(toWebMessageDto) ?? [],
+    sources: preparation?.sources.items.map(toWebSourceDto) ?? [],
+    preparationRevision: preparation?.revision ?? 0,
+    lastSequence: preparation?.lastSequence ?? 0,
+    confirmedSourceIds: preparation?.confirmedSourceIds ?? [],
+    activeOperation: preparation?.activeOperation
+      ? toWebPreparationOperationDto(preparation.activeOperation)
+      : null,
+  };
+}
+
+export function toWebMessageDto(message: GuidedPreparationMessageView): WebMessageDto {
+  return {
+    id: message.id,
+    sequence: message.sequence,
+    role: message.role,
+    content: message.content,
+    createdAt: message.createdAt,
+    ...(message.metadata ? { metadata: message.metadata } : {}),
+  };
+}
+
+export function toWebSourceDto(source: GuidedPreparationSourceView): WebSourceDto {
+  return {
+    id: source.id,
+    sequence: source.sequence,
+    kind: source.kind,
+    url: source.url,
+    title: source.title,
+    excerpt: source.excerpt,
+    ...(source.query === undefined ? {} : { query: source.query }),
+    retrievedAt: source.retrievedAt,
+    truncated: source.truncated,
+  };
+}
+
+function toWebPreparationOperationDto(operation: GuidedPreparationOperationView): WebOperationDto {
+  return {
+    requestId: operation.requestId,
+    operationId: operation.operationId,
+    kind: operation.kind,
+    status: operation.status,
+    ...(operation.errorCode ? { errorCode: operation.errorCode } : {}),
+    ...(operation.publishedDocumentId
+      ? { publishedDocumentId: operation.publishedDocumentId }
+      : {}),
   };
 }
 

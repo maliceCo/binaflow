@@ -693,7 +693,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** probar que servidor y cliente asignan las mismas formas, que los campos requeridos del detail no pueden divergir y que DTOs no contienen paths/secrets; `pnpm exec vitest run test/web-api-contract.test.ts test/web-launcher-contracts.test.ts test/architecture-boundaries.test.ts`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `refactor: share the versioned web api contract`
 
-- [ ] **Tarea 5.21: Hacer que la web consuma la proyeccion de aplicacion**
+- [x] **Tarea 5.21: Hacer que la web consuma la proyeccion de aplicacion**
   - **Archivo:** `src/cli/commands/web.ts`, `src/web/routes.ts`, `src/web/dto.ts`, `src/web/server.ts`; `test/web-local-task-api.test.ts`, `test/web-local-execution-api.test.ts`, `test/web-routes.test.ts`, `test/web-bootstrap.test.ts`.
   - **Funciones:** reemplazar `getTaskDetail` y los mapeos manuales por `listGuidedTaskViews`, `getGuidedTaskView` y `toGuidedExecutionProgressView`; estrechar `WebApiCapabilities` a queries/commands necesarias.
   - **Descripcion:** eliminar de `registerWebCommand` el ensamblado manual de contrato, documentos, preparacion, mensajes y fuentes. Las rutas GET de tareas y los resultados de progreso deben proyectarse desde aplicacion; HTTP conserva envelope, status codes, auth y parsers. POST create/operations/start/resume/cancel sigue delegando a los servicios existentes y proyecta su respuesta comun, sin leer SQLite ni artefactos desde routes. Mantener el modo launcher y el modo por proyecto, incluida la compatibilidad de `browser.e2e.ts` cuando settings/proyecto no estan disponibles.
@@ -842,10 +842,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.20 permanecen completadas;
-  5.21-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. Las Tareas 5.19-5.20 conservan solo lectura y
-  contratos compartidos, sin cambios de schema ni mutaciones nuevas.
+- Estado actualizado para la convergencia: 5.4-5.21 permanecen completadas;
+  5.22-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. Las Tareas 5.19-5.21 conservan solo lectura,
+  contratos compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
   test/cli-protocol.test.ts` paso (16 tests). Los fallos registrados contra
@@ -968,5 +968,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   versionados para servidor y navegador; los aliases legacy conservan nombres y
   los parsers, DTO projections, fetch, CSRF y errores permanecen en sus adapters.
   Se verifican campos de detalle, browser-safety y ausencia de paths/secrets.
-- Siguiente accion: ejecutar Tarea 5.21 solo tras autorizacion del owner; no
+- Tarea 5.21 completada: Web usa `taskViews` de aplicación para listas, detalle,
+  mensajes, fuentes y progreso; se eliminó el ensamblado manual de
+  `registerWebCommand`, se mantuvieron envelopes/auth/CSRF/URLs y el E2E local
+  pasa usando la misma proyección.
+- Siguiente accion: ejecutar Tarea 5.22 solo tras autorizacion del owner; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.

@@ -5,15 +5,13 @@ import type {
   GuidedStartRequest,
 } from '../application/guided-execution.js';
 import type { GuidedPreparationService } from '../application/guided-preparation-operations.js';
+import type { GuidedTaskViewQueries } from '../application/guided-task-view.js';
 import type { TaskContractBrief, TaskContractService } from '../application/task-contract.js';
 import {
   parseWebOperationRequest,
   parseWebTaskCreateRequest,
   type WebApiError,
   type WebApiSuccess,
-  type WebMessageDto,
-  type WebSourceDto,
-  type WebTaskDetailDto,
   WebContractError,
 } from './contracts.js';
 import {
@@ -30,8 +28,13 @@ import type { PairingOffer } from './peer-auth.js';
 import type { ProjectDirectoryListing } from './project-catalog.js';
 import {
   toWebGuidedExecutionProgress,
+  toWebGuidedExecutionProgressView,
+  toWebMessageDto,
   toWebOperationDto,
+  toWebTaskDetailDto,
   toWebTaskDto,
+  toWebTaskSummaryDto,
+  toWebSourceDto,
   toWebTransferDto,
   toWebTransferPreviewDto,
 } from './dto.js';
@@ -105,28 +108,10 @@ export interface WebApiCapabilities {
       projectId?: string,
     ) => Promise<ProjectCatalogEntry>;
   };
-  readonly taskContracts?: Pick<TaskContractService, 'list' | 'get' | 'create'> &
-    Partial<Pick<TaskContractService, 'getDocument'>>;
-  readonly guidedPreparation?: {
-    execute: GuidedPreparationService['execute'];
-    recover?: GuidedPreparationService['recover'];
-    create?: GuidedPreparationService['create'];
-    getState?: GuidedPreparationService['getState'];
-    listMessages?: GuidedPreparationService['listMessages'];
-    listSources?: GuidedPreparationService['listSources'];
-  };
+  readonly taskContracts?: Pick<TaskContractService, 'create'>;
+  readonly taskViews?: GuidedTaskViewQueries;
+  readonly guidedPreparation?: Pick<GuidedPreparationService, 'execute' | 'recover' | 'create'>;
   readonly execution?: WebExecutionCapabilities;
-  readonly getTaskDetail?: (contractId: string) => Promise<WebTaskDetailDto>;
-  readonly listMessages?: (
-    contractId: string,
-    afterSequence?: number,
-    limit?: number,
-  ) => Promise<{ items: WebMessageDto[]; nextCursor?: number }>;
-  readonly listSources?: (
-    contractId: string,
-    afterSequence?: number,
-    limit?: number,
-  ) => Promise<{ items: WebSourceDto[]; nextCursor?: number }>;
 }
 
 export interface WebApiRequest {
@@ -321,11 +306,10 @@ export async function handleWebApi(
       /^\/api\/v1\/tasks\/([^/]+)\/operations\/([^/]+)\/recover$/,
     );
     if (request.method === 'GET' && request.path === '/api/v1/tasks') {
-      if (!api.taskContracts) return unavailable();
-      const result = await api.taskContracts.list({});
-      const items = await Promise.all(result.items.map((item) => api.taskContracts!.get(item.id)));
+      if (!api.taskViews) return unavailable();
+      const result = await api.taskViews.listGuidedTaskViews({});
       return ok(200, {
-        items: items.map(toWebTaskDto),
+        items: result.items.map(toWebTaskSummaryDto),
         nextAfterId: result.nextCursor ?? null,
       });
     }
@@ -344,22 +328,39 @@ export async function handleWebApi(
     }
     const messagesTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/messages$/)?.[1];
     if (messagesTaskId && request.method === 'GET') {
-      if (!api.listMessages) return unavailable();
+      if (!api.taskViews) return unavailable();
       const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
       const limit = parseQueryInteger(request.query?.get('limit'), 50);
-      return ok(200, await api.listMessages(messagesTaskId, afterSequence || undefined, limit));
+      const detail = await api.taskViews.getGuidedTaskView(messagesTaskId, {
+        ...(afterSequence ? { messagesAfterSequence: afterSequence } : {}),
+        limit,
+      });
+      return ok(200, {
+        items: detail.preparation?.messages.items.map(toWebMessageDto) ?? [],
+        ...(detail.preparation?.messages.nextCursor === undefined
+          ? {}
+          : { nextCursor: detail.preparation.messages.nextCursor }),
+      });
     }
     const sourcesTaskId = request.path.match(/^\/api\/v1\/tasks\/([^/]+)\/sources$/)?.[1];
     if (sourcesTaskId && request.method === 'GET') {
-      if (!api.listSources) return unavailable();
+      if (!api.taskViews) return unavailable();
       const afterSequence = parseQueryInteger(request.query?.get('afterSequence'), 0);
       const limit = parseQueryInteger(request.query?.get('limit'), 50);
-      return ok(200, await api.listSources(sourcesTaskId, afterSequence || undefined, limit));
+      const detail = await api.taskViews.getGuidedTaskView(sourcesTaskId, {
+        ...(afterSequence ? { sourcesAfterSequence: afterSequence } : {}),
+        limit,
+      });
+      return ok(200, {
+        items: detail.preparation?.sources.items.map(toWebSourceDto) ?? [],
+        ...(detail.preparation?.sources.nextCursor === undefined
+          ? {}
+          : { nextCursor: detail.preparation.sources.nextCursor }),
+      });
     }
     if (taskId && request.method === 'GET') {
-      if (api.getTaskDetail) return ok(200, await api.getTaskDetail(taskId));
-      if (!api.taskContracts) return unavailable();
-      return ok(200, toWebTaskDto(await api.taskContracts.get(taskId)));
+      if (!api.taskViews) return unavailable();
+      return ok(200, toWebTaskDetailDto(await api.taskViews.getGuidedTaskView(taskId)));
     }
     if (operationTaskId && request.method === 'POST') {
       if (!api.guidedPreparation) return unavailable();
@@ -403,10 +404,9 @@ export async function handleWebApi(
       return ok(202, toWebGuidedExecutionProgress(await api.execution.start(input)));
     }
     if (taskExecutionId && request.method === 'GET') {
-      if (!api.execution) return unavailable();
-      const result = await api.execution.list({ contractId: taskExecutionId, limit: 1 });
-      const progress = result.items[0];
-      return ok(200, progress ? toWebGuidedExecutionProgress(progress) : null);
+      if (!api.taskViews) return unavailable();
+      const detail = await api.taskViews.getGuidedTaskView(taskExecutionId);
+      return ok(200, detail.execution ? toWebGuidedExecutionProgressView(detail.execution) : null);
     }
     const resumePreviewExecutionId = request.path.match(
       /^\/api\/v1\/executions\/([^/]+)\/resume\/preview$/,
