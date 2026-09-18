@@ -790,15 +790,15 @@ ruta valida para una tarea guiada.
 
 ### Convergencia de interfaces - bloquea el inicio del Hito 5
 
-- [ ] Web, TUI y CLI consumen `GuidedTaskView` para observar una tarea guiada.
-- [ ] `src/web/client/api.ts` no redeclara payloads ya definidos por el servidor.
-- [ ] La composicion web no ensambla documentos/preparacion en `commands/web.ts`.
-- [ ] CLI/TUI anuncian y ejecutan solo su alcance real; no ofrecen editor ni
+- [x] Web, TUI y CLI consumen `GuidedTaskView` para observar una tarea guiada.
+- [x] `src/web/client/api.ts` no redeclara payloads ya definidos por el servidor.
+- [x] La composicion web no ensambla documentos/preparacion en `commands/web.ts`.
+- [x] CLI/TUI anuncian y ejecutan solo su alcance real; no ofrecen editor ni
       aprobacion de diff inexistentes.
-- [ ] Workflows directos y runs persistidos conservan compatibilidad; guided task
+- [x] Workflows directos y runs persistidos conservan compatibilidad; guided task
       no se agrega al comando generico `run`.
-- [ ] HTTP v1 y CLI protocol-v1 conservan sus envelopes y campos actuales.
-- [ ] Hito 5 queda obligado a partir de change-set estructurado/versionado en
+- [x] HTTP v1 y CLI protocol-v1 conservan sus envelopes y campos actuales.
+- [x] Hito 5 queda obligado a partir de change-set estructurado/versionado en
       aplicacion, nunca de HTML, ANSI o JSON creado por cada UI.
 
 ### Handoff retenido - importante, no bloquea la aceptacion local
