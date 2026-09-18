@@ -677,7 +677,7 @@ ruta valida para una tarea guiada.
   - **Verificacion:** `pnpm exec prettier --check docs/interface-capabilities.md docs/web-workflow-vision.md docs/tui-experience.md README.md TODO.md`; `git diff --check`.
   - **Commit Msg:** `docs: define canonical workflow surface capabilities`
 
-- [ ] **Tarea 5.19: Crear la proyeccion canonica y segura de tarea guiada**
+- [x] **Tarea 5.19: Crear la proyeccion canonica y segura de tarea guiada**
   - **Archivo:** nuevo `src/application/guided-task-view.ts`; `src/application/service.ts`, `src/application/runtime.ts`, `src/application/operations.ts`; nuevo `test/guided-task-view.test.ts`; ampliar `test/application-runtime.test.ts`, `test/architecture-boundaries.test.ts`.
   - **Funciones:** `listGuidedTaskViews`, `getGuidedTaskView`, `toGuidedExecutionProgressView` y tipos `GuidedTaskSummaryView`, `GuidedTaskDetailView`, `GuidedExecutionProgressView`.
   - **Descripcion:** componer desde los puertos existentes de TaskContract, GuidedPreparation y GuidedExecution una vista de lectura independiente de HTTP/Ink/CLI. El summary contiene ID, revision, readiness, phase, headers documentales y run vinculado. El detail agrega brief/draft, plan, revisiones y secuencias de preparacion, mensajes, fuentes, operacion activa y progreso disponible. Mensajes omiten request interno; fuentes omiten contentHash; operaciones omiten requestHash/owner/profile; artefactos omiten `path`; ningun DTO devuelve workspace, configPath o dataDir. Las consultas usan paginacion/limites existentes, no leen archivos y quedan disponibles tanto en `openApplicationContext` como en `openApplicationStorage` usando el mismo `SqliteRunStore` ya abierto.
@@ -842,9 +842,10 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.17 permanecen completadas;
-  5.18-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. Ninguna tarea nueva fue implementada en esta revision.
+- Estado actualizado para la convergencia: 5.4-5.19 permanecen completadas;
+  5.20-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. La Tarea 5.19 agrega solo proyecciones de lectura,
+  sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
   test/cli-protocol.test.ts` paso (16 tests). Los fallos registrados contra
@@ -959,5 +960,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   la matriz Web/TUI/CLI, el comportamiento ante capacidades ausentes y la
   separacion entre schemas/vistas comunes y contratos de adapter. No cambia
   codigo, protocolos, persistencia ni workflows directos compatibles.
-- Siguiente accion: ejecutar Tarea 5.19 solo tras autorizacion del owner; no
+- Tarea 5.19 completada: `guided-task-view.ts` compone vistas seguras de
+  contratos, preparacion y ejecucion para los contextos completo y storage-only;
+  tests cubren detalle, ausencia de estado, paginacion, contrato desconocido y
+  eliminacion de campos privados. No abre otro lease, agrega SQL ni mutaciones.
+- Siguiente accion: ejecutar Tarea 5.20 solo tras autorizacion del owner; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.

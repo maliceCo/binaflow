@@ -7,6 +7,7 @@ import {
   createRuntimeEventSink,
   MAX_BUFFERED_TEXT_BYTES,
   MAX_BUFFERED_TEXT_EVENTS,
+  openApplicationContext,
   openApplicationStorage,
   openExecutionHost,
 } from '../src/application/runtime.js';
@@ -116,6 +117,23 @@ describe('application capability composition', () => {
     }
   });
 
+  it('composes guided task views in the full application context', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'binaflow-guided-context-'));
+    try {
+      mkdirSync(join(directory, '.binaflow'));
+      writeFileSync(
+        join(directory, '.binaflow', 'config.json'),
+        JSON.stringify({ dataDir: './data', profiles: {} }),
+      );
+      const context = await openApplicationContext('.binaflow/config.json', directory);
+
+      expect(await context.application.listGuidedTaskViews?.()).toEqual({ items: [] });
+      context.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('closes storage resources on the context rather than the query service', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'binaflow-context-'));
     try {
@@ -127,6 +145,7 @@ describe('application capability composition', () => {
       const context = await openApplicationStorage('.binaflow/config.json', directory);
 
       expect(await context.application.listRuns()).toEqual({ runs: [] });
+      expect(await context.application.listGuidedTaskViews?.()).toEqual({ items: [] });
       expect(context.application.taskContracts).toBeDefined();
       expect(context.application.taskContracts).not.toHaveProperty('create');
       expect(context.application.taskContracts).not.toHaveProperty('approvePlan');

@@ -295,6 +295,7 @@ async function openApplicationResources(
     interactivePlanBuildQaCoordinator,
     reviewStore: store,
     preparationStore: store,
+    guidedPreparationStore: store,
     preparationArtifacts: artifacts,
     preparationDriver: driver,
     readPreparationReviewMode: async () =>
@@ -303,6 +304,7 @@ async function openApplicationResources(
     taskContractStore: store,
     taskContractWorkspace: workspace,
     guidedExecution,
+    guidedExecutionStore: store,
     ...(guidedPreparation ? { guidedPreparation } : {}),
     portability: createPortabilityService({
       store,
@@ -364,9 +366,11 @@ export async function openApplicationStorage(
     artifacts,
     taskContractStore: store,
     taskContractWorkspace: realpathSync(cwd),
+    guidedExecutionStore: store,
     ...(qaHistory.enabled ? { qaHistory: store } : {}),
     reviewStore: store,
     preparationStore: store,
+    guidedPreparationStore: store,
     modelDiscovery: { discoverModels: async () => [] },
   });
   let closed = false;

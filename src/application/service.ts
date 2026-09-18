@@ -35,6 +35,14 @@ import {
   type TaskContractOperationsContext,
 } from './task-contract-operations.js';
 import type { TaskContractQueries, TaskContractService } from './task-contract.js';
+import {
+  createGuidedTaskViewContext,
+  createGuidedTaskViewQueries,
+  type GuidedTaskDetailQuery,
+  type GuidedTaskDetailView,
+  type GuidedTaskListQuery,
+  type GuidedTaskSummaryPage,
+} from './guided-task-view.js';
 import { ResearchPlanBuildCoordinator } from './research-plan-build-coordinator.js';
 import { PlanBuildQaCoordinator } from './plan-build-qa-coordinator.js';
 import { TodoBuildQaCoordinator } from './todo-build-qa-coordinator.js';
@@ -171,6 +179,11 @@ export interface ApplicationQueries {
   getPreparationOverview?: (draftId: string) => Promise<PreparationStoredView>;
   taskContracts?: TaskContractQueries;
   taskExecutions?: GuidedExecutionQueries;
+  listGuidedTaskViews?: (query?: GuidedTaskListQuery) => Promise<GuidedTaskSummaryPage>;
+  getGuidedTaskView?: (
+    contractId: string,
+    query?: GuidedTaskDetailQuery,
+  ) => Promise<GuidedTaskDetailView>;
 }
 
 export interface ApplicationCommands {
@@ -240,6 +253,10 @@ export interface CreateApplicationServiceOptions {
   interactivePlanBuildQaCoordinator?: import('./interactive-plan-build-qa-coordinator.js').InteractivePlanBuildQaCoordinator;
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   preparationStore?: import('./ports.js').ApplicationPreparationStore;
+  guidedPreparationStore?: Pick<
+    import('./ports.js').GuidedPreparationStore,
+    'getGuidedPreparation' | 'listGuidedPreparationMessages' | 'listGuidedPreparationSources'
+  >;
   preparationArtifacts?: import('./ports.js').ApplicationPreparationArtifactStore;
   preparationDriver?: import('../core/agent.js').AgentDriver;
   readPreparationReviewMode?: () => Promise<import('../config.js').PreparationReviewMode>;
@@ -247,6 +264,10 @@ export interface CreateApplicationServiceOptions {
   taskContractStore?: ApplicationTaskContractStore;
   taskContractWorkspace?: string;
   guidedExecution?: GuidedExecutionService;
+  guidedExecutionStore?: Pick<
+    import('./ports.js').GuidedExecutionStore,
+    'getGuidedExecution' | 'listGuidedExecutions'
+  >;
   portability?: PortabilityService;
   guidedPreparation?: GuidedPreparationService;
   executionLock?: import('./ports.js').WorkspaceExecutionLock;
@@ -263,9 +284,17 @@ export interface CreateApplicationQueriesOptions {
   qaHistory?: import('./ports.js').ApplicationQaHistoryStore;
   reviewStore?: import('./ports.js').ApplicationReviewStore;
   preparationStore?: import('./ports.js').ApplicationPreparationStore;
+  guidedPreparationStore?: Pick<
+    import('./ports.js').GuidedPreparationStore,
+    'getGuidedPreparation' | 'listGuidedPreparationMessages' | 'listGuidedPreparationSources'
+  >;
   taskContractStore?: ApplicationTaskContractStore;
   taskContractWorkspace?: string;
   guidedExecution?: GuidedExecutionQueries;
+  guidedExecutionStore?: Pick<
+    import('./ports.js').GuidedExecutionStore,
+    'getGuidedExecution' | 'listGuidedExecutions'
+  >;
   modelDiscovery: AgentModelDiscovery;
 }
 
@@ -300,6 +329,21 @@ export function createApplicationQueries(
 
   return {
     ...(taskContext ? { taskContracts: createTaskContractQueries(taskContext) } : {}),
+    ...(taskContext
+      ? createGuidedTaskViewQueries(
+          createGuidedTaskViewContext({
+            taskContractStore: taskContext.store,
+            workspace: taskContext.workspace,
+            ...(options.guidedPreparationStore
+              ? { preparationStore: options.guidedPreparationStore }
+              : {}),
+            ...(options.guidedExecution ? { executionQueries: options.guidedExecution } : {}),
+            ...(options.guidedExecutionStore
+              ? { executionStore: options.guidedExecutionStore }
+              : {}),
+          }),
+        )
+      : {}),
     ...(options.guidedExecution ? { taskExecutions: options.guidedExecution } : {}),
     inspectRun: (runId, inspectionOptions) => inspectRun(context, runId, inspectionOptions),
     getRunView: (runId) => getRunView(context, runId),
