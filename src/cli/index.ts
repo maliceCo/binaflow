@@ -6,6 +6,7 @@ import { isApplicationEntrypoint } from '../application/runtime.js';
 import { registerResumeCommand } from './commands/resume.js';
 import { registerRunCommand } from './commands/run.js';
 import { registerRunsCommand } from './commands/runs.js';
+import { registerTaskCommands } from './commands/tasks.js';
 import { registerShowCommand } from './commands/show.js';
 import { registerApprovalCommands } from './commands/approval.js';
 import { registerUpdateCommand } from './commands/update.js';
@@ -66,6 +67,7 @@ export function createCli(): Command {
 
   registerRunCommand(cli);
   registerRunsCommand(cli);
+  registerTaskCommands(cli);
   registerShowCommand(cli);
   registerResumeCommand(cli);
   registerApprovalCommands(cli);

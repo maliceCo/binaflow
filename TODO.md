@@ -701,7 +701,7 @@ ruta valida para una tarea guiada.
   - **Verificacion / TDD:** afirmar igualdad exacta de payload entre facade y HTTP, compatibilidad sin launcher y ausencia de paths; `pnpm exec vitest run test/web-local-task-api.test.ts test/web-local-execution-api.test.ts test/web-routes.test.ts test/web-bootstrap.test.ts`; `pnpm exec playwright test test/web/browser.e2e.ts --workers=1`; `pnpm run typecheck`; `pnpm run build:web`.
   - **Commit Msg:** `refactor: serve guided tasks from application views`
 
-- [ ] **Tarea 5.22: Exponer inspeccion de tareas guiadas en CLI**
+- [x] **Tarea 5.22: Exponer inspeccion de tareas guiadas en CLI**
   - **Archivo:** nuevo `src/cli/commands/tasks.ts`; `src/cli/index.ts`, `src/cli/protocol.ts`, `src/cli/commands/common.ts`; nuevos `test/cli-tasks.test.ts`; ampliar `test/cli-protocol.test.ts`, `test/cli-output.test.ts`.
   - **Funciones:** `registerTaskCommands`, presentadores humanos `printGuidedTaskList`/`printGuidedTaskDetail`; reutilizar `openStorageContext` y `writeJsonResult`.
   - **Descripcion:** agregar `binaflow tasks` y `binaflow task <id>` como consultas de solo lectura. Modo humano muestra fase, readiness, documentos, ejecucion y proxima limitacion; `--json` envuelve la vista canonica sin recrear DTOs; `--jsonl` se rechaza antes de abrir storage. No crear, preparar, aprobar, iniciar ni editar tareas desde CLI en esta fase. El comando `workflows --json` y todos sus campos/orden permanecen sin cambios para preservar protocol-v1.
@@ -842,9 +842,9 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
 
 ## Registro de planificacion
 
-- Estado actualizado para la convergencia: 5.4-5.21 permanecen completadas;
-  5.22-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
-  retenida y 5.27 diferida. Las Tareas 5.19-5.21 conservan solo lectura,
+- Estado actualizado para la convergencia: 5.4-5.22 permanecen completadas;
+  5.23-5.25 son el siguiente bloque autorizado solo para planificacion, 5.26 queda
+  retenida y 5.27 diferida. Las Tareas 5.19-5.22 conservan solo lectura,
   contratos compartidos y proyecciones, sin cambios de schema ni mutaciones nuevas.
 - Evidencia enfocada de planificacion: `pnpm exec playwright test
   test/web/browser.e2e.ts --workers=1` paso (1 test) y `pnpm exec vitest run
@@ -972,5 +972,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   mensajes, fuentes y progreso; se eliminó el ensamblado manual de
   `registerWebCommand`, se mantuvieron envelopes/auth/CSRF/URLs y el E2E local
   pasa usando la misma proyección.
-- Siguiente accion: ejecutar Tarea 5.22 solo tras autorizacion del owner; no
+- Tarea 5.22 completada: CLI expone `tasks` y `task <id>` en modo humano y
+  JSON versionado, reutiliza `openStorageContext` y las vistas canónicas, y
+  rechaza JSONL antes de abrir storage sin agregar mutaciones guiadas.
+- Siguiente accion: ejecutar Tarea 5.23 solo tras autorizacion del owner; no
   iniciar Hito 5, 5.26 ni 5.27 antes de aceptar la convergencia en 5.25.
