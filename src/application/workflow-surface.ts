@@ -50,11 +50,13 @@ const GUIDED_WEB_CAPABILITIES: WorkflowSurfaceCapability[] = [
   'resume-execution',
   'cancel-execution',
   'view-change-summary',
+  'view-structured-diff',
 ];
 
 const GUIDED_OBSERVATION_CAPABILITIES: WorkflowSurfaceCapability[] = [
   'observe-execution',
   'view-change-summary',
+  'view-structured-diff',
 ];
 
 export function discoverWorkflowSurfaceContracts(): WorkflowSurfaceContract[] {

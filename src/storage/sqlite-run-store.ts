@@ -110,6 +110,7 @@ import {
   type GuidedPreparationSource,
   type GuidedPreparationState,
 } from '../application/guided-preparation.js';
+import { parseChangeSet } from '../application/change-set.js';
 import {
   canonicalizeJson,
   type GuidedExecutionCheckpoint,
@@ -537,14 +538,14 @@ export class SqliteRunStore
     const row = this.database
       .prepare('SELECT progress_json FROM guided_executions WHERE request_id = ?')
       .get(requestId) as { progress_json: string } | undefined;
-    return row ? (JSON.parse(row.progress_json) as GuidedExecutionProgress) : undefined;
+    return row ? this.parseGuidedProgress(row.progress_json) : undefined;
   }
 
   async getGuidedExecution(runId: string): Promise<GuidedExecutionProgress | undefined> {
     const row = this.database
       .prepare('SELECT progress_json FROM guided_executions WHERE run_id = ?')
       .get(runId) as { progress_json: string } | undefined;
-    return row ? (JSON.parse(row.progress_json) as GuidedExecutionProgress) : undefined;
+    return row ? this.parseGuidedProgress(row.progress_json) : undefined;
   }
 
   async listGuidedExecutions(
@@ -568,7 +569,7 @@ export class SqliteRunStore
       ) as Array<{ progress_json: string; run_id: string }>;
     const page = rows.slice(0, limit);
     return {
-      items: page.map((row) => JSON.parse(row.progress_json) as GuidedExecutionProgress),
+      items: page.map((row) => this.parseGuidedProgress(row.progress_json)),
       ...(rows.length > limit ? { nextCursor: page[page.length - 1]!.run_id } : {}),
     };
   }
@@ -4331,7 +4332,13 @@ export class SqliteRunStore
       .prepare('SELECT progress_json FROM guided_executions WHERE run_id = ?')
       .get(runId) as { progress_json: string } | undefined;
     if (!row) throw new TaskContractError('invalid-target', `Unknown guided execution: ${runId}`);
-    return JSON.parse(row.progress_json) as GuidedExecutionProgress;
+    return this.parseGuidedProgress(row.progress_json);
+  }
+
+  private parseGuidedProgress(serialized: string): GuidedExecutionProgress {
+    const progress = JSON.parse(serialized) as GuidedExecutionProgress;
+    if (progress.changeSet) progress.changeSet = parseChangeSet(progress.changeSet);
+    return progress;
   }
 
   private assertGuidedClaimInTransaction(claim: GuidedExecutionClaim): void {

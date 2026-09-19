@@ -1,5 +1,6 @@
 import type { AgentProfile } from '../core/agent-profile.js';
 import type { ArtifactReference, WorkflowRun } from '../core/run.js';
+import { createChangeSet } from './change-set.js';
 import { StepExecutionFailure } from '../core/workflow-runtime.js';
 import type { AgentStep } from '../core/workflow.js';
 import {
@@ -288,11 +289,45 @@ export class GuidedExecutionCoordinator {
       }
     }
 
+    const finalGit = await this.git.inspect(request.snapshot.workspace);
+    let changeSet = progress.changeSet;
+    if (!changeSet && finalGit.head !== request.snapshot.git.head) {
+      try {
+        const files = await this.git.inspectChangeSet(
+          request.snapshot.workspace,
+          request.snapshot.git.head,
+          finalGit.head,
+        );
+        if (files.length > 0) {
+          changeSet = createChangeSet({
+            id: `${request.run.id}-changes-${progress.revision + 1}`,
+            runId: request.run.id,
+            contractId: request.snapshot.contractId,
+            revision: 1,
+            base: { branch: request.snapshot.git.branch, commit: request.snapshot.git.head },
+            result: { branch: finalGit.branch, commit: finalGit.head },
+            files: [...files],
+          });
+        }
+      } catch (error) {
+        return this.block(
+          progress,
+          request.claim,
+          progress.phases[progress.phases.length - 1]?.id ?? 'changes-review',
+          undefined,
+          'change-set-invalid',
+          error instanceof Error ? error.message : String(error),
+          [],
+          finalGit,
+        );
+      }
+    }
     const complete = {
       ...progress,
       stage: 'changes-review' as const,
       status: 'waiting' as const,
       nextAction: 'review-changes' as const,
+      ...(changeSet ? { changeSet } : {}),
     };
     return this.saveProgress(complete, request.claim);
   }

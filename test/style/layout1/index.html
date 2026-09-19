@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Prototipo estático de la interfaz de Binaflow" />
+    <title>Binaflow · Prototipo de tarea</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="demo-banner">
+      <span><i></i> Prototipo estático</span
+      ><small>Los datos son de ejemplo · ninguna acción modifica Binaflow</small>
+    </div>
+    <div class="app-shell">
+      <aside class="task-sidebar">
+        <a class="brand" href="#"
+          ><span class="brand-mark">B</span
+          ><span>Binaflow<small>Workflow workspace</small></span></a
+        >
+        <button class="project-switcher" type="button">
+          <span class="project-icon">B</span
+          ><span><small>Proyecto activo</small><strong>Binaflow app</strong></span
+          ><span class="chevron">⌄</span>
+        </button>
+        <div class="sidebar-heading">
+          <span>Tareas</span><button type="button" aria-label="Crear tarea">+</button>
+        </div>
+        <div class="task-list" role="listbox" aria-label="Tareas del proyecto">
+          <button
+            class="task-item is-selected"
+            type="button"
+            role="option"
+            aria-selected="true"
+            data-title="Mejorar la experiencia de ejecución guiada"
+            data-task="BF-024"
+          >
+            <span class="task-status status-blue"></span
+            ><span
+              ><strong>Mejorar la experiencia de ejecución guiada</strong
+              ><small>Preparación · BF-024</small></span
+            >
+          </button>
+          <button
+            class="task-item"
+            type="button"
+            role="option"
+            aria-selected="false"
+            data-title="Documentar recuperación de ejecuciones"
+            data-task="BF-021"
+          >
+            <span class="task-status status-green"></span
+            ><span
+              ><strong>Documentar recuperación de ejecuciones</strong
+              ><small>Completada · BF-021</small></span
+            >
+          </button>
+          <button
+            class="task-item"
+            type="button"
+            role="option"
+            aria-selected="false"
+            data-title="Revisar perfiles de agentes"
+            data-task="BF-019"
+          >
+            <span class="task-status status-amber"></span
+            ><span
+              ><strong>Revisar perfiles de agentes</strong
+              ><small>Plan aprobado · BF-019</small></span
+            >
+          </button>
+        </div>
+        <nav class="sidebar-nav" aria-label="Navegación secundaria">
+          <a href="#"><span>⌂</span>Inicio</a><a class="is-active" href="#"><span>✓</span>Tareas</a
+          ><a href="#"><span>◇</span>Artefactos</a>
+        </nav>
+        <div class="sidebar-footer">
+          <span class="avatar">CM</span
+          ><span><strong>Carlos M.</strong><small>Workspace local</small></span
+          ><button type="button" aria-label="Más opciones">•••</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="task-header">
+          <div>
+            <p class="breadcrumb">
+              Binaflow app <span>/</span> Tareas <span>/</span> <b id="task-id">BF-024</b>
+            </p>
+            <h1 id="task-title">Mejorar la experiencia de ejecución guiada</h1>
+            <p class="task-subtitle">
+              Una vista para preparar, ejecutar y revisar una tarea sin perder el contexto.
+            </p>
+          </div>
+          <div class="header-meta">
+            <span class="revision">Revisión 4</span
+            ><button class="icon-button" type="button" aria-label="Más opciones">•••</button>
+          </div>
+        </header>
+
+        <div class="workspace-grid">
+          <section class="content-column">
+            <nav class="stage-nav" aria-label="Fases de la tarea">
+              <button
+                class="stage-tab is-active"
+                type="button"
+                data-stage="brief"
+                aria-current="step"
+              >
+                <span>01</span><strong>Brief</strong><small>Preparar</small>
+              </button>
+              <button class="stage-tab" type="button" data-stage="plan">
+                <span>02</span><strong>Plan</strong><small>Proponer</small>
+              </button>
+              <button class="stage-tab" type="button" data-stage="todo">
+                <span>03</span><strong>TODO</strong><small>Organizar</small>
+              </button>
+              <button class="stage-tab" type="button" data-stage="execution">
+                <span>04</span><strong>Ejecución</strong><small>Operar</small>
+              </button>
+              <button class="stage-tab" type="button" data-stage="review">
+                <span>05</span><strong>Cambios</strong><small>Inspeccionar</small>
+              </button>
+            </nav>
+
+            <div class="attention-bar" id="attention-bar">
+              <span class="attention-icon">!</span>
+              <div>
+                <strong id="attention-title">La tarea necesita contexto</strong>
+                <p id="attention-copy">
+                  Responde las preguntas pendientes para completar el brief.
+                </p>
+              </div>
+              <span class="attention-next">Siguiente: <b id="attention-next">responder</b></span>
+            </div>
+
+            <section
+              class="stage-panel is-visible"
+              data-panel="brief"
+              aria-labelledby="brief-heading"
+            >
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Preparación · conversación</p>
+                  <h2 id="brief-heading">Define qué debe conseguir la tarea</h2>
+                  <p>El asistente mantiene un brief estructurado a partir de tus respuestas.</p>
+                </div>
+                <span class="state-pill state-attention">2 preguntas pendientes</span>
+              </header>
+              <div class="brief-layout">
+                <section class="surface conversation">
+                  <header class="surface-heading">
+                    <div class="assistant-mark">B</div>
+                    <div>
+                      <strong>Preparador</strong
+                      ><small>Perfil planner · sesión de preparación</small>
+                    </div>
+                    <span class="connection"><i></i>Sesión activa</span>
+                  </header>
+                  <div class="message-list" aria-live="polite">
+                    <article class="message assistant">
+                      <span class="message-avatar">B</span>
+                      <div>
+                        <p>¿Qué resultado debería producir este cambio?</p>
+                        <time>09:24</time>
+                      </div>
+                    </article>
+                    <article class="message user">
+                      <div>
+                        <p>
+                          Quiero entender qué está haciendo el agente, responder cuando necesite
+                          contexto y revisar el resultado sin ir a la terminal.
+                        </p>
+                        <time>09:26</time>
+                      </div>
+                      <span class="message-avatar user-avatar">CM</span>
+                    </article>
+                    <article class="message assistant">
+                      <span class="message-avatar">B</span>
+                      <div>
+                        <p>¿Qué queda fuera de esta primera versión?</p>
+                        <time>09:26</time>
+                      </div>
+                    </article>
+                  </div>
+                  <form class="composer" data-mock-form>
+                    <label for="message">Tu respuesta</label
+                    ><textarea id="message" placeholder="Escribe el contexto que falta…"></textarea>
+                    <div>
+                      <span>El prototipo no envía mensajes</span
+                      ><button type="button" class="primary-button" data-action="brief-answer">
+                        Añadir respuesta
+                      </button>
+                    </div>
+                  </form>
+                </section>
+                <aside class="surface brief-document">
+                  <header class="surface-heading">
+                    <div class="document-mark">≡</div>
+                    <div>
+                      <strong>Brief borrador</strong><small>Se actualiza con la conversación</small>
+                    </div>
+                    <span class="document-state">Borrador</span>
+                  </header>
+                  <div class="document-content">
+                    <div class="document-field complete">
+                      <span>Objetivo</span>
+                      <p>
+                        Preparar una experiencia web clara para observar y participar en una
+                        ejecución guiada.
+                      </p>
+                    </div>
+                    <div class="document-field complete">
+                      <span>Dentro del alcance</span>
+                      <p>
+                        Progreso, preguntas del asistente, aprobación de checkpoints y revisión de
+                        cambios.
+                      </p>
+                    </div>
+                    <div class="document-field pending">
+                      <span>Restricciones</span>
+                      <p>Aún no definido</p>
+                      <button type="button" data-action="brief-answer">Responder</button>
+                    </div>
+                    <div class="document-field pending">
+                      <span>Criterio de éxito</span>
+                      <p>Aún no definido</p>
+                    </div>
+                  </div>
+                  <footer class="document-footer">
+                    <span>2 de 4 campos definidos</span>
+                    <div class="progress"><i style="width: 50%"></i></div>
+                  </footer>
+                </aside>
+              </div>
+              <footer class="panel-actions">
+                <span>El brief es un borrador hasta confirmarlo explícitamente.</span
+                ><button type="button" class="secondary-button" data-action="confirm-brief">
+                  Confirmar brief
+                </button>
+              </footer>
+            </section>
+
+            <section class="stage-panel" data-panel="plan" aria-labelledby="plan-heading">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Preparación · plan</p>
+                  <h2 id="plan-heading">Revisa el enfoque antes de construir</h2>
+                  <p>
+                    El plan aprobado será la entrada del builder; aprobarlo no inicia la ejecución.
+                  </p>
+                </div>
+                <span class="state-pill state-neutral">Plan v2 disponible</span>
+              </header>
+              <div class="plan-layout">
+                <article class="surface plan-document">
+                  <header class="surface-heading">
+                    <div class="document-mark">P</div>
+                    <div>
+                      <strong>Plan propuesto · versión 2</strong
+                      ><small>Generado desde el brief confirmado</small>
+                    </div>
+                    <span class="document-state">Sin aprobar</span>
+                  </header>
+                  <div class="plan-items">
+                    <article>
+                      <span class="step-number">01</span>
+                      <div>
+                        <h3>Proyectar el estado de la tarea</h3>
+                        <p>
+                          Exponer fase, readiness, documentos, progreso y próxima acción sin filtrar
+                          detalles internos.
+                        </p>
+                        <ul>
+                          <li>Contrato serializable.</li>
+                          <li>Vista segura para Web.</li>
+                        </ul>
+                      </div>
+                    </article>
+                    <article>
+                      <span class="step-number">02</span>
+                      <div>
+                        <h3>Construir la superficie de preparación</h3>
+                        <p>
+                          Conversación, brief, fuentes, plan y TODO en una secuencia comprensible.
+                        </p>
+                        <ul>
+                          <li>Una acción principal por estado.</li>
+                          <li>Estados vacíos y errores explícitos.</li>
+                        </ul>
+                      </div>
+                    </article>
+                    <article>
+                      <span class="step-number">03</span>
+                      <div>
+                        <h3>Conectar ejecución y revisión</h3>
+                        <p>
+                          Mostrar preview, fases, tareas, bloqueos, artefactos y ChangeSet real.
+                        </p>
+                        <ul>
+                          <li>No simular aprobación de cambios.</li>
+                        </ul>
+                      </div>
+                    </article>
+                  </div>
+                </article>
+                <aside class="plan-aside">
+                  <section class="surface decision-card">
+                    <p class="eyebrow">Decisión requerida</p>
+                    <h3>¿Este plan refleja el objetivo?</h3>
+                    <p>Aprobar publica esta versión y habilita la generación del TODO.</p>
+                    <button class="primary-button" type="button" data-action="approve-plan">
+                      Aprobar plan v2</button
+                    ><button class="secondary-button" type="button">Comentar plan</button>
+                  </section>
+                  <section class="surface source-card">
+                    <header class="surface-heading">
+                      <div>
+                        <strong>Fuentes confirmadas</strong
+                        ><small>Evidencia usada por el planner</small>
+                      </div>
+                      <span>2</span>
+                    </header>
+                    <ul>
+                      <li>
+                        <strong>interface-capabilities.md</strong><small>Documento local</small>
+                      </li>
+                      <li><strong>guided-execution.md</strong><small>Documento local</small></li>
+                    </ul>
+                  </section>
+                </aside>
+              </div>
+            </section>
+
+            <section class="stage-panel" data-panel="todo" aria-labelledby="todo-heading">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Preparación · TODO</p>
+                  <h2 id="todo-heading">Comprueba qué se va a ejecutar</h2>
+                  <p>El TODO traduce el plan aprobado a trabajo verificable para el builder.</p>
+                </div>
+                <span class="state-pill state-neutral">6 tareas · versión 1</span>
+              </header>
+              <div class="todo-layout">
+                <section class="surface todo-document">
+                  <header class="surface-heading">
+                    <div>
+                      <strong>TODO de ejecución</strong><small>Ordenado por dependencias</small>
+                    </div>
+                    <span class="document-state">Listo</span>
+                  </header>
+                  <div class="todo-list">
+                    <article>
+                      <span class="todo-check">1</span>
+                      <div>
+                        <strong>Proyectar el estado de la tarea</strong>
+                        <p>Crear la vista segura para fase, readiness y documentos.</p>
+                        <small>Verificación: contrato serializable</small>
+                      </div>
+                      <em>S</em>
+                    </article>
+                    <article>
+                      <span class="todo-check">2</span>
+                      <div>
+                        <strong>Preparar la pantalla de conversación</strong>
+                        <p>Mostrar mensajes, preguntas, fuentes y brief borrador.</p>
+                        <small>Verificación: acciones según estado</small>
+                      </div>
+                      <em>M</em>
+                    </article>
+                    <article>
+                      <span class="todo-check">3</span>
+                      <div>
+                        <strong>Construir plan y TODO</strong>
+                        <p>Presentar versiones, comentarios, aprobación y handoff.</p>
+                        <small>Verificación: no saltar la aprobación</small>
+                      </div>
+                      <em>M</em>
+                    </article>
+                    <article>
+                      <span class="todo-check">4</span>
+                      <div>
+                        <strong>Conectar preview y ejecución</strong>
+                        <p>Mostrar workspace, bloqueos, fases, tareas y artefactos.</p>
+                        <small>Verificación: start una sola vez</small>
+                      </div>
+                      <em>L</em>
+                    </article>
+                    <article>
+                      <span class="todo-check">5</span>
+                      <div>
+                        <strong>Presentar el ChangeSet</strong>
+                        <p>Inspeccionar archivos y hunks al terminar el build.</p>
+                        <small>Verificación: revisión sin inventar decisiones</small>
+                      </div>
+                      <em>M</em>
+                    </article>
+                    <article>
+                      <span class="todo-check">6</span>
+                      <div>
+                        <strong>Proteger estados y recuperación</strong>
+                        <p>Cubrir cancelación, recovery y errores de lifecycle.</p>
+                        <small>Verificación: tests enfocados</small>
+                      </div>
+                      <em>M</em>
+                    </article>
+                  </div>
+                </section>
+                <aside class="surface handoff-card">
+                  <p class="eyebrow">Handoff</p>
+                  <h3>Lo que recibirá el builder</h3>
+                  <dl>
+                    <div>
+                      <dt>Objetivo</dt>
+                      <dd>El objetivo original</dd>
+                    </div>
+                    <div>
+                      <dt>Contexto</dt>
+                      <dd>Brief confirmado</dd>
+                    </div>
+                    <div>
+                      <dt>Entrada</dt>
+                      <dd>Plan aprobado + TODO</dd>
+                    </div>
+                    <div>
+                      <dt>Excluido</dt>
+                      <dd>Transcripción completa</dd>
+                    </div>
+                  </dl>
+                  <p class="muted-note">La ejecución todavía no ha comenzado.</p>
+                  <button class="primary-button" type="button" data-action="preview-execution">
+                    Previsualizar ejecución
+                  </button>
+                </aside>
+              </div>
+            </section>
+
+            <section class="stage-panel" data-panel="execution" aria-labelledby="execution-heading">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Ejecución · guided-task-build</p>
+                  <h2 id="execution-heading">Primero comprueba las condiciones</h2>
+                  <p>La ejecución tiene una previsualización y después un inicio explícito.</p>
+                </div>
+                <span class="state-pill state-neutral" id="execution-state"
+                  >Preview disponible</span
+                >
+              </header>
+              <div class="execution-preview" id="execution-preview">
+                <div class="preview-grid">
+                  <div class="surface preview-check">
+                    <span class="check-icon">✓</span>
+                    <div>
+                      <strong>Workspace</strong>
+                      <p>El workspace está limpio.</p>
+                    </div>
+                  </div>
+                  <div class="surface preview-check">
+                    <span class="check-icon">✓</span>
+                    <div>
+                      <strong>TODO</strong>
+                      <p>Versión 1 aprobada.</p>
+                    </div>
+                  </div>
+                  <div class="surface preview-check">
+                    <span class="check-icon">✓</span>
+                    <div>
+                      <strong>Bloqueos</strong>
+                      <p>No se encontraron bloqueos.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="surface start-card">
+                  <div>
+                    <p class="eyebrow">Run preparado</p>
+                    <h3>La ejecución aún no ha comenzado</h3>
+                    <p>
+                      Al confirmar, Binaflow iniciará guided-task-build una sola vez y mostrará su
+                      progreso.
+                    </p>
+                  </div>
+                  <button class="primary-button" type="button" data-action="start-execution">
+                    Confirmar e iniciar
+                  </button>
+                </div>
+              </div>
+              <div class="execution-running is-hidden" id="execution-running">
+                <div class="surface run-header">
+                  <div>
+                    <span class="running-dot"></span>
+                    <div>
+                      <strong>Run activo · run_9d9b</strong
+                      ><small>El progreso se actualiza mientras el proceso trabaja.</small>
+                    </div>
+                  </div>
+                  <button class="secondary-button" type="button" data-action="cancel-execution">
+                    Solicitar cancelación
+                  </button>
+                </div>
+                <div class="execution-columns">
+                  <section class="surface phase-list">
+                    <header class="surface-heading">
+                      <div><strong>Fases</strong><small>Estado persistido</small></div>
+                      <span>2 / 3</span>
+                    </header>
+                    <article class="phase-row done">
+                      <span>✓</span>
+                      <div><strong>Preparación</strong><small>Completada</small></div>
+                    </article>
+                    <article class="phase-row active">
+                      <span>2</span>
+                      <div><strong>Build</strong><small>En ejecución · 3 de 6 tareas</small></div>
+                    </article>
+                    <article class="phase-row">
+                      <span>3</span>
+                      <div><strong>Verificación</strong><small>Pendiente</small></div>
+                    </article>
+                  </section>
+                  <section class="surface activity-log">
+                    <header class="surface-heading">
+                      <div>
+                        <strong>Actividad normalizada</strong
+                        ><small>Resumen de eventos del driver</small>
+                      </div>
+                    </header>
+                    <ol>
+                      <li>
+                        <time>09:42:01</time>
+                        <div>
+                          <strong>Tarea completada</strong>
+                          <p>Proyección del estado de la tarea.</p>
+                        </div>
+                      </li>
+                      <li>
+                        <time>09:42:08</time>
+                        <div>
+                          <strong>Artefacto persistido</strong>
+                          <p><code>task-view.json</code></p>
+                        </div>
+                      </li>
+                      <li class="current">
+                        <time>09:42:16</time>
+                        <div>
+                          <strong>Tarea en ejecución</strong>
+                          <p>Construyendo la pantalla de preparación…</p>
+                        </div>
+                      </li>
+                    </ol>
+                  </section>
+                </div>
+              </div>
+            </section>
+
+            <section class="stage-panel" data-panel="review" aria-labelledby="review-heading">
+              <header class="panel-heading">
+                <div>
+                  <p class="eyebrow">Ejecución · review-changes</p>
+                  <h2 id="review-heading">Inspecciona los cambios producidos</h2>
+                  <p>El build terminó y la tarea espera revisión del ChangeSet real.</p>
+                </div>
+                <span class="state-pill state-attention">Esperando revisión</span>
+              </header>
+              <div class="review-layout">
+                <section class="surface changeset">
+                  <header class="surface-heading">
+                    <div>
+                      <div class="document-mark">Δ</div>
+                      <div>
+                        <strong>ChangeSet cs_31f2</strong
+                        ><small>Revisión 1 · resultado de guided-task-build</small>
+                      </div>
+                    </div>
+                    <span class="document-state">5 archivos</span>
+                  </header>
+                  <div class="file-tree">
+                    <button type="button" class="file-row is-selected">
+                      <span class="file-kind added">M</span
+                      ><code>src/web/client/TaskExecution.tsx</code><span>+84 −21</span></button
+                    ><button type="button" class="file-row">
+                      <span class="file-kind added">M</span><code>src/web/client/styles.css</code
+                      ><span>+126 −12</span></button
+                    ><button type="button" class="file-row">
+                      <span class="file-kind added">M</span><code>src/web/dto.ts</code
+                      ><span>+38 −8</span></button
+                    ><button type="button" class="file-row">
+                      <span class="file-kind added">M</span
+                      ><code>src/application/guided-task-view.ts</code><span>+42 −0</span></button
+                    ><button type="button" class="file-row">
+                      <span class="file-kind added">M</span
+                      ><code>test/web-local-execution-api.test.ts</code><span>+80 −0</span>
+                    </button>
+                  </div>
+                  <div class="diff-preview">
+                    <p class="diff-title">TaskExecution.tsx · fragmento</p>
+                    <pre><span class="diff-context">  if (!progress) return null;</span>
+<span class="diff-add">+ const nextAction = progress.nextAction;</span>
+<span class="diff-add">+ return &lt;ExecutionState action={nextAction} /&gt;;</span>
+<span class="diff-context">  return &lt;TaskExecution /&gt;;</span></pre>
+                  </div>
+                </section>
+                <aside class="surface review-notice">
+                  <span class="review-icon">i</span>
+                  <h3>La revisión de decisiones aún es manual</h3>
+                  <p>
+                    Esta superficie permite inspeccionar archivos y hunks. Las decisiones
+                    enriquecidas sobre los cambios pertenecen a una capacidad posterior.
+                  </p>
+                  <button class="secondary-button" type="button">Abrir artefacto</button>
+                </aside>
+              </div>
+            </section>
+          </section>
+
+          <aside class="context-panel">
+            <section class="context-card">
+              <p class="eyebrow">Ahora</p>
+              <h2 id="context-title">Completar el brief</h2>
+              <p id="context-copy">
+                La tarea necesita respuestas antes de que pueda generarse un plan.
+              </p>
+              <div class="context-action">
+                <span>Siguiente acción</span
+                ><strong id="context-action">Responder en la conversación</strong>
+              </div>
+            </section>
+            <section class="context-card">
+              <p class="eyebrow">Datos de la tarea</p>
+              <dl class="task-facts">
+                <div>
+                  <dt>Estado</dt>
+                  <dd id="fact-status">needs-brief</dd>
+                </div>
+                <div>
+                  <dt>Revisión</dt>
+                  <dd>4</dd>
+                </div>
+                <div>
+                  <dt>Proyecto</dt>
+                  <dd>Binaflow app</dd>
+                </div>
+                <div>
+                  <dt>Fuentes</dt>
+                  <dd>2 confirmadas</dd>
+                </div>
+              </dl>
+            </section>
+            <details class="context-details">
+              <summary>Qué significa cada fase</summary>
+              <p><strong>Brief:</strong> conversación y evidencia.</p>
+              <p><strong>Plan:</strong> propuesta que requiere aprobación.</p>
+              <p><strong>TODO:</strong> trabajo estructurado.</p>
+              <p><strong>Ejecución:</strong> preview, start y progreso.</p>
+              <p><strong>Cambios:</strong> inspección del ChangeSet.</p>
+            </details>
+          </aside>
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

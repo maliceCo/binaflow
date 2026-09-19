@@ -255,6 +255,13 @@ function fakeGit(): GitWorkspace {
       fingerprint: state(sha),
     }),
     reconcileCommitIntent: async () => ({ commitSha: null, noChanges: true }),
+    inspectChangeSet: async () => [
+      {
+        path: 'one.ts',
+        status: 'modified',
+        hunks: [],
+      },
+    ],
   };
 }
 
@@ -342,5 +349,11 @@ describe('GuidedExecutionCoordinator', () => {
       nextAction: 'review-changes',
     });
     expect(result.phases.every((phase) => phase.status === 'completed')).toBe(true);
+    expect(result.changeSet).toMatchObject({
+      version: 1,
+      status: 'review',
+      runId: run.id,
+      files: [{ path: 'one.ts', status: 'modified' }],
+    });
   });
 });

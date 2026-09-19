@@ -85,6 +85,7 @@ function toWebProgress(
         }
       : null,
     nextAction: progress.nextAction,
+    ...(progress.changeSet ? { changeSet: progress.changeSet } : {}),
   };
 }
 

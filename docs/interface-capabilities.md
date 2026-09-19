@@ -21,7 +21,9 @@ TaskContract
 ejecucion aprobada. `guided-execution` posee el inicio unico, el progreso, la
 cancelacion y la recuperacion de esa ejecucion. Alcanzar
 `waiting/changes-review` indica que las fases de build terminaron y que la tarea
-espera revision; no significa que los cambios o QA esten aprobados.
+espera revision. Cuando hubo cambios, el run conserva un `ChangeSet` de aplicacion
+versionado con archivos y hunks estructurados; no significa que los cambios o QA
+esten aprobados.
 
 `guided-task-build` no es un workflow de lanzamiento libre y no se agrega a
 `binaflow run`. Una interfaz no debe reconstruir esta cadena mediante comandos
@@ -38,21 +40,22 @@ negociacion con el workflow engine.
 - **Pendiente:** reservado para los hitos indicados; no debe presentarse como
   implementado.
 
-| Operacion        | Significado canonico                                                                | Web                                                  | TUI                              | CLI                              |
-| ---------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------- | -------------------------------- |
-| `create`         | Crear un `TaskContract` nuevo para el proyecto activo.                              | Actual                                               | No soportada                     | No soportada                     |
-| `prepare`        | Confirmar brief, conversar, generar/comentar plan y producir TODO.                  | Actual                                               | No soportada                     | No soportada                     |
-| `approve-plan`   | Aprobar explicitamente una version exacta del plan; no inicia por si sola el build. | Actual                                               | No soportada                     | No soportada                     |
-| `execute`        | Previsualizar y arrancar una vez `guided-task-build` mediante `guided-execution`.   | Actual                                               | No soportada                     | No soportada                     |
-| `observe`        | Listar tareas y leer estado, documentos, progreso y artefactos proyectados.         | Actual                                               | 5D lectura                       | 5D lectura                       |
-| `resume/cancel`  | Recuperar una ejecucion admitida o solicitar su cancelacion por el lifecycle comun. | Actual para los estados admitidos                    | No soportada para tareas guiadas | No soportada para tareas guiadas |
-| `review-changes` | Inspeccionar el diff real y registrar decisiones sobre cambios.                     | Pendiente, Hito 5; hoy solo llega a `changes-review` | No soportada                     | No soportada                     |
-| `review-qa`      | Revisar hallazgos QA y autorizar su tratamiento o cierre.                           | Pendiente, Hito 6                                    | No soportada                     | No soportada                     |
+| Operacion        | Significado canonico                                                                | Web                                                | TUI                              | CLI                              |
+| ---------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------- | -------------------------------- |
+| `create`         | Crear un `TaskContract` nuevo para el proyecto activo.                              | Actual                                             | No soportada                     | No soportada                     |
+| `prepare`        | Confirmar brief, conversar, generar/comentar plan y producir TODO.                  | Actual                                             | No soportada                     | No soportada                     |
+| `approve-plan`   | Aprobar explicitamente una version exacta del plan; no inicia por si sola el build. | Actual                                             | No soportada                     | No soportada                     |
+| `execute`        | Previsualizar y arrancar una vez `guided-task-build` mediante `guided-execution`.   | Actual                                             | No soportada                     | No soportada                     |
+| `observe`        | Listar tareas y leer estado, documentos, progreso y artefactos proyectados.         | Actual                                             | 5D lectura                       | 5D lectura                       |
+| `resume/cancel`  | Recuperar una ejecucion admitida o solicitar su cancelacion por el lifecycle comun. | Actual para los estados admitidos                  | No soportada para tareas guiadas | No soportada para tareas guiadas |
+| `review-changes` | Inspeccionar el `ChangeSet` real y registrar decisiones sobre cambios.              | ChangeSet disponible; decisiones ricas posteriores | Lectura estructurada             | Lectura estructurada             |
+| `review-qa`      | Revisar hallazgos QA y autorizar su tratamiento o cierre.                           | Pendiente, Hito 6                                  | No soportada                     | No soportada                     |
 
-La Web es la superficie rica para el flujo canonico. El baseline actual cubre
-creacion, preparacion, aprobacion, ejecucion y observacion hasta que el run queda
-en `waiting/changes-review`. No incluye todavia diff, comentarios por linea,
-editor de codigo ni el flujo QA de los Hitos 5/6.
+La Web es la superficie rica para el flujo canonico. El baseline cubre creacion,
+preparacion, aprobacion, ejecucion y observacion hasta que el run queda en
+`waiting/changes-review`; la revision recibe el mismo `ChangeSet` estructurado que
+CLI y TUI. Comentarios por linea, editor de codigo, aprobacion de cambios y el flujo
+QA de Hito 6 siguen fuera del contrato implementado.
 
 Durante 5D, TUI y CLI reciben una proyeccion comun para listar e inspeccionar
 tareas guiadas. Esa lectura no permite crear, preparar, aprobar, ejecutar,

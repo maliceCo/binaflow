@@ -26,7 +26,7 @@ describe('workflow surface contract', () => {
     expect(discoverWorkflows().some((workflow) => workflow.id === 'guided-task-build')).toBe(false);
   });
 
-  it('declares guided task support without claiming future diff or QA capabilities', () => {
+  it('declares guided task support without claiming future edit or QA capabilities', () => {
     const web = supportForWorkflowSurface('guided-task-build', 'web');
     const cli = supportForWorkflowSurface('guided-task-build', 'cli');
     const tui = supportForWorkflowSurface('guided-task-build', 'tui');
@@ -41,11 +41,15 @@ describe('workflow surface contract', () => {
       'resume-execution',
       'cancel-execution',
       'view-change-summary',
+      'view-structured-diff',
     ]);
     expect(cli).toMatchObject({ mode: 'observe' });
     expect(tui).toMatchObject({ mode: 'observe' });
-    expect(cli?.capabilities).toEqual(['observe-execution', 'view-change-summary']);
-    expect(web?.capabilities).not.toContain('view-structured-diff');
+    expect(cli?.capabilities).toEqual([
+      'observe-execution',
+      'view-change-summary',
+      'view-structured-diff',
+    ]);
     expect(web?.capabilities).not.toContain('approve-changes');
     expect(supportForWorkflowSurface('unknown', 'web')).toBeUndefined();
   });

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binaflow · Layout 3 · Atención</title>
+    <link rel="stylesheet" href="../shared.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body class="prototype-shell">
+    <header class="topbar">
+      <a class="topbar-brand" href="../index.html"
+        ><span class="brand-mark">B</span
+        ><span>Binaflow<small>Exploración · Layout 3</small></span></a
+      >
+      <nav class="topbar-links">
+        <a href="../layout1/index.html">Layout 1</a><a href="../layout2/index.html">Layout 2</a
+        ><a href="../index.html">Comparar</a>
+      </nav>
+    </header>
+    <div class="scenario-bar">
+      <strong>Escenario de demostración</strong>
+      <div class="scenario-buttons" role="group" aria-label="Escenario de demostración">
+        <button class="is-active" data-scenario="brief">Brief incompleto</button
+        ><button data-scenario="plan">Plan pendiente</button
+        ><button data-scenario="blocked">Preview bloqueado</button
+        ><button data-scenario="changes">Cambios para inspeccionar</button>
+      </div>
+    </div>
+    <main class="prototype-content">
+      <header class="task-heading">
+        <div>
+          <p class="task-id">BF-024 · Binaflow app</p>
+          <h1>Mejorar la experiencia de ejecución guiada</h1>
+          <p>
+            Una pantalla centrada en la próxima decisión, con documentos disponibles como apoyo.
+          </p>
+        </div>
+        <span class="revision">Revisión 4</span>
+      </header>
+      <div class="focus-layout">
+        <div class="focus-main">
+          <section class="surface focus-card">
+            <p class="eyebrow" id="focus-eyebrow">Necesita tu atención · preparación</p>
+            <h2 id="focus-title">Completa el contexto antes de generar un plan</h2>
+            <p id="focus-copy">
+              Hay dos campos del brief pendientes. Responderlos mantiene la intención original de la
+              tarea y permite que el planner proponga un plan.
+            </p>
+            <div class="scenario-detail is-visible" data-detail="brief">
+              <strong>Pregunta siguiente</strong>
+              <p>¿Qué queda fuera de esta primera versión?</p>
+            </div>
+            <div class="scenario-detail" data-detail="plan">
+              <strong>Decisión siguiente</strong>
+              <p>Revisa la propuesta y aprueba exactamente la versión 2 si refleja el objetivo.</p>
+            </div>
+            <div class="scenario-detail" data-detail="blocked">
+              <strong>Bloqueo encontrado</strong>
+              <p>
+                El workspace no está limpio. La ejecución no puede iniciar hasta resolver esta
+                condición.
+              </p>
+            </div>
+            <div class="scenario-detail" data-detail="changes">
+              <strong>Resultado disponible</strong>
+              <p>
+                Selecciona un archivo debajo para inspeccionar el ChangeSet producido por el build.
+              </p>
+            </div>
+            <div class="focus-support">
+              <span class="note" id="focus-note"
+                >La confirmación del brief todavía no está disponible.</span
+              ><button class="primary" data-demo-action="primary" id="focus-action">
+                Responder en la conversación
+              </button>
+            </div>
+          </section>
+          <section class="surface support-area">
+            <nav class="support-tabs" aria-label="Información de apoyo">
+              <button class="is-active" data-support="brief">Brief</button
+              ><button data-support="plan">Plan</button><button data-support="todo">TODO</button
+              ><button data-support="activity">Actividad</button
+              ><button data-support="changes">Cambios</button>
+            </nav>
+            <article class="support-panel is-visible" data-support-panel="brief">
+              <h3>Brief actual</h3>
+              <p>
+                Objetivo: crear una experiencia clara para observar y participar en una ejecución
+                guiada.
+              </p>
+              <div class="mini-block">
+                <h3>Contexto pendiente</h3>
+                <p>Restricciones y criterio de éxito aún necesitan una respuesta.</p>
+              </div>
+            </article>
+            <article class="support-panel" data-support-panel="plan">
+              <h3>Plan propuesto · versión 2</h3>
+              <p>
+                El planner propone proyectar el estado, construir la preparación guiada y conectar
+                el ChangeSet.
+              </p>
+              <button class="secondary" data-demo-action="comment">
+                Consultar versión completa
+              </button>
+            </article>
+            <article class="support-panel" data-support-panel="todo">
+              <h3>TODO preparado</h3>
+              <p>
+                6 tareas ordenadas por dependencia. El builder recibirá el objetivo original, el
+                brief confirmado y el plan aprobado.
+              </p>
+              <div class="mini-block">
+                <h3>Handoff</h3>
+                <p>La transcripción completa no se envía como entrada por defecto.</p>
+              </div>
+            </article>
+            <article class="support-panel" data-support-panel="activity">
+              <h3>Actividad relevante</h3>
+              <ol class="activity-list">
+                <li>
+                  <time>09:24</time>
+                  <div>
+                    <strong>Pregunta del preparador</strong
+                    ><small>Se solicita el alcance de la primera versión.</small>
+                  </div>
+                </li>
+                <li>
+                  <time>09:26</time>
+                  <div>
+                    <strong>Brief actualizado</strong
+                    ><small>El objetivo y el alcance fueron definidos.</small>
+                  </div>
+                </li>
+                <li>
+                  <time>09:31</time>
+                  <div>
+                    <strong>Plan v2 generado</strong
+                    ><small>Disponible para revisión explícita.</small>
+                  </div>
+                </li>
+              </ol>
+            </article>
+            <article class="support-panel" data-support-panel="changes">
+              <h3>ChangeSet disponible</h3>
+              <p>
+                La tarea está en `waiting/changes-review`. Consultar cambios no aprueba ni cierra la
+                tarea.
+              </p>
+              <div class="file-pick">
+                <button class="is-selected" data-file="TaskExecution.tsx">
+                  TaskExecution.tsx <span>+84 −21</span></button
+                ><button data-file="styles.css">styles.css <span>+126 −12</span></button
+                ><button data-file="guided-task-view.ts">
+                  guided-task-view.ts <span>+42 −0</span>
+                </button>
+              </div>
+              <pre class="diff-box" id="diff-detail">
+TaskExecution.tsx\n+ const nextAction = progress.nextAction;</pre>
+            </article>
+          </section>
+        </div>
+        <aside class="focus-side">
+          <section class="surface side-card">
+            <p class="eyebrow">Estado resumido</p>
+            <h3 id="state-label">needs-brief</h3>
+            <dl class="fact-list">
+              <div>
+                <dt>Proyecto</dt>
+                <dd>Binaflow app</dd>
+              </div>
+              <div>
+                <dt>Revisión</dt>
+                <dd>4</dd>
+              </div>
+              <div>
+                <dt>Fuentes</dt>
+                <dd>2 confirmadas</dd>
+              </div>
+            </dl>
+          </section>
+          <details class="surface side-card">
+            <summary class="eyebrow">Contexto de la tarea</summary>
+            <p>
+              TaskContract, documentos versionados y estado persistido. Esta información no cambia
+              por consultar las pestañas.
+            </p>
+          </details>
+        </aside>
+      </div>
+    </main>
+    <div class="toast" id="toast" role="status"></div>
+  </body>
+</html>

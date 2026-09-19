@@ -42,6 +42,21 @@ export {
   type WorkflowContract,
 } from './workflow-operations.js';
 export {
+  CHANGE_SET_VERSION,
+  ChangeSetContractError,
+  createChangeSet,
+  parseChangeSet,
+  transitionChangeSet,
+  type ChangeSet,
+  type ChangeSetCommit,
+  type ChangeSetFile,
+  type ChangeSetFileStatus,
+  type ChangeSetHunk,
+  type ChangeSetLine,
+  type ChangeSetLineKind,
+  type ChangeSetStatus,
+} from './change-set.js';
+export {
   WORKFLOW_SURFACE_CONTRACT_VERSION,
   discoverWorkflowSurfaceContracts,
   supportForWorkflowSurface,

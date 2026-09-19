@@ -111,6 +111,24 @@ describe('LocalGitWorkspace', () => {
     expect(commit.fingerprint.clean).toBe(true);
   });
 
+  it('builds a structured change set from two commits', async () => {
+    const directory = await repository();
+    const workspace = new LocalGitWorkspace();
+    const base = (await workspace.inspect(directory)).head;
+    await writeFile(join(directory, 'change.txt'), 'one\ntwo\n');
+    await git(directory, 'add', '--', 'change.txt');
+    await git(directory, 'commit', '-m', 'change');
+    const result = (await workspace.inspect(directory)).head;
+
+    const files = await workspace.inspectChangeSet(directory, base, result);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({ path: 'change.txt', status: 'added' });
+    expect(files[0]?.hunks[0]?.lines).toEqual([
+      { kind: 'addition', text: 'one', newLine: 1 },
+      { kind: 'addition', text: 'two', newLine: 2 },
+    ]);
+  });
+
   it('reports no changes and reconciles a commit already created from the intent', async () => {
     const directory = await repository();
     const workspace = new LocalGitWorkspace();

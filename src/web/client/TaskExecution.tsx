@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import type { ChangeSet } from '../api-contract.js';
 import type {
   ApiClient,
   ExecutionPreview,
@@ -228,10 +229,10 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
           {progress.nextAction === 'review-changes' && (
             <>
               <p>Execution is waiting for changes review.</p>
-              {resumePreview?.allowedDecisions.includes('continue') && (
-                <button type="button" onClick={() => void resume('continue')} disabled={busy}>
-                  Finish review
-                </button>
+              {progress.changeSet ? (
+                <ChangeSetReview changeSet={progress.changeSet} />
+              ) : (
+                <p>No file changes were produced.</p>
               )}
             </>
           )}
@@ -249,6 +250,34 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
           {error}
         </p>
       )}
+    </section>
+  );
+}
+
+function ChangeSetReview(props: { changeSet: ChangeSet }): ReactElement {
+  return (
+    <section aria-label="Changes review">
+      <p>
+        Change set {props.changeSet.id}, revision {props.changeSet.revision} (
+        {props.changeSet.status})
+      </p>
+      <ul>
+        {props.changeSet.files.map((file) => (
+          <li key={`${file.oldPath ?? ''}:${file.path}`}>
+            <strong>{file.path}</strong> ({file.status}){file.binary ? <span> binary</span> : null}
+            {file.hunks.map((hunk) => (
+              <pre key={`${file.path}:${hunk.oldStart}:${hunk.newStart}`}>
+                {hunk.lines
+                  .map(
+                    (line) =>
+                      `${line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : ' '}${line.text}`,
+                  )
+                  .join('\n')}
+              </pre>
+            ))}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

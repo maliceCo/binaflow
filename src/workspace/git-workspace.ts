@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
+import type { ChangeSetFile, ChangeSetHunk, ChangeSetLine } from '../application/change-set.js';
 import type {
   GuidedCommitInspection,
   GuidedExecutionCommitIntent,
@@ -134,6 +135,36 @@ export class LocalGitWorkspace implements GitWorkspace {
     return (await this.git(root, ['rev-parse', 'HEAD'])).trim();
   }
 
+  async inspectChangeSet(
+    workspace: string,
+    baseCommit: string,
+    resultCommit: string,
+  ): Promise<readonly ChangeSetFile[]> {
+    const root = await this.repositoryRoot(workspace);
+    const statuses = parseNameStatuses(
+      await this.git(root, [
+        'diff',
+        '--name-status',
+        '-z',
+        '--find-renames',
+        baseCommit,
+        resultCommit,
+        '--',
+      ]),
+    );
+    const patch = await this.git(root, [
+      'diff',
+      '--no-ext-diff',
+      '--no-color',
+      '--find-renames',
+      '--unified=3',
+      baseCommit,
+      resultCommit,
+      '--',
+    ]);
+    return parsePatch(patch, statuses);
+  }
+
   async inspectCommit(workspace: string, commitSha: string): Promise<GuidedCommitInspection> {
     const root = await this.repositoryRoot(workspace);
     const sha = await this.git(root, ['rev-parse', '--verify', `${commitSha}^{commit}`]);
@@ -256,6 +287,114 @@ export class LocalGitWorkspace implements GitWorkspace {
 
 function isBinaflowPath(path: string): boolean {
   return path === '.binaflow' || path.startsWith('.binaflow/');
+}
+
+type NameStatus = {
+  path: string;
+  oldPath?: string;
+  status: ChangeSetFile['status'];
+};
+
+function parseNameStatuses(output: string): NameStatus[] {
+  const records = output.split('\0').filter(Boolean);
+  const result: NameStatus[] = [];
+  for (let index = 0; index < records.length; index += 2) {
+    const code = records[index] ?? '';
+    const firstPath = records[index + 1];
+    if (!firstPath) continue;
+    const kind = code[0];
+    if (kind === 'R' || kind === 'C') {
+      const nextPath = records[index + 2];
+      index += 1;
+      if (!nextPath || isBinaflowPath(nextPath) || isBinaflowPath(firstPath)) continue;
+      result.push({ path: nextPath, oldPath: firstPath, status: 'renamed' });
+      continue;
+    }
+    const status: ChangeSetFile['status'] =
+      kind === 'A' ? 'added' : kind === 'D' ? 'deleted' : 'modified';
+    if (!isBinaflowPath(firstPath)) result.push({ path: firstPath, status });
+  }
+  return result;
+}
+
+function parsePatch(patch: string, statuses: readonly NameStatus[]): ChangeSetFile[] {
+  const result: ChangeSetFile[] = [];
+  const sections = patch.split(/^diff --git /m).slice(1);
+  for (const section of sections) {
+    const lines = section.split('\n');
+    const oldPath = patchPath(lines.find((line) => line.startsWith('--- '))?.slice(4), 'a/');
+    const newPath = patchPath(lines.find((line) => line.startsWith('+++ '))?.slice(4), 'b/');
+    const path = newPath ?? oldPath;
+    if (!path || isBinaflowPath(path)) continue;
+    const status = statuses.find((item) => item.path === path || item.oldPath === oldPath);
+    if (!status) continue;
+    const hunks: ChangeSetHunk[] = [];
+    let current: ChangeSetHunk | undefined;
+    let oldLine = 0;
+    let newLine = 0;
+    for (const line of lines) {
+      const header = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+      if (header) {
+        current = {
+          oldStart: Number(header[1]),
+          oldLines: Number(header[2] ?? 1),
+          newStart: Number(header[3]),
+          newLines: Number(header[4] ?? 1),
+          lines: [],
+        };
+        hunks.push(current);
+        oldLine = current.oldStart;
+        newLine = current.newStart;
+        continue;
+      }
+      if (!current || line.startsWith('\\ No newline at end of file')) continue;
+      const kind = line[0];
+      if (kind === ' ' || kind === '+' || kind === '-') {
+        const diffLine: ChangeSetLine = {
+          kind: kind === ' ' ? 'context' : kind === '+' ? 'addition' : 'deletion',
+          text: line.slice(1),
+          ...(kind === '+' || kind === ' ' ? { newLine } : {}),
+          ...(kind === '-' || kind === ' ' ? { oldLine } : {}),
+        };
+        current.lines.push(diffLine);
+        if (kind !== '+') oldLine += 1;
+        if (kind !== '-') newLine += 1;
+      }
+    }
+    result.push({
+      path,
+      status: status.status,
+      ...(status.oldPath ? { oldPath: status.oldPath } : {}),
+      ...(lines.some((line) => line.startsWith('Binary files ')) ? { binary: true } : {}),
+      hunks,
+    });
+  }
+  for (const status of statuses) {
+    if (!result.some((file) => file.path === status.path)) {
+      result.push({
+        path: status.path,
+        status: status.status,
+        ...(status.oldPath ? { oldPath: status.oldPath } : {}),
+        binary: true,
+        hunks: [],
+      });
+    }
+  }
+  return result.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function patchPath(value: string | undefined, prefix: string): string | undefined {
+  if (!value || value === '/dev/null') return undefined;
+  const unquoted = value.startsWith('"') ? unquoteGitPath(value) : value;
+  return unquoted.startsWith(prefix) ? unquoted.slice(prefix.length) : unquoted;
+}
+
+function unquoteGitPath(value: string): string {
+  try {
+    return JSON.parse(value) as string;
+  } catch {
+    return value.slice(1, -1);
+  }
 }
 
 async function fileHash(root: string, path: string): Promise<string | null> {

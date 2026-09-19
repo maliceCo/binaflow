@@ -33,6 +33,7 @@ import type {
   UpdatePreparationRequest,
   UpdatePreparationSynthesisRequest,
 } from './preparation.js';
+import type { ChangeSetFile } from './change-set.js';
 import type {
   GuidedExecutionCheckpoint,
   GuidedExecutionClaim,
@@ -142,6 +143,11 @@ export interface GitWorkspace {
     workspace: string,
     intent: GuidedExecutionCommitIntent,
   ): Promise<{ commitSha: string | null; noChanges: boolean }>;
+  inspectChangeSet(
+    workspace: string,
+    baseCommit: string,
+    resultCommit: string,
+  ): Promise<readonly ChangeSetFile[]>;
 }
 
 export interface WorkspaceExecutionLock {

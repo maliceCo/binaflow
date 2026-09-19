@@ -1,3 +1,4 @@
+import type { ChangeSet } from '../application/change-set.js';
 import type {
   GuidedPreparationOperationRequest,
   GuidedPreparationRequestStatus,
@@ -8,6 +9,8 @@ import type {
   TaskContractPlan,
   TaskContractReadiness,
 } from '../application/task-contract.js';
+
+export type { ChangeSet } from '../application/change-set.js';
 
 export const WEB_API_VERSION = 1 as const;
 
@@ -257,6 +260,7 @@ export interface WebExecutionProgressDto {
     evidence: WebExecutionArtifactDto[];
   } | null;
   nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
+  changeSet?: ChangeSet;
 }
 
 export interface WebSettingsUpdateDto {

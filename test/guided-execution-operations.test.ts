@@ -72,6 +72,7 @@ function git(): GitWorkspace {
       fingerprint: state,
     }),
     reconcileCommitIntent: async () => ({ commitSha: null, noChanges: true }),
+    inspectChangeSet: async () => [],
   };
 }
 

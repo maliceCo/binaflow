@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Binaflow · Layout 2 · Expediente</title>
+    <link rel="stylesheet" href="../shared.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body class="prototype-shell">
+    <header class="topbar">
+      <a class="topbar-brand" href="../index.html"
+        ><span class="brand-mark">B</span
+        ><span>Binaflow<small>Exploración · Layout 2</small></span></a
+      >
+      <nav class="topbar-links">
+        <a href="../layout1/index.html">Layout 1</a><a href="../layout3/index.html">Layout 3</a
+        ><a href="../index.html">Comparar</a>
+      </nav>
+    </header>
+    <div class="scenario-bar">
+      <strong>Escenario de demostración</strong>
+      <div class="scenario-buttons" role="group" aria-label="Escenario de demostración">
+        <button class="is-active" data-scenario="brief">Brief incompleto</button
+        ><button data-scenario="plan">Plan pendiente</button
+        ><button data-scenario="blocked">Preview bloqueado</button
+        ><button data-scenario="changes">Cambios para inspeccionar</button>
+      </div>
+    </div>
+    <main class="prototype-content">
+      <header class="task-heading">
+        <div>
+          <p class="task-id">BF-024 · Binaflow app</p>
+          <h1>Mejorar la experiencia de ejecución guiada</h1>
+          <p>Expediente completo de la tarea: contexto, decisiones, trabajo y resultado.</p>
+        </div>
+        <span class="revision">Revisión 4</span>
+      </header>
+      <div class="scenario-callout" id="scenario-callout">
+        <strong id="scenario-title">La preparación necesita dos respuestas</strong>
+        <p id="scenario-copy">
+          El brief sigue siendo un borrador. La pregunta pendiente explica por qué el plan todavía
+          no está disponible.
+        </p>
+      </div>
+      <div class="document-layout">
+        <nav class="document-index" aria-label="Índice del expediente">
+          <p>En este expediente</p>
+          <button class="is-active" data-scroll="summary">Resumen</button
+          ><button data-scroll="brief">Brief</button><button data-scroll="plan">Plan</button
+          ><button data-scroll="todo">TODO</button><button data-scroll="execution">Ejecución</button
+          ><button data-scroll="changes">Cambios</button>
+        </nav>
+        <div class="document-flow">
+          <section class="surface dossier-section" id="summary">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">Contexto de la tarea</p>
+                <h2>Resumen</h2>
+                <p>
+                  Una lectura continua, sin separar el estado de los documentos que lo explican.
+                </p>
+              </div>
+              <span class="status-chip" id="summary-status">needs-brief</span>
+            </header>
+            <div class="dossier-body">
+              <div class="two-columns">
+                <div class="mini-block">
+                  <h3>Objetivo</h3>
+                  <p>
+                    Entender y mejorar cómo una persona prepara, ejecuta y revisa una tarea guiada.
+                  </p>
+                </div>
+                <div class="mini-block">
+                  <h3>Superficie rica</h3>
+                  <p>La Web soporta preparación, aprobación, ejecución, observación y ChangeSet.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="surface dossier-section" id="brief">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">01 · Preparación</p>
+                <h2>Brief</h2>
+                <p>El contexto original y las preguntas que aún debe responder la persona.</p>
+              </div>
+              <span class="status-chip">Borrador</span>
+            </header>
+            <div class="dossier-body">
+              <div class="question">
+                <strong>Pregunta pendiente</strong>
+                <p id="brief-question">¿Qué queda fuera de esta primera versión?</p>
+              </div>
+              <div class="two-columns" style="margin-top: 14px">
+                <div class="mini-block">
+                  <h3>Objetivo confirmado</h3>
+                  <p>
+                    Crear una experiencia clara para observar y participar en una ejecución guiada.
+                  </p>
+                </div>
+                <div class="mini-block">
+                  <h3>Restricciones</h3>
+                  <p>Aún no definido. No se puede confirmar el brief todavía.</p>
+                </div>
+              </div>
+            </div>
+            <footer class="action-row">
+              <span class="note">Responder no inicia ninguna ejecución.</span
+              ><button class="primary" data-demo-action="answer">Escribir respuesta</button>
+            </footer>
+          </section>
+          <section class="surface dossier-section" id="plan">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">02 · Decisión</p>
+                <h2>Plan propuesto</h2>
+                <p>Una versión concreta que requiere aprobación explícita.</p>
+              </div>
+              <span class="status-chip">v2 · sin aprobar</span>
+            </header>
+            <div class="dossier-body">
+              <div class="plan-step">
+                <span class="step-number">01</span>
+                <div>
+                  <h3>Proyectar estado y readiness</h3>
+                  <p>
+                    Exponer fase, documentos, progreso y próxima acción sin filtrar detalles
+                    internos.
+                  </p>
+                </div>
+              </div>
+              <div class="plan-step">
+                <span class="step-number">02</span>
+                <div>
+                  <h3>Construir preparación guiada</h3>
+                  <p>
+                    Presentar conversación, brief, fuentes, plan y TODO en una secuencia
+                    comprensible.
+                  </p>
+                </div>
+              </div>
+              <div class="plan-step">
+                <span class="step-number">03</span>
+                <div>
+                  <h3>Conectar ejecución y ChangeSet</h3>
+                  <p>Mostrar preview, progreso, artefactos y cambios reales al terminar.</p>
+                </div>
+              </div>
+            </div>
+            <footer class="action-row">
+              <span class="note">Aprobar el plan no inicia el build.</span
+              ><button class="primary" data-demo-action="approve">Aprobar plan v2</button>
+            </footer>
+          </section>
+          <section class="surface dossier-section" id="todo">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">03 · Handoff</p>
+                <h2>TODO</h2>
+                <p>Trabajo estructurado que recibirá el builder después de aprobar el plan.</p>
+              </div>
+              <span class="status-chip">6 tareas · v1</span>
+            </header>
+            <div class="dossier-body">
+              <ul class="document-list">
+                <li>
+                  <span>Proyectar el estado de la tarea</span><small>Verificar contrato</small>
+                </li>
+                <li><span>Preparar conversación y brief</span><small>Verificar acciones</small></li>
+                <li><span>Construir plan y TODO</span><small>Verificar aprobación</small></li>
+                <li>
+                  <span>Conectar preview y ejecución</span><small>Verificar start único</small>
+                </li>
+                <li><span>Presentar el ChangeSet</span><small>Verificar inspección</small></li>
+              </ul>
+            </div>
+          </section>
+          <section class="surface dossier-section" id="execution">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">04 · Operación</p>
+                <h2>Ejecución</h2>
+                <p>Preview, inicio único y progreso persistido por fases.</p>
+              </div>
+              <span class="status-chip" id="execution-status">Preview</span>
+            </header>
+            <div class="dossier-body">
+              <div class="two-columns">
+                <div class="mini-block">
+                  <h3>Workspace</h3>
+                  <p id="workspace-state">Listo para comprobar.</p>
+                </div>
+                <div class="mini-block">
+                  <h3>Fases</h3>
+                  <p>Preparación · Build · Verificación</p>
+                </div>
+              </div>
+            </div>
+            <footer class="action-row">
+              <span class="note" id="execution-note">El build aún no ha comenzado.</span
+              ><button class="primary" data-demo-action="start">Previsualizar ejecución</button>
+            </footer>
+          </section>
+          <section class="surface dossier-section" id="changes">
+            <header class="section-head">
+              <div>
+                <p class="eyebrow">05 · Resultado</p>
+                <h2>Cambios</h2>
+                <p>
+                  El run espera inspección del ChangeSet; consultar no aprueba ni cierra la tarea.
+                </p>
+              </div>
+              <span class="status-chip">waiting/changes-review</span>
+            </header>
+            <div class="dossier-body">
+              <div class="review-files">
+                <button class="review-file is-selected" data-file="TaskExecution.tsx">
+                  src/web/client/TaskExecution.tsx <span>+84 −21</span></button
+                ><button class="review-file" data-file="styles.css">
+                  src/web/client/styles.css <span>+126 −12</span></button
+                ><button class="review-file" data-file="guided-task-view.ts">
+                  src/application/guided-task-view.ts <span>+42 −0</span>
+                </button>
+              </div>
+              <div class="diff-box" id="file-detail">
+                TaskExecution.tsx · fragmento\n\n+ const nextAction = progress.nextAction;\n+ return
+                &lt;ExecutionState action={nextAction} /&gt;;
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+    <div class="toast" id="toast" role="status"></div>
+  </body>
+</html>

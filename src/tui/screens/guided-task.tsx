@@ -71,6 +71,14 @@ function detailLines(task: GuidedTaskDetailView): string[] {
         lines.push(`  task ${executionTask.id}: ${executionTask.status}`);
       }
     }
+    if (task.execution.changeSet) {
+      lines.push(
+        `change set ${task.execution.changeSet.id}: revision=${task.execution.changeSet.revision} status=${task.execution.changeSet.status}`,
+      );
+      for (const file of task.execution.changeSet.files) {
+        lines.push(`  ${file.status} ${file.path} (${file.hunks.length} hunk(s))`);
+      }
+    }
     if (task.execution.activeBlock) {
       lines.push(`block ${task.execution.activeBlock.type}: ${task.execution.activeBlock.reason}`);
       if (task.execution.activeBlock.fingerprint) {

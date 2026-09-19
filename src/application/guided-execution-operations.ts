@@ -354,9 +354,11 @@ export async function previewResume(
 ): Promise<GuidedResumePreview> {
   const progress = await requireExecution(context, runId);
   const allowedDecisions: GuidedResumeDecision[] =
-    progress.status === 'waiting'
-      ? ['retry-task', 'retry-verification', 'continue', 'reconcile-commit', 'cancel']
-      : [];
+    progress.status !== 'waiting'
+      ? []
+      : progress.stage === 'changes-review'
+        ? ['cancel']
+        : ['retry-task', 'retry-verification', 'continue', 'reconcile-commit', 'cancel'];
   return {
     runId,
     revision: progress.revision,

@@ -733,6 +733,15 @@ ruta valida para una tarea guiada.
   - **Verificacion:** `pnpm run format:check`; `pnpm run lint`; `pnpm run typecheck`; `pnpm run test`; `pnpm run build`; `pnpm run test:web`; `git diff --check`; `git status --short`. Ejecutar tambien `pnpm exec vitest run test/guided-task-view.test.ts test/web-api-contract.test.ts test/cli-tasks.test.ts test/tui-guided-tasks.test.tsx test/workflow-surface-contract.test.ts` para evidencia enfocada.
   - **Commit Msg:** `test: accept shared workflow surface contracts`
 
+### Fase 5F: Revision de cambios estructurada
+
+- [x] **Tarea 5.28: Persistir y proyectar el ChangeSet de ejecucion guiada**
+- **Archivo:** nuevo `src/application/change-set.ts`; `guided-execution`, `guided-task-view`, `ports`, `guided-execution-coordinator`, `sqlite-run-store`, `git-workspace`; proyecciones Web/TUI/CLI y tests enfocados.
+- **Descripcion:** definir el contrato versionado `ChangeSet` con estados, digest, paths relativos seguros, archivos y hunks estructurados. Capturar el diff entre el commit inicial y el resultado Git, persistirlo dentro del progreso guiado con el CAS existente y exponer la misma proyeccion a Web, TUI y CLI. `changes-review` ya no permite continuar silenciosamente la ejecucion; solo conserva la revision y cancelacion explicita.
+- **Evitar:** leer diff desde React/Ink/ANSI, exponer workspace o secretos, sobrescribir revisiones, modificar workflows legacy o implementar todavia comentarios, editor, aprobacion de cambios o QA.
+- **Verificacion:** contrato y privacidad, parser Git, persistencia CAS, coordinator, superficies, suite completa, build y E2E Web local.
+- **Commit Msg:** `feat: persist structured guided change sets`
+
 ### Fase 5E: Handoff retenido - ejecutar despues de la convergencia
 
 - [ ] **Tarea 5.26: Verificar el happy path de handoff A -> B**
@@ -990,5 +999,8 @@ seguro. No corregirlo silenciosamente ni reducir la garantia para seguir.
   `pnpm run build` y `pnpm run test:web` (2 tests) pasan. La prueba enfocada
   `guided-task-view`, `web-api-contract`, `cli-tasks`, `tui-guided-tasks` y
   `workflow-surface-contract` también pasa.
-- Siguiente accion: iniciar Hito 5 (revision de codigo y QA); no ejecutar 5.26
-  ni promover 5.27 sin una decision separada.
+- Tarea 5.28 completada: `ChangeSet` versionado con digest, paths seguros, hunks y
+  estados; Git lo captura entre commits y el progreso guiado lo persiste con el CAS
+  existente. Web/TUI/CLI proyectan la misma revision; comentarios, editor,
+  aprobacion de cambios y QA siguen fuera de alcance. La evidencia enfocada y global
+  pasa; 5.26 permanece retenida y 5.27 diferida.

@@ -131,6 +131,16 @@ export function printGuidedTaskDetail(view: GuidedTaskDetailView): void {
         console.log(`      task=${singleLine(task.id, 80)}  status=${task.status}`);
       }
     }
+    if (view.execution.changeSet) {
+      console.log(
+        `    change-set=${singleLine(view.execution.changeSet.id, 80)}  revision=${view.execution.changeSet.revision}  status=${view.execution.changeSet.status}  files=${view.execution.changeSet.files.length}`,
+      );
+      for (const file of view.execution.changeSet.files) {
+        console.log(
+          `      ${file.status} ${singleLine(file.path, 160)}  hunks=${file.hunks.length}`,
+        );
+      }
+    }
   } else {
     console.log('  execution=not-started');
   }

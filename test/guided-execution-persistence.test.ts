@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createChangeSet } from '../src/application/change-set.js';
 import type { GuidedExecutionSnapshot } from '../src/application/guided-execution.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
 
@@ -148,7 +149,22 @@ describe('guided execution persistence', () => {
       },
       claim!,
     );
-    expect((await store.getGuidedExecution(first.runId))?.revision).toBe(2);
+    const current = await store.getGuidedExecution(first.runId);
+    const changeSet = createChangeSet({
+      id: 'changes-1',
+      runId: first.runId,
+      contractId,
+      revision: 1,
+      base: { branch: 'main', commit: 'head-1' },
+      result: { branch: 'main', commit: 'head-2' },
+      files: [{ path: 'src/example.ts', status: 'modified', hunks: [] }],
+    });
+    await store.saveGuidedProgress(
+      { ...current!, revision: current!.revision + 1, changeSet },
+      current!.revision,
+      claim!,
+    );
+    expect((await store.getGuidedExecution(first.runId))?.changeSet).toEqual(changeSet);
     await store.releaseGuidedExecution(first.runId, claim!);
     store.close();
 

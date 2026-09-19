@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Ajv } from 'ajv';
+import type { ChangeSet } from './change-set.js';
 import type {
   AgentProfileSnapshot,
   ArtifactReference,
@@ -45,6 +46,7 @@ export type GuidedExecutionBlockType =
   | 'verification-failed'
   | 'workspace-changed'
   | 'commit-unconfirmed'
+  | 'change-set-invalid'
   | 'interrupted-attempt';
 
 export interface GuidedTaskEvidence {
@@ -218,6 +220,7 @@ export interface GuidedExecutionProgress {
   phases: GuidedExecutionPhaseProgress[];
   activeBlock: GuidedExecutionBlock | null;
   nextAction: 'execute' | 'review-changes' | 'resume' | 'cancel' | 'none';
+  changeSet?: ChangeSet;
 }
 
 export interface GuidedExecutionSnapshot {

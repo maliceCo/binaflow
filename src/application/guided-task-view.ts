@@ -1,3 +1,4 @@
+import type { ChangeSet } from './change-set.js';
 import type {
   GuidedExecutionBlock,
   GuidedExecutionQueries,
@@ -203,6 +204,7 @@ export interface GuidedExecutionProgressView {
   }>;
   activeBlock: GuidedExecutionBlockView | null;
   nextAction: GuidedExecutionProgress['nextAction'];
+  changeSet?: ChangeSet;
 }
 
 export interface GuidedTaskViewQueries {
@@ -328,6 +330,7 @@ export function toGuidedExecutionProgressView(
     })),
     activeBlock: progress.activeBlock ? toBlockView(progress.activeBlock) : null,
     nextAction: progress.nextAction,
+    ...(progress.changeSet ? { changeSet: progress.changeSet } : {}),
   };
 }
 

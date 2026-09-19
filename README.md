@@ -35,7 +35,9 @@ Application operations -> workflow engine -> AgentDriver -> Pi
 New guided tasks use one canonical chain: `TaskContract` ->
 `guided-preparation` -> `guided-task-build` -> `guided-execution`. The Web
 currently creates, prepares, approves, executes, and observes that chain through
-`waiting/changes-review`; change review and guided QA remain future milestones.
+`waiting/changes-review`; the application now persists a versioned structured
+`ChangeSet` for that review. Rich change decisions, editing, and guided QA remain
+future milestones.
 During the convergence phase, TUI and CLI gain read-only listing and inspection,
 not duplicate mutation flows. The application publishes the versioned workflow
 surface manifest used to label direct/legacy and observe-only paths. See the
