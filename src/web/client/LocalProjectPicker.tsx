@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ApiClient, LocalDirectoryPage, LocalFilesystemRoot, ProjectSummary } from './api.js';
+import { DialogFrame } from './DialogFrame.js';
 
 export function LocalProjectPicker(props: {
   api: ApiClient;
@@ -13,6 +14,7 @@ export function LocalProjectPicker(props: {
   const [directory, setDirectory] = useState<LocalDirectoryPage>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const browseGeneration = useRef(0);
 
   useEffect(() => {
     void props.api
@@ -26,14 +28,16 @@ export function LocalProjectPicker(props: {
 
   async function browse(nextPath: string): Promise<void> {
     if (busy || !nextPath) return;
+    const generation = ++browseGeneration.current;
     setError(undefined);
     try {
       const next = await props.api.listLocalDirectory(nextPath);
+      if (generation !== browseGeneration.current) return;
       setDirectory(next);
       setPath(next.currentPath);
       setPathInput(next.currentPath);
     } catch (cause) {
-      setError(messageOf(cause));
+      if (generation === browseGeneration.current) setError(messageOf(cause));
     }
   }
 
@@ -56,12 +60,10 @@ export function LocalProjectPicker(props: {
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={props.onClose}>
-      <section
+      <DialogFrame
         className="settings-modal project-picker-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="project-picker-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        labelledBy="project-picker-title"
+        onClose={props.onClose}
       >
         <div className="modal-heading">
           <div>
@@ -151,7 +153,7 @@ export function LocalProjectPicker(props: {
             {error}
           </p>
         )}
-      </section>
+      </DialogFrame>
     </div>
   );
 }

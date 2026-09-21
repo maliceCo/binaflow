@@ -37,7 +37,11 @@ const execution = {
   get: vi.fn(async () => progress),
   list: vi.fn(async () => ({ items: [progress] })),
   start: vi.fn(async () => progress),
-  resume: vi.fn(),
+  resume: vi.fn(async () => ({
+    ...progress,
+    status: 'completed' as const,
+    nextAction: 'none' as const,
+  })),
   cancelWaiting: vi.fn(async () => ({
     ...progress,
     status: 'cancelled' as const,
@@ -127,6 +131,29 @@ describe('local execution API', () => {
       api,
     );
     expect(started).toMatchObject({ status: 202, body: { data: { runId } } });
+
+    const approved = await handleWebApi(
+      {
+        method: 'POST',
+        path: `/api/v1/executions/${runId}/resume`,
+        body: {
+          runId,
+          expectedRevision: 3,
+          previewDigest: 'b'.repeat(64),
+          decision: 'approve-changes',
+          reason: 'Reviewed and approved from the web',
+        },
+      },
+      api,
+    );
+    expect(approved).toMatchObject({ status: 202, body: { data: { status: 'completed' } } });
+    expect(execution.resume).toHaveBeenCalledWith({
+      runId,
+      expectedRevision: 3,
+      previewDigest: 'b'.repeat(64),
+      decision: 'approve-changes',
+      reason: 'Reviewed and approved from the web',
+    });
 
     const cancelled = await handleWebApi(
       {

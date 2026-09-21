@@ -862,6 +862,19 @@ p {
   white-space: nowrap;
 }
 
+.model-selector {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(100%, 16rem);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.model-selector select {
+  width: 100%;
+}
+
 .operation-pill {
   border-radius: 99rem;
   padding: 0.25rem 0.6rem;
@@ -942,7 +955,8 @@ p {
 }
 
 .brief-view,
-.plan-review {
+.plan-review,
+.todo-view {
   margin: 1rem 0;
   border: 1px solid var(--line);
   border-radius: 0.65rem;
@@ -951,12 +965,16 @@ p {
 }
 
 .brief-view h4,
-.plan-review h4 {
+.plan-review h4,
+.todo-view h4,
+.todo-view h5 {
   margin: 0.75rem 0 0.35rem;
 }
 
 .brief-view h4:first-child,
-.plan-review h4:first-child {
+.plan-review h4:first-child,
+.todo-view h4:first-child,
+.todo-view h5:first-child {
   margin-top: 0;
 }
 
@@ -969,6 +987,33 @@ p {
 
 .plan-review li p {
   margin: 0.25rem 0;
+}
+
+.todo-view {
+  display: grid;
+  gap: 1rem;
+}
+
+.todo-view section + section {
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+
+.todo-view article {
+  border-top: 1px solid var(--line);
+  padding: 0.75rem 0;
+}
+
+.todo-view article:first-of-type {
+  border-top: 0;
+}
+
+.todo-view h5 {
+  font-size: 1rem;
+}
+
+.todo-view p {
+  color: var(--muted);
 }
 
 .task-panel button + button {

@@ -53,7 +53,7 @@ export function TransferWizard(props: { api: ApiClient }): ReactElement {
     void props.api
       .getTransfer(draft.transferId)
       .then(setStatus)
-      .catch(() => undefined);
+      .catch((cause: unknown) => setError(messageOf(cause)));
   }, [draft.transferId, props.api, status]);
 
   useEffect(() => {

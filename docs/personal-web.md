@@ -36,6 +36,26 @@ The optional external search key is read by application composition when source
 search is enabled. A missing key means search is unavailable; it is not inferred
 from the browser or stored in the database.
 
+## Browser E2E tests
+
+The Playwright browser binary is installed separately from the pnpm dependencies:
+
+```bash
+pnpm run test:web:install
+```
+
+On Debian/Ubuntu hosts, install the native browser libraries once as an
+administrator, then run the tests:
+
+```bash
+sudo pnpm exec playwright install-deps chromium
+pnpm run test:web
+```
+
+The project config runs Chromium with one worker, retries once in CI, and keeps
+trace/screenshot/video evidence only for failed tests. The tests are attached to
+the current process; they do not start a daemon.
+
 ## Limits and guarantees
 
 - Sessions are HttpOnly, SameSite, in-memory, capped, and expire after eight

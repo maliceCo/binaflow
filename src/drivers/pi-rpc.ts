@@ -1,5 +1,5 @@
 import type { AgentDriver, AgentRequest } from '../core/agent.js';
-import type { AgentUsage, AgentStepResult } from '../core/run.js';
+import type { AgentExecutionModel, AgentUsage, AgentStepResult } from '../core/run.js';
 import type { EventSink } from '../core/events.js';
 import { JsonlProcess, MAX_JSONL_RECORD_BYTES, type JsonObject } from '../process/jsonl-process.js';
 import { AgentDriverError } from './contract.js';
@@ -83,13 +83,12 @@ export class PiDriver implements AgentDriver {
     let result: AgentStepResult | undefined;
     let failure: unknown;
     try {
-      if (request.sessionId) {
-        const existingState = await process.request(
-          { type: 'get_state' },
-          { timeoutMs: request.profile.timeoutMs, signal },
-        );
-        assertSessionIdentity(existingState, request.sessionId);
-      }
+      const initialState = await process.request(
+        { type: 'get_state' },
+        { timeoutMs: request.profile.timeoutMs, signal },
+      );
+      if (request.sessionId) assertSessionIdentity(initialState, request.sessionId);
+      const executionModel = assertExpectedModel(initialState, request.profile);
       // Profile timeout applies independently to each RPC or settling phase.
       const commands = await process.request(
         { type: 'get_commands' },
@@ -116,11 +115,12 @@ export class PiDriver implements AgentDriver {
         { timeoutMs: request.profile.timeoutMs, signal },
       );
       if (request.sessionId) assertSessionIdentity(state, request.sessionId);
+      assertSameExecutionModel(executionModel, assertExpectedModel(state, request.profile));
       const stats = await process.request(
         { type: 'get_session_stats' },
         { timeoutMs: request.profile.timeoutMs, signal },
       );
-      result = { text: finalText ?? textParts.join('') };
+      result = { text: finalText ?? textParts.join(''), executionModel };
       const sessionId = readSessionId(state);
       const usage = readUsage(stats);
       const costUsd = readCost(stats);
@@ -320,6 +320,40 @@ function readMessageText(value: unknown): string | undefined {
     })
     .join('');
   return text || undefined;
+}
+
+function assertExpectedModel(
+  response: JsonObject,
+  profile: AgentRequest['profile'],
+): AgentExecutionModel {
+  const data = asRecord(response.data);
+  const model = asRecord(data?.model);
+  const provider = typeof model?.provider === 'string' ? model.provider : undefined;
+  const id = typeof model?.id === 'string' ? model.id : undefined;
+  if (
+    !provider ||
+    !id ||
+    id !== profile.model ||
+    (profile.provider && provider !== profile.provider)
+  ) {
+    throw new AgentDriverError(
+      `Pi model mismatch: requested ${profile.provider ? `${profile.provider}/` : ''}${profile.model}, resolved ${provider && id ? `${provider}/${id}` : 'unknown'}`,
+      'PI_MODEL_MISMATCH',
+    );
+  }
+  return { provider, model: id };
+}
+
+function assertSameExecutionModel(
+  expected: AgentExecutionModel,
+  actual: AgentExecutionModel,
+): void {
+  if (expected.provider !== actual.provider || expected.model !== actual.model) {
+    throw new AgentDriverError(
+      `Pi model changed during execution: started ${expected.provider}/${expected.model}, ended ${actual.provider}/${actual.model}`,
+      'PI_MODEL_MISMATCH',
+    );
+  }
 }
 
 function readSessionId(response: JsonObject): string | undefined {

@@ -656,7 +656,14 @@ function parseExecutionResumeRequest(value: unknown, runId: string): GuidedResum
   ) {
     throw new WebContractError('invalid-input', 'Invalid execution resume request');
   }
-  const decisions = ['retry-task', 'retry-verification', 'continue', 'reconcile-commit', 'cancel'];
+  const decisions = [
+    'retry-task',
+    'retry-verification',
+    'continue',
+    'reconcile-commit',
+    'approve-changes',
+    'cancel',
+  ];
   if (
     value.runId !== runId ||
     !positiveIntegerValue(value.expectedRevision) ||

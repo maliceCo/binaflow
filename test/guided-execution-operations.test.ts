@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createGuidedExecutionService } from '../src/application/guided-execution-operations.js';
+import { createChangeSet } from '../src/application/change-set.js';
 import type { ArtifactReference } from '../src/core/run.js';
 import type { GitWorkspace, WorkspaceExecutionLock } from '../src/application/ports.js';
 import { SqliteRunStore } from '../src/storage/sqlite-run-store.js';
@@ -173,7 +174,58 @@ describe('guided execution operations', () => {
     expect(started).toMatchObject({ runId: `guided-${request.requestId}`, status: 'pending' });
     const replay = await service.start(request);
     expect(replay.runId).toBe(started.runId);
-    expect(lockAdapter.acquisitions).toBe(1);
+
+    const claim = await store.claimGuidedExecution(started.runId, ['pending']);
+    expect(claim).toBeTruthy();
+    const waiting = await store.getGuidedExecution(started.runId);
+    const changeSet = createChangeSet({
+      id: 'changes-1',
+      runId: started.runId,
+      contractId,
+      revision: 1,
+      base: { branch: 'main', commit: 'head-1' },
+      result: { branch: 'main', commit: 'head-2' },
+      files: [{ path: 'file.ts', status: 'modified', hunks: [] }],
+    });
+    await store.saveGuidedProgress(
+      {
+        ...waiting!,
+        revision: waiting!.revision + 1,
+        status: 'waiting',
+        stage: 'changes-review',
+        nextAction: 'review-changes',
+        changeSet,
+      },
+      waiting!.revision,
+      claim!,
+    );
+    await store.releaseGuidedExecution(started.runId, claim!);
+
+    const resumePreview = await service.previewResume(started.runId);
+    expect(resumePreview.allowedDecisions).toContain('approve-changes');
+    const approved = await service.resume({
+      runId: started.runId,
+      expectedRevision: resumePreview.revision,
+      previewDigest: resumePreview.digest,
+      decision: 'approve-changes',
+      reason: 'Reviewed changes',
+    });
+    expect(approved).toMatchObject({
+      status: 'completed',
+      nextAction: 'none',
+      changeSet: { status: 'approved' },
+    });
+    const completedPreview = await service.previewResume(started.runId);
+    await expect(
+      service.resume({
+        runId: started.runId,
+        expectedRevision: completedPreview.revision,
+        previewDigest: completedPreview.digest,
+        decision: 'approve-changes',
+        reason: 'Duplicate approval',
+      }),
+    ).rejects.toThrow('not allowed');
+    expect(lockAdapter.acquisitions).toBe(2);
     store.close();
   });
 });

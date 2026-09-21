@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import {
   ApiRequestError,
   createRequestId,
+  type AgentOptions,
   type ApiClient,
   type Source,
   type Task,
@@ -21,6 +22,9 @@ export function TaskPreparation(props: {
   const [url, setUrl] = useState('');
   const [comment, setComment] = useState('');
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const [agentOptions, setAgentOptions] = useState<AgentOptions>();
+  const [agentOptionsError, setAgentOptionsError] = useState<string>();
+  const [selectedModelKey, setSelectedModelKey] = useState('');
   const [busy, setBusy] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string>();
   const [status, setStatus] = useState<string>();
@@ -29,10 +33,13 @@ export function TaskPreparation(props: {
   const requestId = useRef<string | undefined>(undefined);
   const requestKey = useRef<string | undefined>(undefined);
   const selectedSourcesTask = useRef<string | undefined>(undefined);
+  const selectedModelTask = useRef<string | undefined>(undefined);
+  const detailGeneration = useRef(0);
 
-  async function refresh(): Promise<void> {
+  async function refresh(generation = detailGeneration.current): Promise<void> {
     try {
       const next = await props.api.getTaskDetail(props.task.id);
+      if (generation !== detailGeneration.current) return;
       setDetail(next);
       if (selectedSourcesTask.current !== props.task.id) {
         selectedSourcesTask.current = props.task.id;
@@ -44,16 +51,51 @@ export function TaskPreparation(props: {
       }
       setError(undefined);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The task could not be loaded');
+      if (generation === detailGeneration.current) {
+        setError(cause instanceof Error ? cause.message : 'The task could not be loaded');
+      }
     }
   }
 
   useEffect(() => {
+    const generation = ++detailGeneration.current;
     requestId.current = undefined;
     requestKey.current = undefined;
     selectedSourcesTask.current = undefined;
-    void refresh();
+    if (selectedModelTask.current !== props.task.id) {
+      selectedModelTask.current = props.task.id;
+      setSelectedModelKey('');
+    }
+    setDetail(undefined);
+    setMessage('');
+    setQuery('');
+    setUrl('');
+    setComment('');
+    setPendingMessage(undefined);
+    setStatus(undefined);
+    void refresh(generation);
   }, [props.api, props.task.id, props.task.revision]);
+
+  useEffect(() => {
+    let active = true;
+    void props.api
+      .getAgentOptions()
+      .then((options) => {
+        if (active) {
+          setAgentOptions(options);
+          setAgentOptionsError(undefined);
+        }
+      })
+      .catch((cause) => {
+        if (active)
+          setAgentOptionsError(
+            cause instanceof Error ? cause.message : 'Model options could not be loaded',
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [props.api]);
 
   useEffect(() => {
     if (!detail?.activeOperation) return;
@@ -160,16 +202,28 @@ export function TaskPreparation(props: {
     }
   }
 
-  const planVersion = detail?.approvedPlan?.version ?? detail?.plan?.version;
-  const briefReady = detail ? detail.briefConfirmedThroughSequence >= detail.lastSequence : false;
+  const approvedPlanVersion = detail?.approvedPlan?.version;
+  const briefReady =
+    detail !== undefined &&
+    detail.lastSequence > 0 &&
+    detail.briefConfirmedThroughSequence >= detail.lastSequence;
   const sourceById = new Map(detail?.sources.map((source) => [source.id, source]) ?? []);
+  const selectedModel = agentOptions?.models.find((model) => modelKey(model) === selectedModelKey);
+  const selectedModelStillAvailable = selectedModelKey === '' || selectedModel !== undefined;
 
   useEffect(() => {
-    if (!detail) return;
+    if (!selectedModelStillAvailable) setSelectedModelKey('');
+  }, [selectedModelStillAvailable]);
+
+  const detailLoaded = detail !== undefined;
+
+  useEffect(() => {
+    if (!detailLoaded) return;
     if (!briefReady) setActiveStage('brief');
-    else if (!detail.todo) setActiveStage('plan');
+    else if (props.task.phase !== 'todo') setActiveStage('plan');
     else if (props.task.readiness === 'ready') setActiveStage('execution');
-  }, [briefReady, detail?.plan, detail?.todo, props.task.readiness]);
+    else setActiveStage('todo');
+  }, [briefReady, detailLoaded, props.task.phase, props.task.readiness]);
 
   return (
     <section className="task-panel task-workspace" aria-labelledby="task-preparation-title">
@@ -235,6 +289,27 @@ export function TaskPreparation(props: {
                     Describe the outcome. The assistant will keep the brief updated.
                   </p>
                 </div>
+                {agentOptionsError && <p className="context-notice">{agentOptionsError}</p>}
+                {agentOptions && agentOptions.models.length > 0 && (
+                  <label className="model-selector" htmlFor="brief-model">
+                    <span>Brief model</span>
+                    <select
+                      id="brief-model"
+                      value={selectedModelKey}
+                      onChange={(event) => setSelectedModelKey(event.target.value)}
+                      disabled={busy}
+                    >
+                      <option value="">
+                        Project planner default — {formatModel(agentOptions.plannerDefault)}
+                      </option>
+                      {agentOptions.models.map((model) => (
+                        <option key={modelKey(model)} value={modelKey(model)}>
+                          {model.displayName ?? model.model} — {formatModel(model)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {detail.activeOperation && (
                   <div className="operation-status">
                     <span className="operation-pill">Working: {detail.activeOperation.kind}</span>
@@ -257,6 +332,13 @@ export function TaskPreparation(props: {
                     <div className="chat-turn-label">
                       {item.role === 'user' ? 'You' : 'Assistant'}
                     </div>
+                    {item.role === 'assistant' && (
+                      <small className="chat-model-label">
+                        {item.metadata?.executionModel
+                          ? `Confirmed: ${formatModel(item.metadata.executionModel)}`
+                          : 'Model confirmation unavailable'}
+                      </small>
+                    )}
                     <p>{item.content}</p>
                     {item.metadata?.questions.length ? (
                       <div className="chat-questions">
@@ -302,7 +384,18 @@ export function TaskPreparation(props: {
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void submit('reply', { message, sourceIds: selectedSources });
+                  void submit('reply', {
+                    message,
+                    sourceIds: selectedSources,
+                    ...(selectedModel
+                      ? {
+                          modelSelection: {
+                            provider: selectedModel.provider,
+                            model: selectedModel.model,
+                          },
+                        }
+                      : {}),
+                  });
                 }}
               >
                 <label htmlFor="task-message">Message</label>
@@ -403,7 +496,7 @@ export function TaskPreparation(props: {
               </div>
             </section>
             <section
-              className="task-stage-pane task-stage-pane-plan task-stage-pane-todo"
+              className="task-stage-pane task-stage-pane-plan"
               aria-labelledby="task-plan-title"
             >
               <h3 id="task-plan-title">Review and confirm brief</h3>
@@ -486,14 +579,25 @@ export function TaskPreparation(props: {
                   </button>
                 </>
               )}
-              {planVersion && (
+            </section>
+            <section
+              className="task-stage-pane task-stage-pane-todo"
+              aria-labelledby="task-todo-title"
+            >
+              <h3 id="task-todo-title">Review TODO</h3>
+              <p className="muted">Inspect the approved work before starting execution.</p>
+              {detail.todoDocument ? (
+                <TodoView todo={detail.todoDocument} />
+              ) : approvedPlanVersion ? (
                 <button
                   type="button"
-                  onClick={() => void submit('generate-todo', { planVersion })}
+                  onClick={() => void submit('generate-todo', { planVersion: approvedPlanVersion })}
                   disabled={busy}
                 >
                   Generate TODO
                 </button>
+              ) : (
+                <p>The approved plan is required before generating a TODO.</p>
               )}
             </section>
             <div className="task-stage-pane task-stage-pane-execution">
@@ -511,6 +615,35 @@ export function TaskPreparation(props: {
         </p>
       )}
     </section>
+  );
+}
+
+function TodoView({ todo }: { todo: NonNullable<TaskDetail['todoDocument']> }): ReactElement {
+  return (
+    <div className="todo-view">
+      {todo.phases.map((phase) => (
+        <section key={phase.id}>
+          <h4>{phase.title}</h4>
+          {phase.tasks.map((task) => (
+            <article key={task.id}>
+              <h5>{task.id}</h5>
+              <ul>
+                {task.instructions.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <p>
+                <strong>Files:</strong> {task.files.join(', ') || 'None specified'}
+              </p>
+              <BriefList title="Acceptance criteria" items={task.acceptanceCriteria} />
+              <BriefList title="Verification" items={task.verification} />
+              <BriefList title="Stop conditions" items={task.stopConditions} />
+            </article>
+          ))}
+        </section>
+      ))}
+      <BriefList title="Scope changes" items={todo.scopeChanges} />
+    </div>
   );
 }
 
@@ -559,6 +692,14 @@ function SourceAttachments({
       </div>
     </div>
   );
+}
+
+function formatModel(model: { provider?: string; model: string }): string {
+  return `${model.provider ? `${model.provider}/` : ''}${model.model}`;
+}
+
+function modelKey(model: { provider: string; model: string }): string {
+  return JSON.stringify([model.provider, model.model]);
 }
 
 function isSource(source: Source | undefined): source is Source {

@@ -9,6 +9,7 @@ import { TransferWizard } from './TransferWizard.js';
 import { TaskCreate } from './TaskCreate.js';
 import { TaskPreparation } from './TaskPreparation.js';
 import { ProjectAgents } from './ProjectAgents.js';
+import { DialogFrame } from './DialogFrame.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -20,6 +21,7 @@ export function App(): ReactElement {
   const [settings, setSettings] = useState<LauncherSettings>();
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLocations, setShowLocations] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
   const [showWorkspace, setShowWorkspace] = useState(false);
   const [selectedId, setSelectedId] = useState(() => getTaskFromHash());
@@ -54,23 +56,36 @@ export function App(): ReactElement {
   }
 
   async function refreshWorkspace(): Promise<void> {
+    let nextSettings: LauncherSettings;
     try {
-      const nextSettings = await api.getSettings();
+      nextSettings = await api.getSettings();
       setSettings(nextSettings);
-      if (nextSettings.setupRequired) {
-        setActiveProject(null);
-        setTasks([]);
-        return;
-      }
+    } catch (cause) {
+      setSettings(undefined);
+      setActiveProject(null);
+      setTasks([]);
+      setError(messageOf(cause));
+      return;
+    }
+    if (nextSettings.setupRequired) {
+      setActiveProject(null);
+      setTasks([]);
+      setError(undefined);
+      return;
+    }
+    try {
       const nextActiveProject = await api.getActiveProject();
       setActiveProject(nextActiveProject);
       setShowWorkspace(false);
       if (nextActiveProject) await refreshTasks();
-      else setTasks([]);
-    } catch {
-      setSettings(undefined);
+      else {
+        setTasks([]);
+        setError(undefined);
+      }
+    } catch (cause) {
       setActiveProject(null);
-      await refreshTasks();
+      setTasks([]);
+      setError(messageOf(cause));
     }
   }
 
@@ -102,7 +117,7 @@ export function App(): ReactElement {
   }
 
   const selected = tasks.find((task) => task.id === selectedId);
-  const workspaceReady = activeProject !== null || settings === undefined;
+  const workspaceReady = settings !== undefined && activeProject !== null;
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -119,6 +134,7 @@ export function App(): ReactElement {
             setActiveProject(null);
             setShowWorkspace(false);
             setShowSettings(false);
+            setShowLocations(false);
             setShowAgents(false);
           }}
         >
@@ -166,13 +182,22 @@ export function App(): ReactElement {
                 </button>
               )}
               {settings && (
-                <button
-                  className="button-secondary"
-                  type="button"
-                  onClick={() => setShowSettings(true)}
-                >
-                  Server settings
-                </button>
+                <>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => setShowLocations(true)}
+                  >
+                    Project locations
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => setShowSettings(true)}
+                  >
+                    Server settings
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -182,15 +207,41 @@ export function App(): ReactElement {
               role="presentation"
               onMouseDown={() => setShowAgents(false)}
             >
-              <section
+              <DialogFrame
                 className="settings-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="agent-settings-title"
-                onMouseDown={(event) => event.stopPropagation()}
+                labelledBy="agent-settings-title"
+                onClose={() => setShowAgents(false)}
               >
                 <ProjectAgents api={api} onClose={() => setShowAgents(false)} />
-              </section>
+              </DialogFrame>
+            </div>
+          )}
+          {showLocations && settings && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onMouseDown={() => setShowLocations(false)}
+            >
+              <DialogFrame
+                className="settings-modal"
+                labelledBy="project-locations-title"
+                onClose={() => setShowLocations(false)}
+              >
+                <div className="modal-heading">
+                  <div>
+                    <p className="eyebrow">Projects</p>
+                    <h2 id="project-locations-title">Project locations</h2>
+                  </div>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => setShowLocations(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <Settings api={api} settings={settings} mode="locations" onSaved={setSettings} />
+              </DialogFrame>
             </div>
           )}
           {showSettings && settings && (
@@ -199,12 +250,10 @@ export function App(): ReactElement {
               role="presentation"
               onMouseDown={() => setShowSettings(false)}
             >
-              <section
+              <DialogFrame
                 className="settings-modal"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="settings-modal-title"
-                onMouseDown={(event) => event.stopPropagation()}
+                labelledBy="settings-modal-title"
+                onClose={() => setShowSettings(false)}
               >
                 <div className="modal-heading">
                   <div>
@@ -221,7 +270,7 @@ export function App(): ReactElement {
                   </button>
                 </div>
                 <Settings api={api} settings={settings} onSaved={setSettings} />
-              </section>
+              </DialogFrame>
             </div>
           )}
           {!showWorkspace && settings && (
@@ -272,7 +321,16 @@ export function App(): ReactElement {
               />
             </section>
           )}
-          {!showWorkspace && !workspaceReady && (
+          {settings === undefined && (
+            <div className="empty-state" role="status">
+              <strong>Workspace unavailable.</strong>
+              <p>Reload the workspace before creating or running tasks.</p>
+              <button type="button" onClick={() => void refreshWorkspace()}>
+                Retry workspace loading
+              </button>
+            </div>
+          )}
+          {!showWorkspace && settings !== undefined && !workspaceReady && (
             <div className="empty-state" role="status">
               <strong>No project is open.</strong>
               <p>Complete step 1 before creating or running tasks.</p>

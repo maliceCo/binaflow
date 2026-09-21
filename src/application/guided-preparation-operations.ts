@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { composeAgentPrompt, type AgentDriver } from '../core/agent.js';
 import type { AgentProfile } from '../core/agent-profile.js';
+import type { AgentExecutionModel } from '../core/run.js';
 import type {
   GuidedPreparationBeginRequest,
   GuidedPreparationMessage,
@@ -108,14 +109,17 @@ async function executeRequest(
   options: { signal?: AbortSignal; ownerToken?: string } = {},
 ): Promise<GuidedPreparationRequestRecord> {
   const operation = parseGuidedPreparationOperation(input);
-  if (requiresPlanner(operation.kind)) validateGuidedPlannerProfile(context.plannerProfile);
+  const selectedPlannerProfile = requiresPlanner(operation.kind)
+    ? plannerProfileForOperation(context.plannerProfile, operation)
+    : undefined;
+  if (selectedPlannerProfile) validateGuidedPlannerProfile(selectedPlannerProfile);
   const admissionRequest: GuidedPreparationBeginRequest = {
     workspace: context.workspace,
     operation,
     operationId: randomUUID(),
     requestHash: createHash('sha256').update(canonicalJson(operation)).digest('hex'),
     ownerToken: options.ownerToken ?? randomUUID(),
-    ...(requiresPlanner(operation.kind) ? { profileSnapshot: context.plannerProfile } : {}),
+    ...(selectedPlannerProfile ? { profileSnapshot: selectedPlannerProfile } : {}),
   };
   const admitted = await context.store.beginGuidedPreparationRequest(admissionRequest);
   if (isTerminal(admitted.status)) return admitted;
@@ -211,6 +215,9 @@ async function performOperation(
             questions: output.questions,
             citedSourceIds: output.citedSourceIds,
             ...(output.briefSuggestion ? { briefSuggestion: output.briefSuggestion } : {}),
+            ...(plannerResult.executionModel
+              ? { executionModel: plannerResult.executionModel }
+              : {}),
           },
           ...(output.briefSuggestion ? { draftBrief: output.briefSuggestion } : {}),
         },
@@ -281,8 +288,9 @@ async function runPlanner(
   context: GuidedPreparationOperationsContext,
   operation: GuidedPreparationOperationRequest,
   signal?: AbortSignal,
-): Promise<{ value: unknown; sessionId?: string }> {
-  validateGuidedPlannerProfile(context.plannerProfile);
+): Promise<{ value: unknown; sessionId?: string; executionModel?: AgentExecutionModel }> {
+  const plannerProfile = plannerProfileForOperation(context.plannerProfile, operation);
+  validateGuidedPlannerProfile(plannerProfile);
   const state = await context.taskContracts.getTaskContract(
     context.workspace,
     operation.contractId,
@@ -344,9 +352,9 @@ async function runPlanner(
     {
       runId: operation.requestId,
       stepId: operation.kind,
-      profile: context.plannerProfile,
-      prompt: composeAgentPrompt(prompt, context.plannerProfile),
-      ...(operation.kind === 'reply' && preparation.externalSessionId
+      profile: plannerProfile,
+      prompt: composeAgentPrompt(prompt, plannerProfile),
+      ...(operation.kind === 'reply' && !operation.modelSelection && preparation.externalSessionId
         ? { sessionId: preparation.externalSessionId }
         : {}),
     },
@@ -357,10 +365,23 @@ async function runPlanner(
     return {
       value: JSON.parse(response.text) as unknown,
       ...(response.sessionId ? { sessionId: response.sessionId } : {}),
+      ...(response.executionModel ? { executionModel: response.executionModel } : {}),
     };
   } catch {
     throw new GuidedPreparationError('planner-output-invalid', 'Planner returned invalid JSON');
   }
+}
+
+function plannerProfileForOperation(
+  base: AgentProfile,
+  operation: GuidedPreparationOperationRequest,
+): AgentProfile {
+  if (operation.kind !== 'reply' || !operation.modelSelection) return base;
+  return {
+    ...base,
+    ...(operation.modelSelection.provider ? { provider: operation.modelSelection.provider } : {}),
+    model: operation.modelSelection.model,
+  };
 }
 
 function plannerInstruction(operation: GuidedPreparationOperationRequest): string {

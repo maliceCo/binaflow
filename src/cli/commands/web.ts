@@ -402,8 +402,15 @@ async function createLauncherResources(
       const active = runtime.getActiveProject();
       if (!active) throw new Error('Select an active project first');
       const models = await new PiModelDiscovery().discoverModels();
+      const config = await loadConfig(active.configPath);
+      const planner = config.profiles.planner;
+      if (!planner) throw new Error('Planner profile is not configured');
       return {
         models,
+        plannerDefault: {
+          ...(planner.provider ? { provider: planner.provider } : {}),
+          model: planner.model,
+        },
         thinkingLevels: [...AGENT_THINKING_LEVELS],
         tools: AGENT_TOOL_OPTIONS.map((tool) => ({ ...tool })),
         skills: await discoverProjectSkills(active.workspacePath),

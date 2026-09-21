@@ -27,7 +27,13 @@ process.stdin.on('data', (chunk) => {
       write({ type: 'message_end', message: { content: [{ type: 'text', text: 'second' }] } });
       write({ type: 'agent_settled' });
     } else if (command.type === 'get_state') {
-      write({ id: command.id, type: 'response', command: 'get_state', success: true, data: {} });
+      write({
+        id: command.id,
+        type: 'response',
+        command: 'get_state',
+        success: true,
+        data: { model: { provider: 'test-provider', id: 'test-model' } },
+      });
     } else if (command.type === 'get_session_stats') {
       write({
         id: command.id,

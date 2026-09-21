@@ -106,7 +106,10 @@ process.stdin.on('data', (chunk) => {
         type: 'response',
         command: 'get_state',
         success: true,
-        data: { sessionId: 'fixture-session' },
+        data: {
+          sessionId: 'fixture-session',
+          model: { provider: 'fixture-provider', id: 'fixture' },
+        },
       });
     } else if (command.type === 'get_session_stats') {
       write({

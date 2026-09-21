@@ -5,6 +5,7 @@ import type { ApiClient, DeviceSummary } from './api.js';
 export function Devices(props: { api: ApiClient }): ReactElement {
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
   const [offer, setOffer] = useState<{ code: string; expiresAt: number }>();
+  const [busyDevice, setBusyDevice] = useState<string>();
   const [error, setError] = useState<string>();
 
   async function refresh(): Promise<void> {
@@ -47,12 +48,23 @@ export function Devices(props: { api: ApiClient }): ReactElement {
             {device.status === 'paired' && (
               <button
                 type="button"
+                disabled={busyDevice !== undefined}
                 onClick={async () => {
-                  await props.api.revokeDevice(device.id);
-                  await refresh();
+                  setBusyDevice(device.id);
+                  setError(undefined);
+                  try {
+                    await props.api.revokeDevice(device.id);
+                    await refresh();
+                  } catch (cause) {
+                    setError(
+                      cause instanceof Error ? cause.message : 'Could not revoke the device',
+                    );
+                  } finally {
+                    setBusyDevice(undefined);
+                  }
                 }}
               >
-                Revoke
+                {busyDevice === device.id ? 'Revoking...' : 'Revoke'}
               </button>
             )}
           </li>

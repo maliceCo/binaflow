@@ -15,19 +15,25 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await page.goto(fixture.url);
     await page.getByLabel('Access code').fill(fixture.accessCode);
     await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(page.getByRole('heading', { name: 'Set up Binaflow' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Where should Binaflow look for projects?' }),
+    ).toBeVisible();
 
     await page.getByRole('button', { name: 'Authorize' }).first().click();
+    await page.getByRole('button', { name: 'Continue to server settings' }).click();
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'projects', exact: true }).click();
+    await page.getByRole('button', { name: 'Find or initialize a project' }).click();
+    const projectDialog = page.getByRole('dialog', { name: 'Find or initialize a project' });
+    await projectDialog.getByRole('button', { name: /projects/ }).click();
+    await projectDialog.getByRole('button', { name: /sample Binaflow project/ }).click();
     const taskRefresh = page.waitForResponse(
       (response) => response.url().endsWith('/api/v1/tasks') && response.status() === 200,
     );
-    await page.getByRole('button', { name: /sample \(Binaflow project\)/ }).click();
+    await projectDialog.getByRole('button', { name: 'Open project' }).click();
     await taskRefresh;
-    await expect(page.getByRole('button', { name: 'Active', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create or continue a task' })).toBeVisible();
     await expect(page.getByText('No tasks yet.')).toBeVisible();
 
     await page.getByLabel('Objective').fill('Prepare a deterministic local task');
@@ -40,6 +46,7 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await page.getByRole('button', { name: 'Send message' }).click();
     await expect(page.getByText('Fixture response')).toBeVisible();
 
+    await page.getByRole('button', { name: /02 Plan Propose/ }).click();
     await page.getByRole('button', { name: 'Confirm brief' }).click();
     await expect(page.getByText(/Preparation revision \d+\./)).toBeVisible();
     await page.getByRole('button', { name: 'Generate plan' }).click();
@@ -47,6 +54,10 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await page.getByRole('button', { name: 'Approve plan' }).click();
     await expect(page.getByRole('button', { name: 'Generate TODO' })).toBeVisible();
     await page.getByRole('button', { name: 'Generate TODO' }).click();
+    await expect(page.getByRole('heading', { name: 'Review TODO' })).toBeVisible();
+    await expect(
+      page.getByText('Inspect the approved work before starting execution.'),
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'Preview execution' })).toBeVisible();
     await page.getByRole('button', { name: 'Preview execution' }).click();
     await expect(page.getByText(/Preview digest:/)).toBeVisible();
@@ -54,8 +65,10 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(page.getByText('Execution is waiting for changes review.')).toBeVisible({
       timeout: 15_000,
     });
+    await page.getByRole('button', { name: 'Approve changes and finish' }).click();
+    await expect(page.getByText('Execution finished.')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: 'Server settings' }).click();
+    await page.getByRole('button', { name: 'Project locations' }).click();
     const revokeResponse = page.waitForResponse((response) =>
       response.url().includes('/api/v1/project-roots/'),
     );
@@ -65,7 +78,7 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(
       page.getByText('Folder authorization removed. Registered projects and files were kept.'),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Active', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create or continue a task' })).toBeVisible();
   } finally {
     await page.close();
     await fixture.close();

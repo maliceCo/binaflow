@@ -34,6 +34,7 @@ const detail: WebTaskDetailDto = {
     outOfScope: [],
   },
   planDocument: null,
+  todoDocument: null,
   briefConfirmedThroughSequence: 3,
   messagesCompactedThroughSequence: 0,
   messages: [],

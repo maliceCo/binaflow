@@ -219,9 +219,11 @@ describe('guided preparation operations', () => {
     });
     await store.createGuidedPreparation({ workspace, contractId });
     const requestedSessions: Array<string | undefined> = [];
+    const requestedModels: string[] = [];
     const driver: AgentDriver = {
       execute: async (request) => {
         requestedSessions.push(request.sessionId);
+        requestedModels.push(`${request.profile.provider ?? ''}/${request.profile.model}`);
         return {
           text: JSON.stringify({
             schemaVersion: 1,
@@ -265,7 +267,17 @@ describe('guided preparation operations', () => {
       sourceIds: [],
     });
     expect(second.status).toBe('completed');
-    expect(requestedSessions).toEqual([undefined, 'session-1']);
+
+    const third = await service.execute({
+      ...operationBase(contractId, 1, 5),
+      kind: 'reply',
+      message: 'Use another model for this turn.',
+      sourceIds: [],
+      modelSelection: { provider: 'pi', model: 'planner-alt' },
+    });
+    expect(third.status).toBe('completed');
+    expect(requestedSessions).toEqual([undefined, 'session-1', undefined]);
+    expect(requestedModels).toEqual(['/planner-test', '/planner-test', 'pi/planner-alt']);
   });
 
   it('records invalid planner output and allows a fresh plan request', async () => {

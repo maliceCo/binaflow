@@ -52,8 +52,14 @@ export interface StepSkipReason {
   message: string;
 }
 
+export interface AgentExecutionModel {
+  provider: string;
+  model: string;
+}
+
 export interface AgentStepResult {
   text: string;
+  executionModel?: AgentExecutionModel;
   sessionId?: string;
   usage?: AgentUsage;
   costUsd?: number;

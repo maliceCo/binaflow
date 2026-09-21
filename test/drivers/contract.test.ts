@@ -307,6 +307,7 @@ describe('PiDriver', () => {
 
     expect(result).toEqual({
       text: 'hello',
+      executionModel: { provider: 'test-provider', model: 'test-model' },
       sessionId: 'session-1',
       usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       costUsd: 0.25,

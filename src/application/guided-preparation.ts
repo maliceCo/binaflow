@@ -1,5 +1,6 @@
 import { Ajv, type ValidateFunction } from 'ajv';
 import type { AgentProfile } from '../core/agent-profile.js';
+import type { AgentExecutionModel } from '../core/run.js';
 import { renderStructuredOutputInstructions } from '../core/structured-output.js';
 import { isReadOnlyPiTool } from '../pi-tools.js';
 import {
@@ -63,6 +64,7 @@ export interface GuidedPreparationMessageMetadata {
   questions: string[];
   citedSourceIds: string[];
   briefSuggestion?: TaskContractBrief;
+  executionModel?: AgentExecutionModel;
 }
 
 export interface PublicSourceResult {
@@ -181,10 +183,16 @@ export interface GuidedPreparationOperationBase {
   expectedPreparationRevision: number;
 }
 
+export interface GuidedPreparationModelSelection {
+  provider?: string;
+  model: string;
+}
+
 export interface GuidedReplyRequest extends GuidedPreparationOperationBase {
   kind: 'reply';
   message: string;
   sourceIds: string[];
+  modelSelection?: GuidedPreparationModelSelection;
 }
 
 export interface GuidedSearchRequest extends GuidedPreparationOperationBase {
@@ -358,6 +366,15 @@ const operationSchemas = GUIDED_PREPARATION_OPERATION_KINDS.map((kind) => {
         maxLength: GUIDED_PREPARATION_LIMITS.userMessageBytes,
       };
       properties.sourceIds = sourceIdsSchema();
+      properties.modelSelection = {
+        type: 'object',
+        additionalProperties: false,
+        required: ['model'],
+        properties: {
+          provider: { type: 'string', minLength: 1, maxLength: 100 },
+          model: { type: 'string', minLength: 1, maxLength: 200 },
+        },
+      };
       required.push('message', 'sourceIds');
       break;
     case 'search':

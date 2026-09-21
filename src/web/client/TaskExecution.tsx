@@ -14,6 +14,8 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
   const [preview, setPreview] = useState<ExecutionPreview>();
   const [progress, setProgress] = useState<ExecutionProgress>();
   const [resumePreview, setResumePreview] = useState<ExecutionResumePreview>();
+  const [loading, setLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const requestId = useRef<string | undefined>(undefined);
@@ -28,6 +30,7 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
     setProgress(undefined);
     setResumePreview(undefined);
     setBusy(false);
+    setLoading(true);
     setError(undefined);
     let active = true;
     void props.api
@@ -35,11 +38,18 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
       .then((next) => {
         if (active && generation === taskGeneration.current) setProgress(next ?? undefined);
       })
-      .catch(() => undefined);
+      .catch((cause) => {
+        if (active && generation === taskGeneration.current) {
+          setError(cause instanceof Error ? cause.message : 'The execution could not be loaded');
+        }
+      })
+      .finally(() => {
+        if (active && generation === taskGeneration.current) setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, [props.api, props.task.id, props.task.executionRunId]);
+  }, [props.api, props.task.id, props.task.executionRunId, reloadToken]);
 
   useEffect(() => {
     if (
@@ -67,13 +77,20 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
     if (!progress || progress.nextAction === 'review-changes' || progress.nextAction === 'none') {
       return;
     }
+    const generation = taskGeneration.current;
     const timer = window.setInterval(() => {
       void props.api
         .getTaskExecution(props.task.id)
         .then((next) => {
-          if (next) setProgress(next);
+          if (generation === taskGeneration.current && next) setProgress(next);
         })
-        .catch(() => undefined);
+        .catch((cause) => {
+          if (generation === taskGeneration.current) {
+            setError(
+              cause instanceof Error ? cause.message : 'The execution could not be refreshed',
+            );
+          }
+        });
     }, 1000);
     return () => window.clearInterval(timer);
   }, [props.api, props.task.id, progress?.nextAction]);
@@ -125,7 +142,7 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
     }
   }
 
-  async function resume(decision: 'retry-task' | 'continue'): Promise<void> {
+  async function resume(decision: 'retry-task' | 'continue' | 'approve-changes'): Promise<void> {
     if (busy || !progress || !resumePreview) return;
     if (!resumePreview.allowedDecisions.includes(decision)) return;
     const generation = taskGeneration.current;
@@ -173,11 +190,17 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
   return (
     <section className="task-execution" aria-labelledby="task-execution-title">
       <h3 id="task-execution-title">Execution</h3>
-      {!todoVersion && <p>Generate and approve a TODO before execution.</p>}
-      {todoVersion && !executionReady && (
+      {loading && <p role="status">Loading execution status...</p>}
+      {!loading && error && !progress && (
+        <button type="button" onClick={() => setReloadToken((value) => value + 1)} disabled={busy}>
+          Retry loading execution
+        </button>
+      )}
+      {!loading && !todoVersion && <p>Generate and approve a TODO before execution.</p>}
+      {!loading && todoVersion && !executionReady && (
         <p>Execution is unavailable until the task is ready for execution.</p>
       )}
-      {!progress && executionReady && (
+      {!loading && !error && !progress && executionReady && (
         <button type="button" onClick={() => void loadPreview()} disabled={busy}>
           {busy ? 'Preparing preview...' : 'Preview execution'}
         </button>
@@ -233,6 +256,15 @@ export function TaskExecution(props: { api: ApiClient; task: Task }): ReactEleme
                 <ChangeSetReview changeSet={progress.changeSet} />
               ) : (
                 <p>No file changes were produced.</p>
+              )}
+              {resumePreview?.allowedDecisions.includes('approve-changes') && (
+                <button
+                  type="button"
+                  onClick={() => void resume('approve-changes')}
+                  disabled={busy}
+                >
+                  Approve changes and finish
+                </button>
               )}
             </>
           )}

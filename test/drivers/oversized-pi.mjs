@@ -14,7 +14,14 @@ process.stdin.on('data', (chunk) => {
   while (index >= 0) {
     const command = JSON.parse(buffer.slice(0, index));
     buffer = buffer.slice(index + 1);
-    if (command.type === 'get_commands') {
+    if (command.type === 'get_state') {
+      write({
+        id: command.id,
+        type: 'response',
+        success: true,
+        data: { model: { provider: 'test-provider', id: 'test-model' } },
+      });
+    } else if (command.type === 'get_commands') {
       write({ id: command.id, type: 'response', success: true, data: { commands: [] } });
     } else {
       write({ id: command.id, type: 'response', success: true });

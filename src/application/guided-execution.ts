@@ -40,7 +40,12 @@ export class GuidedExecutionError extends Error {
 export type GuidedExecutionStage = 'execution' | 'changes-review';
 export type GuidedExecutionDecision = 'done' | 'blocked';
 export type GuidedResumeDecision =
-  'retry-task' | 'retry-verification' | 'continue' | 'reconcile-commit' | 'cancel';
+  | 'retry-task'
+  | 'retry-verification'
+  | 'continue'
+  | 'reconcile-commit'
+  | 'approve-changes'
+  | 'cancel';
 export type GuidedExecutionBlockType =
   | 'agent-blocked'
   | 'verification-failed'

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { createWebAuth } from '../../src/web/auth.js';
 import { parseWebConfig } from '../../src/web/config.js';
 import { createWebServer, type WebServer } from '../../src/web/server.js';
+import type { LauncherSettings, ProjectCatalogEntry } from '../../src/web/launcher-contracts.js';
 
 export interface BrowserFixture {
   server: WebServer;
@@ -17,6 +18,22 @@ export async function startBrowserFixture(): Promise<BrowserFixture> {
   const config = parseWebConfig({ host: '127.0.0.1', port, origin: `http://127.0.0.1:${port}` });
   const auth = createWebAuth();
   const id = '123e4567-e89b-42d3-a456-426614174000';
+  const settings: LauncherSettings = {
+    schemaVersion: 1,
+    setupRequired: false,
+    deviceName: 'Fixture',
+    web: { host: '127.0.0.1', port, origin: config.origin },
+    projectRoots: [{ rootId: 'root-1', label: 'Fixture root', path: '/fixture' }],
+  };
+  const project: ProjectCatalogEntry = {
+    projectId: 'project-1',
+    name: 'Fixture project',
+    workspacePath: '/fixture/project',
+    configPath: '/fixture/project/.binaflow/config.json',
+    dataDirPath: '/fixture/project/.binaflow/data',
+    ownership: { status: 'active', ownerDeviceId: 'fixture-device' },
+    updatedAt: '',
+  };
   const server = createWebServer({
     config,
     auth,
@@ -26,6 +43,31 @@ export async function startBrowserFixture(): Promise<BrowserFixture> {
       css: readFileSync(resolve('dist/web/styles.css'), 'utf8'),
     },
     api: {
+      settings: {
+        get: () => settings,
+        update: async () => ({ settings, restartRequired: false }),
+        importTlsMaterial: async () => ({
+          certFile: '/fixture/cert.pem',
+          keyFile: '/fixture/key.pem',
+        }),
+      },
+      projectRuntime: {
+        getActiveProject: () => project,
+        selectProject: async () => project,
+        closeActiveProject: async () => {},
+      },
+      projectCatalog: {
+        getRoots: () => [],
+        listProjects: async () => [project],
+        listDirectory: async () => ({
+          rootId: 'root-1',
+          segments: [],
+          hasBinaflowConfig: false,
+          items: [],
+          nextOffset: null,
+        }),
+        register: async () => project,
+      },
       taskViews: {
         async listGuidedTaskViews() {
           return {

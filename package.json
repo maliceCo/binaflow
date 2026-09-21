@@ -30,6 +30,7 @@
     "test:cli": "vitest run --project cli",
     "test:tui": "vitest run --project tui",
     "test:web:unit": "vitest run --project web",
+    "test:web:install": "playwright install chromium",
     "test:infrastructure": "vitest run --project infrastructure",
     "test:changed": "vitest run --changed",
     "test:related": "vitest related --run",

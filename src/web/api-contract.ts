@@ -8,6 +8,7 @@ import type {
   TaskContractDocumentHeader,
   TaskContractPlan,
   TaskContractReadiness,
+  TaskContractTodo,
 } from '../application/task-contract.js';
 
 export type { ChangeSet } from '../application/change-set.js';
@@ -51,6 +52,7 @@ export interface WebMessageDto {
     questions: string[];
     citedSourceIds: string[];
     briefSuggestion?: TaskContractBrief;
+    executionModel?: { provider: string; model: string };
   };
 }
 
@@ -80,6 +82,7 @@ export interface WebTaskDetailDto extends WebTaskDto {
   currentBrief: TaskContractBrief;
   draftBrief: TaskContractBrief;
   planDocument: TaskContractPlan | null;
+  todoDocument: TaskContractTodo | null;
   briefConfirmedThroughSequence: number;
   messagesCompactedThroughSequence: number;
   sessionRecoveredAt?: string;
@@ -174,6 +177,7 @@ export interface WebAgentSkillOptionDto {
 
 export interface WebAgentOptionsDto {
   models: Array<{ provider: string; model: string; displayName?: string }>;
+  plannerDefault: { provider?: string; model: string };
   thinkingLevels: string[];
   tools: Array<{
     id: string;

@@ -27,7 +27,7 @@ process.stdin.on('data', (chunk) => {
         id: command.id,
         type: 'response',
         success: true,
-        data: { sessionId: 'session-1' },
+        data: { sessionId: 'session-1', model: { provider: 'test-provider', id: 'test-model' } },
       });
     } else if (command.type === 'prompt') {
       writeFileSync(process.env.BINAFLOW_PROMPT_FILE, 'prompted');

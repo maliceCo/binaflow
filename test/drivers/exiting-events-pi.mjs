@@ -8,7 +8,16 @@ process.stdin.on('data', (chunk) => {
   while (index >= 0) {
     const command = JSON.parse(buffer.slice(0, index));
     buffer = buffer.slice(index + 1);
-    if (command.type === 'get_commands') {
+    if (command.type === 'get_state') {
+      process.stdout.write(
+        JSON.stringify({
+          id: command.id,
+          type: 'response',
+          success: true,
+          data: { model: { provider: 'test-provider', id: 'test-model' } },
+        }) + '\n',
+      );
+    } else if (command.type === 'get_commands') {
       process.stdout.write(
         JSON.stringify({
           id: command.id,

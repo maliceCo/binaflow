@@ -28,7 +28,7 @@ process.stdin.on('data', (chunk) => {
         type: 'response',
         command: 'get_state',
         success: true,
-        data: { sessionId: 'session-1' },
+        data: { sessionId: 'session-1', model: { provider: 'test-provider', id: 'test-model' } },
       });
     } else if (command.type === 'get_session_stats') {
       write({

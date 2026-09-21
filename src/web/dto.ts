@@ -136,6 +136,7 @@ export function toWebTaskDetailDto(view: GuidedTaskDetailView): WebTaskDetailDto
     currentBrief: view.brief.body,
     draftBrief: preparation?.draftBrief ?? view.brief.body,
     planDocument: view.plan?.body ?? null,
+    todoDocument: view.todo?.body ?? null,
     briefConfirmedThroughSequence: preparation?.briefConfirmedThroughSequence ?? 0,
     messagesCompactedThroughSequence: preparation?.messagesCompactedThroughSequence ?? 0,
     ...(preparation?.sessionRecoveredAt

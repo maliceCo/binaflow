@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { AgentProfile } from '../core/agent-profile.js';
 import type { ArtifactReference } from '../core/run.js';
+import { transitionChangeSet } from './change-set.js';
 import { renderTaskContractTodo } from './task-contract-render.js';
 import { getTaskContractReadiness } from './task-contract.js';
 import type {
@@ -357,7 +358,7 @@ export async function previewResume(
     progress.status !== 'waiting'
       ? []
       : progress.stage === 'changes-review'
-        ? ['cancel']
+        ? ['approve-changes', 'cancel']
         : ['retry-task', 'retry-verification', 'continue', 'reconcile-commit', 'cancel'];
   return {
     runId,
@@ -426,6 +427,20 @@ function applyResumeDecision(
   progress: GuidedExecutionProgress,
   decision: GuidedResumeDecision,
 ): GuidedExecutionProgress {
+  if (decision === 'approve-changes') {
+    if (progress.changeSet && progress.changeSet.status !== 'review') {
+      throw new Error('The ChangeSet is no longer awaiting approval');
+    }
+    return {
+      ...progress,
+      revision: progress.revision + 1,
+      status: 'completed',
+      nextAction: 'none',
+      ...(progress.changeSet
+        ? { changeSet: transitionChangeSet(progress.changeSet, 'approved') }
+        : {}),
+    };
+  }
   if (decision === 'cancel') {
     return {
       ...progress,
