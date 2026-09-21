@@ -7,7 +7,9 @@ export function Settings(props: {
   settings: LauncherSettings;
   onSaved: (settings: LauncherSettings) => void;
   setup?: boolean;
+  mode?: 'server' | 'locations';
 }): ReactElement {
+  const mode = props.mode ?? (props.setup ? 'server' : 'server');
   const [deviceName, setDeviceName] = useState(props.settings.deviceName);
   const [host, setHost] = useState(props.settings.web.host);
   const [port, setPort] = useState(String(props.settings.web.port));
@@ -99,92 +101,118 @@ export function Settings(props: {
 
   return (
     <section className="settings-card" aria-labelledby="settings-title">
-      <p className="eyebrow">{props.setup ? 'First start' : 'Local server'}</p>
-      <h2 id="settings-title">{props.setup ? 'Set up Binaflow' : 'Web settings'}</h2>
-      <p>These settings belong to the computer running Binaflow.</p>
-      <div className="settings-section" aria-labelledby="project-roots-title">
-        <h3 id="project-roots-title">Authorized project folders</h3>
-        <p>
-          Authorization permits browsing and registering Binaflow projects inside a folder. Removing
-          it keeps registered projects and files.
-        </p>
-        {props.settings.projectRoots.length > 0 ? (
-          <ul>
-            {props.settings.projectRoots.map((root) => (
-              <li key={root.id}>
-                <span>{root.label}</span>
-                {props.api.revokeProjectRoot && (
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    onClick={() => void revokeRoot(root.id)}
-                    disabled={rootBusy !== undefined}
-                  >
-                    {rootBusy === root.id ? 'Removing...' : 'Remove authorization'}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No folders are authorized.</p>
-        )}
-        {rootCandidates.length > 0 ? (
-          <>
-            <h3>Available local folders</h3>
+      <p className="eyebrow">
+        {mode === 'locations' ? 'Projects' : props.setup ? 'First start' : 'Local server'}
+      </p>
+      <h2 id="settings-title">
+        {mode === 'locations'
+          ? 'Project locations'
+          : props.setup
+            ? 'Set up Binaflow'
+            : 'Server settings'}
+      </h2>
+      <p>
+        {mode === 'locations'
+          ? 'Choose which folders Binaflow can browse for projects. This does not modify their files.'
+          : 'These settings belong to the computer running Binaflow.'}
+      </p>
+      {(mode === 'locations' || props.setup) && (
+        <div className="settings-section" aria-labelledby="project-roots-title">
+          <h3 id="project-roots-title">Folders Binaflow can browse</h3>
+          <p>
+            Binaflow can look for projects only inside these folders. Removing a folder keeps its
+            registered projects and files.
+          </p>
+          {props.settings.projectRoots.length > 0 ? (
             <ul>
-              {rootCandidates.map((candidate) => (
-                <li key={candidate.id}>
-                  <span>{candidate.label}</span>
-                  <button
-                    type="button"
-                    onClick={() => void authorizeRoot(candidate.id)}
-                    disabled={rootBusy !== undefined}
-                  >
-                    {rootBusy === candidate.id ? 'Authorizing...' : 'Authorize'}
-                  </button>
+              {props.settings.projectRoots.map((root) => (
+                <li key={root.id}>
+                  <span>{root.label}</span>
+                  {props.api.revokeProjectRoot && (
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => void revokeRoot(root.id)}
+                      disabled={rootBusy !== undefined}
+                    >
+                      {rootBusy === root.id ? 'Removing...' : 'Remove authorization'}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
-          </>
-        ) : (
-          <p>No additional local folders were detected.</p>
-        )}
-      </div>
-      <label htmlFor="device-name">Computer name</label>
-      <input
-        id="device-name"
-        value={deviceName}
-        onChange={(event) => setDeviceName(event.target.value)}
-      />
-      <label htmlFor="web-host">Host</label>
-      <input id="web-host" value={host} onChange={(event) => setHost(event.target.value)} />
-      <label htmlFor="web-port">Port</label>
-      <input
-        id="web-port"
-        inputMode="numeric"
-        value={port}
-        onChange={(event) => setPort(event.target.value)}
-      />
-      <label htmlFor="web-origin">Origin</label>
-      <input id="web-origin" value={origin} onChange={(event) => setOrigin(event.target.value)} />
-      <details>
-        <summary>HTTPS certificate</summary>
-        <p>
-          Only configure TLS from this computer. Private keys are never returned to the browser.
-        </p>
-        <label htmlFor="certificate-pem">Certificate PEM</label>
-        <textarea
-          id="certificate-pem"
-          value={certificatePem}
-          onChange={(event) => setCertificatePem(event.target.value)}
-        />
-        <label htmlFor="key-pem">Private key PEM</label>
-        <textarea id="key-pem" value={keyPem} onChange={(event) => setKeyPem(event.target.value)} />
-      </details>
-      <button type="button" onClick={() => void save()} disabled={busy}>
-        {busy ? 'Saving...' : 'Save settings'}
-      </button>
+          ) : (
+            <p>No folders are authorized.</p>
+          )}
+          {rootCandidates.length > 0 ? (
+            <>
+              <h3>Available local folders</h3>
+              <ul>
+                {rootCandidates.map((candidate) => (
+                  <li key={candidate.id}>
+                    <span>{candidate.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => void authorizeRoot(candidate.id)}
+                      disabled={rootBusy !== undefined}
+                    >
+                      {rootBusy === candidate.id ? 'Authorizing...' : 'Authorize'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>No additional local folders were detected.</p>
+          )}
+        </div>
+      )}
+      {mode !== 'locations' && (
+        <>
+          <label htmlFor="device-name">Computer name</label>
+          <input
+            id="device-name"
+            value={deviceName}
+            onChange={(event) => setDeviceName(event.target.value)}
+          />
+          <label htmlFor="web-host">Host</label>
+          <input id="web-host" value={host} onChange={(event) => setHost(event.target.value)} />
+          <label htmlFor="web-port">Port</label>
+          <input
+            id="web-port"
+            inputMode="numeric"
+            value={port}
+            onChange={(event) => setPort(event.target.value)}
+          />
+          <label htmlFor="web-origin">Origin</label>
+          <input
+            id="web-origin"
+            value={origin}
+            onChange={(event) => setOrigin(event.target.value)}
+          />
+          <details>
+            <summary>HTTPS certificate</summary>
+            <p>
+              Only configure TLS from this computer. Private keys are never returned to the browser.
+            </p>
+            <label htmlFor="certificate-pem">Certificate PEM</label>
+            <textarea
+              id="certificate-pem"
+              value={certificatePem}
+              onChange={(event) => setCertificatePem(event.target.value)}
+            />
+            <label htmlFor="key-pem">Private key PEM</label>
+            <textarea
+              id="key-pem"
+              value={keyPem}
+              onChange={(event) => setKeyPem(event.target.value)}
+            />
+          </details>
+          <button type="button" onClick={() => void save()} disabled={busy}>
+            {busy ? 'Saving...' : 'Save settings'}
+          </button>
+        </>
+      )}
       {message && <p role="status">{message}</p>}
       {error && (
         <p className="error" role="alert">

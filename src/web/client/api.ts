@@ -24,6 +24,9 @@ import type {
   WebTaskDto,
   WebTransferDto,
   WebItemsResponse,
+  WebLocalDirectoryPageDto,
+  WebLocalFilesystemRootDto,
+  WebAgentOptionsDto,
 } from '../api-contract.js';
 
 export type ApiSuccess<T> = WebApiSuccess<T>;
@@ -44,6 +47,10 @@ export type ExecutionArtifact = WebExecutionArtifactDto;
 export type ExecutionProgress = WebExecutionProgressDto;
 export type TransferStatus = WebTransferDto;
 export type ProjectDirectoryPage = WebProjectDirectoryPageDto;
+export type LocalFilesystemRoot = WebLocalFilesystemRootDto;
+export type LocalDirectoryPage = WebLocalDirectoryPageDto;
+export type AgentOptions = WebAgentOptionsDto;
+export type AgentProfile = import('../../core/agent-profile.js').AgentProfile;
 export type Pairing = WebPairingDto;
 
 export class ApiRequestError extends Error {
@@ -94,6 +101,19 @@ export interface ApiClient {
     nextOffset: number | null;
   }>;
   registerProject(rootId: string, segments: string[], projectId?: string): Promise<ProjectSummary>;
+  initializeProject(rootId: string, segments: string[]): Promise<ProjectSummary>;
+  listLocalFilesystemRoots(): Promise<LocalFilesystemRoot[]>;
+  listLocalDirectory(path: string, offset?: number): Promise<LocalDirectoryPage>;
+  openLocalProject(path: string): Promise<ProjectSummary>;
+  initializeLocalProject(path: string): Promise<ProjectSummary>;
+  getAgentOptions(): Promise<WebAgentOptionsDto>;
+  listAgentProfiles(): Promise<{ sourceHash: string; profiles: Record<string, AgentProfile> }>;
+  updateAgentProfile(input: {
+    profileName: string;
+    profile: AgentProfile;
+    expectedSourceHash: string;
+    writeAccessConfirmed?: boolean;
+  }): Promise<{ sourceHash: string; profiles: Record<string, AgentProfile> }>;
   getActiveProject(): Promise<ProjectSummary | null>;
   selectProject(projectId: string): Promise<ProjectSummary>;
   closeActiveProject(): Promise<void>;
@@ -245,6 +265,71 @@ export function createApiClient(): ApiClient {
         '/api/v1/projects',
         'POST',
         { rootId, segments, ...(projectId ? { projectId } : {}) },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async initializeProject(rootId, segments) {
+      const result = await request<ProjectSummary>(
+        '/api/v1/project-directories/initialize',
+        'POST',
+        { rootId, segments },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async listLocalFilesystemRoots() {
+      const result = await request<WebItemsResponse<LocalFilesystemRoot>>(
+        '/api/v1/local-filesystem/roots',
+      );
+      return result.data.items;
+    },
+    async listLocalDirectory(path, offset = 0) {
+      const query = new URLSearchParams({ path, offset: String(offset), limit: '100' });
+      const result = await request<WebLocalDirectoryPageDto>(
+        `/api/v1/local-filesystem/directory?${query.toString()}`,
+      );
+      return result.data;
+    },
+    async openLocalProject(path) {
+      const result = await request<ProjectSummary>(
+        '/api/v1/local-projects',
+        'POST',
+        { path, mode: 'open' },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async initializeLocalProject(path) {
+      const result = await request<ProjectSummary>(
+        '/api/v1/local-projects',
+        'POST',
+        { path, mode: 'initialize' },
+        csrfToken,
+      );
+      return result.data;
+    },
+    async getAgentOptions() {
+      const result = await request<WebAgentOptionsDto>('/api/v1/project-agent-options');
+      return result.data;
+    },
+    async listAgentProfiles() {
+      const result = await request<{ sourceHash: string; profiles: Record<string, AgentProfile> }>(
+        '/api/v1/project-agent-profiles',
+      );
+      return result.data;
+    },
+    async updateAgentProfile(input) {
+      const result = await request<{ sourceHash: string; profiles: Record<string, AgentProfile> }>(
+        `/api/v1/project-agent-profiles/${encodeURIComponent(input.profileName)}`,
+        'PUT',
+        {
+          profile: input.profile,
+          expectedSourceHash: input.expectedSourceHash,
+          ...(input.writeAccessConfirmed === undefined
+            ? {}
+            : { writeAccessConfirmed: input.writeAccessConfirmed }),
+        },
         csrfToken,
       );
       return result.data;

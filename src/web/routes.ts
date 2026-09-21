@@ -25,7 +25,10 @@ import {
   type ProjectCatalogEntry,
 } from './launcher-contracts.js';
 import type { PairingOffer } from './peer-auth.js';
+import type { AgentProfile } from '../core/agent-profile.js';
 import type { ProjectDirectoryListing } from './project-catalog.js';
+import type { LocalDirectoryListing, LocalFilesystemRoot } from './local-filesystem.js';
+import type { WebAgentOptionsDto } from './api-contract.js';
 import {
   toWebGuidedExecutionProgress,
   toWebGuidedExecutionProgressView,
@@ -75,6 +78,20 @@ export interface WebExecutionCapabilities {
   readonly cancelWaiting: GuidedExecutionService['cancelWaiting'];
 }
 
+export interface WebAgentOptionsCapabilities {
+  readonly get: () => Promise<WebAgentOptionsDto>;
+}
+
+export interface WebAgentProfileCapabilities {
+  readonly list: () => Promise<{ sourceHash: string; profiles: Record<string, AgentProfile> }>;
+  readonly update: (input: {
+    profileName: string;
+    profile: unknown;
+    expectedSourceHash: string;
+    writeAccessConfirmed?: boolean;
+  }) => Promise<{ sourceHash: string; profiles: Record<string, AgentProfile> }>;
+}
+
 export interface WebProjectRuntimeCapabilities {
   readonly getActiveProject: () => ProjectCatalogEntry | undefined;
   readonly selectProject: (projectId: string) => Promise<ProjectCatalogEntry>;
@@ -83,9 +100,17 @@ export interface WebProjectRuntimeCapabilities {
 
 export interface WebApiCapabilities {
   readonly settings?: WebSettingsCapabilities;
+  readonly agentProfiles?: WebAgentProfileCapabilities;
+  readonly agentOptions?: WebAgentOptionsCapabilities;
   readonly devices?: WebDeviceCapabilities;
   readonly transfers?: WebTransferCapabilities;
   readonly projectRuntime?: WebProjectRuntimeCapabilities;
+  readonly localFilesystem?: {
+    listRoots: () => Promise<LocalFilesystemRoot[]>;
+    listDirectory: (path: string, offset: number, limit: number) => Promise<LocalDirectoryListing>;
+    openProject: (path: string) => Promise<ProjectCatalogEntry>;
+    initializeProject: (path: string) => Promise<ProjectCatalogEntry>;
+  };
   readonly projectCatalog?: {
     getRoots: () => Array<{ id: string; label: string }>;
     listSetupRoots?: () => Promise<Array<{ id: string; label: string }>>;
@@ -107,6 +132,7 @@ export interface WebApiCapabilities {
       segments: string[],
       projectId?: string,
     ) => Promise<ProjectCatalogEntry>;
+    initialize?: (rootId: string, segments: string[]) => Promise<ProjectCatalogEntry>;
   };
   readonly taskContracts?: Pick<TaskContractService, 'create'>;
   readonly taskViews?: GuidedTaskViewQueries;
@@ -215,6 +241,33 @@ export async function handleWebApi(
         restartRequired: result.restartRequired,
       });
     }
+    if (request.path === '/api/v1/local-filesystem/roots' && request.method === 'GET') {
+      if (!api.localFilesystem) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Local filesystem browsing requires a local connection');
+      return ok(200, { items: await api.localFilesystem.listRoots() });
+    }
+    if (request.path === '/api/v1/local-filesystem/directory' && request.method === 'GET') {
+      if (!api.localFilesystem) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Local filesystem browsing requires a local connection');
+      const path = request.query?.get('path');
+      if (!path) throw new WebContractError('invalid-input', 'path is required');
+      const offset = parseQueryInteger(request.query?.get('offset'), 0);
+      const limit = parseQueryInteger(request.query?.get('limit'), 100);
+      return ok(200, await api.localFilesystem.listDirectory(path, offset, limit));
+    }
+    if (request.path === '/api/v1/local-projects' && request.method === 'POST') {
+      if (!api.localFilesystem) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Local project operations require a local connection');
+      const input = parseLocalProjectRequest(request.body);
+      const project =
+        input.mode === 'open'
+          ? await api.localFilesystem.openProject(input.path)
+          : await api.localFilesystem.initializeProject(input.path);
+      return ok(201, toWebProjectSummaryDto(project));
+    }
     if (request.path === '/api/v1/project-directories' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
       const rootId = request.query?.get('rootId');
@@ -223,6 +276,14 @@ export async function handleWebApi(
       const offset = parseQueryInteger(request.query?.get('offset'), 0);
       const limit = parseQueryInteger(request.query?.get('limit'), 50);
       return ok(200, await api.projectCatalog.listDirectory(rootId, segments, offset, limit));
+    }
+    if (request.path === '/api/v1/project-directories/initialize' && request.method === 'POST') {
+      if (!api.projectCatalog?.initialize) return unavailable();
+      const input = parseProjectRegistration(request.body);
+      return ok(
+        201,
+        toWebProjectSummaryDto(await api.projectCatalog.initialize(input.rootId, input.segments)),
+      );
     }
     if (request.path === '/api/v1/projects' && request.method === 'GET') {
       if (!api.projectCatalog) return unavailable();
@@ -263,6 +324,32 @@ export async function handleWebApi(
       }
       await api.projectRuntime.closeActiveProject();
       return ok(200, { project: null });
+    }
+    if (request.path === '/api/v1/project-agent-options' && request.method === 'GET') {
+      if (!api.agentOptions) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Agent options require a local connection');
+      return ok(200, await api.agentOptions.get());
+    }
+    if (request.path === '/api/v1/project-agent-profiles' && request.method === 'GET') {
+      if (!api.agentProfiles) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Agent profile settings require a local connection');
+      return ok(200, await api.agentProfiles.list());
+    }
+    const profileMatch = request.path.match(/^\/api\/v1\/project-agent-profiles\/([^/]+)$/);
+    if (profileMatch && request.method === 'PUT') {
+      if (!api.agentProfiles) return unavailable();
+      if (!isLoopbackSettingsRequest(request))
+        return error(403, 'forbidden', 'Agent profile settings require a local connection');
+      const input = parseAgentProfileUpdate(request.body);
+      return ok(
+        200,
+        await api.agentProfiles.update({
+          ...input,
+          profileName: decodeURIComponent(profileMatch[1]!),
+        }),
+      );
     }
     if (request.path === '/api/v1/settings' && request.method === 'GET') {
       if (!api.settings) return unavailable();
@@ -714,6 +801,45 @@ function parseSetupRootBody(value: unknown): string {
     throw new WebContractError('invalid-input', 'Invalid setup root');
   }
   return (value as Record<string, unknown>).candidateId as string;
+}
+
+function parseAgentProfileUpdate(value: unknown): {
+  profile: unknown;
+  expectedSourceHash: string;
+  writeAccessConfirmed?: boolean;
+} {
+  if (
+    !isRecordValue(value) ||
+    !hasOnlyKeysValue(value, ['profile', 'expectedSourceHash', 'writeAccessConfirmed'])
+  ) {
+    throw new WebContractError('invalid-input', 'Invalid agent profile update');
+  }
+  if (!isRecordValue(value.profile) || typeof value.expectedSourceHash !== 'string') {
+    throw new WebContractError('invalid-input', 'Invalid agent profile update');
+  }
+  if (value.writeAccessConfirmed !== undefined && typeof value.writeAccessConfirmed !== 'boolean') {
+    throw new WebContractError('invalid-input', 'Invalid write access confirmation');
+  }
+  return {
+    profile: value.profile,
+    expectedSourceHash: value.expectedSourceHash,
+    ...(value.writeAccessConfirmed === undefined
+      ? {}
+      : { writeAccessConfirmed: value.writeAccessConfirmed }),
+  };
+}
+
+function parseLocalProjectRequest(value: unknown): { path: string; mode: 'open' | 'initialize' } {
+  if (!isRecordValue(value) || !hasOnlyKeysValue(value, ['path', 'mode'])) {
+    throw new WebContractError('invalid-input', 'Invalid local project request');
+  }
+  if (typeof value.path !== 'string' || !value.path || value.path.length > 4096) {
+    throw new WebContractError('invalid-input', 'Invalid local project path');
+  }
+  if (value.mode !== 'open' && value.mode !== 'initialize') {
+    throw new WebContractError('invalid-input', 'Invalid local project mode');
+  }
+  return { path: value.path, mode: value.mode };
 }
 
 function parseProjectRegistration(value: unknown): {

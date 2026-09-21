@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { AgentProfile } from '../core/agent-profile.js';
-import type { AgentDriver } from '../core/agent.js';
+import { composeAgentPrompt, type AgentDriver } from '../core/agent.js';
 import type { AgentStepResult, AgentProfileSnapshot } from '../core/run.js';
 import type { ApplicationInternals } from './context.js';
 import type { ApplicationPreparationStore } from './ports.js';
@@ -236,7 +236,7 @@ export async function replyPreparation(
         runId: request.draftId,
         stepId: 'preparation',
         profile,
-        prompt: buildPreparationPrompt(afterPending),
+        prompt: composeAgentPrompt(buildPreparationPrompt(afterPending), profile),
       },
       async () => undefined,
       request.signal ?? new AbortController().signal,
@@ -557,7 +557,10 @@ async function runPreparationAgentTurn(
         runId: request.draftId,
         stepId: 'preparation',
         profile,
-        prompt: buildPreparationPrompt(pending, persisted?.synthesis.value),
+        prompt: composeAgentPrompt(
+          buildPreparationPrompt(pending, persisted?.synthesis.value),
+          profile,
+        ),
       },
       async () => undefined,
       request.signal ?? new AbortController().signal,
@@ -991,6 +994,7 @@ function snapshotProfile(profile: AgentProfile): AgentProfileSnapshot {
     ...(profile.provider ? { provider: profile.provider } : {}),
     model: profile.model,
     ...(profile.thinking ? { thinking: profile.thinking } : {}),
+    ...(profile.instructions ? { instructions: profile.instructions } : {}),
     tools: [...profile.tools],
     workspaceMode: profile.workspaceMode,
     ...(profile.projectTrust ? { projectTrust: profile.projectTrust } : {}),

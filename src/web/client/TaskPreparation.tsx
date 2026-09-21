@@ -25,6 +25,7 @@ export function TaskPreparation(props: {
   const [pendingMessage, setPendingMessage] = useState<string>();
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
+  const [activeStage, setActiveStage] = useState<'brief' | 'plan' | 'todo' | 'execution'>('brief');
   const requestId = useRef<string | undefined>(undefined);
   const requestKey = useRef<string | undefined>(undefined);
   const selectedSourcesTask = useRef<string | undefined>(undefined);
@@ -163,8 +164,15 @@ export function TaskPreparation(props: {
   const briefReady = detail ? detail.briefConfirmedThroughSequence >= detail.lastSequence : false;
   const sourceById = new Map(detail?.sources.map((source) => [source.id, source]) ?? []);
 
+  useEffect(() => {
+    if (!detail) return;
+    if (!briefReady) setActiveStage('brief');
+    else if (!detail.todo) setActiveStage('plan');
+    else if (props.task.readiness === 'ready') setActiveStage('execution');
+  }, [briefReady, detail?.plan, detail?.todo, props.task.readiness]);
+
   return (
-    <section className="task-panel" aria-labelledby="task-preparation-title">
+    <section className="task-panel task-workspace" aria-labelledby="task-preparation-title">
       <p className="eyebrow">
         {props.task.phase} · revision {props.task.revision}
       </p>
@@ -174,281 +182,324 @@ export function TaskPreparation(props: {
       </p>
       {detail ? (
         <>
-          <p>Preparation revision {detail.preparationRevision}.</p>
-          {detail.messagesCompactedThroughSequence > 0 && (
-            <p className="context-notice">
-              Earlier messages remain in the history, but the assistant now uses the confirmed brief
-              and messages after sequence {detail.messagesCompactedThroughSequence}.
-            </p>
-          )}
-          {detail.sessionRecoveredAt && (
-            <p className="context-notice">
-              The previous preparation operation was recovered and will start a new assistant
-              session.
-            </p>
-          )}
-          <section className="conversation-panel" aria-labelledby="task-messages-title">
-            <div className="section-heading">
-              <div>
-                <h3 id="task-messages-title">Conversation</h3>
-                <p className="muted">
-                  Describe the outcome. The assistant will keep the brief updated.
-                </p>
-              </div>
-              {detail.activeOperation && (
-                <div className="operation-status">
-                  <span className="operation-pill">Working: {detail.activeOperation.kind}</span>
-                  <button
-                    type="button"
-                    onClick={() => void recoverActiveOperation()}
-                    disabled={busy}
-                  >
-                    Recover operation
-                  </button>
-                </div>
-              )}
-            </div>
-            <div className="chat-thread" aria-live="polite">
-              {detail.messages.length === 0 && !pendingMessage && (
-                <p className="empty-chat">No messages yet. Start with the result you need.</p>
-              )}
-              {detail.messages.map((item) => (
-                <article className={`chat-turn chat-turn-${item.role}`} key={item.id}>
-                  <div className="chat-turn-label">
-                    {item.role === 'user' ? 'You' : 'Assistant'}
-                  </div>
-                  <p>{item.content}</p>
-                  {item.metadata?.questions.length ? (
-                    <div className="chat-questions">
-                      <strong>Questions to resolve</strong>
-                      <ul>
-                        {item.metadata.questions.map((question) => (
-                          <li key={question}>{question}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {item.metadata?.citedSourceIds.length ? (
-                    <SourceAttachments
-                      sources={item.metadata.citedSourceIds
-                        .map((id) => sourceById.get(id))
-                        .filter(isSource)}
-                    />
-                  ) : null}
-                </article>
-              ))}
-              {pendingMessage && (
-                <>
-                  <article className="chat-turn chat-turn-user chat-turn-pending">
-                    <div className="chat-turn-label">You</div>
-                    <p>{pendingMessage}</p>
-                  </article>
-                  <article
-                    className="chat-turn chat-turn-assistant chat-turn-pending"
-                    aria-label="Assistant is thinking"
-                  >
-                    <div className="chat-turn-label">Assistant</div>
-                    <p className="thinking-indicator">Reviewing the brief and evidence...</p>
-                  </article>
-                </>
-              )}
-            </div>
-            {selectedSources.length > 0 && (
-              <SourceAttachments
-                label="Attachments for this message"
-                sources={selectedSources.map((id) => sourceById.get(id)).filter(isSource)}
-              />
-            )}
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submit('reply', { message, sourceIds: selectedSources });
-              }}
-            >
-              <label htmlFor="task-message">Message</label>
-              <textarea
-                id="task-message"
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                disabled={busy}
-                placeholder="What should this task achieve?"
-              />
-              <button type="submit" disabled={busy || !message.trim()}>
-                Send message
+          <nav className="task-stage-nav" aria-label="Task phases">
+            {(
+              [
+                ['brief', 'Brief', 'Prepare'],
+                ['plan', 'Plan', 'Propose'],
+                ['todo', 'TODO', 'Organize'],
+                ['execution', 'Execution', 'Operate'],
+              ] as const
+            ).map(([stage, title, hint], index) => (
+              <button
+                className={activeStage === stage ? 'is-active' : ''}
+                type="button"
+                key={stage}
+                onClick={() => setActiveStage(stage)}
+                aria-current={activeStage === stage ? 'step' : undefined}
+              >
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <strong>{title}</strong>
+                <small>{hint}</small>
               </button>
-            </form>
-          </section>
-          <section aria-labelledby="task-sources-title">
-            <div className="section-heading">
-              <div>
-                <h3 id="task-sources-title">Evidence attachments</h3>
-                <p className="muted">Select sources to attach to the next assistant request.</p>
-              </div>
-              <span className="muted">{selectedSources.length}/5 selected</span>
-            </div>
-            {detail.sources.length === 0 ? (
-              <p>No sources yet.</p>
-            ) : (
-              <ul className="source-list">
-                {detail.sources.map((source) => (
-                  <li
-                    key={source.id}
-                    className={selectedSources.includes(source.id) ? 'source-selected' : ''}
-                  >
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={selectedSources.includes(source.id)}
-                        disabled={
-                          busy ||
-                          (!selectedSources.includes(source.id) && selectedSources.length >= 5)
-                        }
-                        onChange={() =>
-                          setSelectedSources((current) =>
-                            current.includes(source.id)
-                              ? current.filter((id) => id !== source.id)
-                              : [...current, source.id],
-                          )
-                        }
-                      />
-                      <span>{source.title}</span>
-                    </label>
-                    <a href={source.url} target="_blank" rel="noreferrer">
-                      {source.url}
-                    </a>
-                    <p>{source.excerpt}</p>
-                  </li>
-                ))}
-              </ul>
+            ))}
+          </nav>
+          <p className="stage-orientation">
+            {activeStage === 'brief' && 'Complete the context before generating a plan.'}
+            {activeStage === 'plan' && 'Review the approach before building.'}
+            {activeStage === 'todo' && 'Check the work before execution.'}
+            {activeStage === 'execution' && 'Confirm the conditions before starting.'}
+          </p>
+          <div className={`task-stage task-stage-${activeStage}`}>
+            <p>Preparation revision {detail.preparationRevision}.</p>
+            {detail.messagesCompactedThroughSequence > 0 && (
+              <p className="context-notice">
+                Earlier messages remain in the history, but the assistant now uses the confirmed
+                brief and messages after sequence {detail.messagesCompactedThroughSequence}.
+              </p>
             )}
-            <div className="source-tools">
+            {detail.sessionRecoveredAt && (
+              <p className="context-notice">
+                The previous preparation operation was recovered and will start a new assistant
+                session.
+              </p>
+            )}
+            <section
+              className="conversation-panel task-stage-pane task-stage-pane-brief"
+              aria-labelledby="task-messages-title"
+            >
+              <div className="section-heading">
+                <div>
+                  <h3 id="task-messages-title">Conversation</h3>
+                  <p className="muted">
+                    Describe the outcome. The assistant will keep the brief updated.
+                  </p>
+                </div>
+                {detail.activeOperation && (
+                  <div className="operation-status">
+                    <span className="operation-pill">Working: {detail.activeOperation.kind}</span>
+                    <button
+                      type="button"
+                      onClick={() => void recoverActiveOperation()}
+                      disabled={busy}
+                    >
+                      Recover operation
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="chat-thread" aria-live="polite">
+                {detail.messages.length === 0 && !pendingMessage && (
+                  <p className="empty-chat">No messages yet. Start with the result you need.</p>
+                )}
+                {detail.messages.map((item) => (
+                  <article className={`chat-turn chat-turn-${item.role}`} key={item.id}>
+                    <div className="chat-turn-label">
+                      {item.role === 'user' ? 'You' : 'Assistant'}
+                    </div>
+                    <p>{item.content}</p>
+                    {item.metadata?.questions.length ? (
+                      <div className="chat-questions">
+                        <strong>Questions to resolve</strong>
+                        <ul>
+                          {item.metadata.questions.map((question) => (
+                            <li key={question}>{question}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    {item.metadata?.citedSourceIds.length ? (
+                      <SourceAttachments
+                        sources={item.metadata.citedSourceIds
+                          .map((id) => sourceById.get(id))
+                          .filter(isSource)}
+                      />
+                    ) : null}
+                  </article>
+                ))}
+                {pendingMessage && (
+                  <>
+                    <article className="chat-turn chat-turn-user chat-turn-pending">
+                      <div className="chat-turn-label">You</div>
+                      <p>{pendingMessage}</p>
+                    </article>
+                    <article
+                      className="chat-turn chat-turn-assistant chat-turn-pending"
+                      aria-label="Assistant is thinking"
+                    >
+                      <div className="chat-turn-label">Assistant</div>
+                      <p className="thinking-indicator">Reviewing the brief and evidence...</p>
+                    </article>
+                  </>
+                )}
+              </div>
+              {selectedSources.length > 0 && (
+                <SourceAttachments
+                  label="Attachments for this message"
+                  sources={selectedSources.map((id) => sourceById.get(id)).filter(isSource)}
+                />
+              )}
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void submit('search', { query });
+                  void submit('reply', { message, sourceIds: selectedSources });
                 }}
               >
-                <label htmlFor="source-query">Search the web</label>
-                <input
-                  id="source-query"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                <label htmlFor="task-message">Message</label>
+                <textarea
+                  id="task-message"
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
                   disabled={busy}
+                  placeholder="What should this task achieve?"
                 />
-                <button type="submit" disabled={busy || !query.trim()}>
-                  Search sources
+                <button type="submit" disabled={busy || !message.trim()}>
+                  Send message
                 </button>
               </form>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void submit('fetch-source', { url });
-                }}
-              >
-                <label htmlFor="source-url">Attach URL</label>
-                <input
-                  id="source-url"
-                  type="url"
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  disabled={busy}
-                />
-                <button type="submit" disabled={busy || !url.trim()}>
-                  Read source
-                </button>
-              </form>
-            </div>
-          </section>
-          <section aria-labelledby="task-plan-title">
-            <h3 id="task-plan-title">Review and confirm brief</h3>
-            <p className="muted">This is a draft until you explicitly confirm it.</p>
-            <BriefView brief={detail.draftBrief} />
-            <button
-              type="button"
-              onClick={() =>
-                void submit('confirm-brief', {
-                  brief: detail.draftBrief,
-                  throughSequence: detail.lastSequence,
-                  sourceIds: selectedSources,
-                })
-              }
-              disabled={busy || briefReady}
+            </section>
+            <section
+              className="task-stage-pane task-stage-pane-brief"
+              aria-labelledby="task-sources-title"
             >
-              {briefReady ? 'Brief confirmed' : 'Confirm brief'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void submit('generate-plan', { sourceIds: selectedSources })}
-              disabled={busy || !briefReady}
-            >
-              Generate plan
-            </button>
-            {detail.planDocument && (
-              <div className="plan-review">
-                <h4>Plan version {detail.plan?.version} is available.</h4>
-                <p>{detail.planDocument.summary}</p>
-                <ol>
-                  {detail.planDocument.items.map((item) => (
-                    <li key={item.id}>
-                      <strong>{item.title}</strong>
-                      <p>{item.description}</p>
-                      <ul>
-                        {item.acceptanceCriteria.map((criterion) => (
-                          <li key={criterion}>{criterion}</li>
-                        ))}
-                      </ul>
+              <div className="section-heading">
+                <div>
+                  <h3 id="task-sources-title">Evidence attachments</h3>
+                  <p className="muted">Select sources to attach to the next assistant request.</p>
+                </div>
+                <span className="muted">{selectedSources.length}/5 selected</span>
+              </div>
+              {detail.sources.length === 0 ? (
+                <p>No sources yet.</p>
+              ) : (
+                <ul className="source-list">
+                  {detail.sources.map((source) => (
+                    <li
+                      key={source.id}
+                      className={selectedSources.includes(source.id) ? 'source-selected' : ''}
+                    >
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={selectedSources.includes(source.id)}
+                          disabled={
+                            busy ||
+                            (!selectedSources.includes(source.id) && selectedSources.length >= 5)
+                          }
+                          onChange={() =>
+                            setSelectedSources((current) =>
+                              current.includes(source.id)
+                                ? current.filter((id) => id !== source.id)
+                                : [...current, source.id],
+                            )
+                          }
+                        />
+                        <span>{source.title}</span>
+                      </label>
+                      <a href={source.url} target="_blank" rel="noreferrer">
+                        {source.url}
+                      </a>
+                      <p>{source.excerpt}</p>
                     </li>
                   ))}
-                </ol>
-                <h4>Verification</h4>
-                <ul>
-                  {detail.planDocument.verification.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
                 </ul>
+              )}
+              <div className="source-tools">
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submit('search', { query });
+                  }}
+                >
+                  <label htmlFor="source-query">Search the web</label>
+                  <input
+                    id="source-query"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    disabled={busy}
+                  />
+                  <button type="submit" disabled={busy || !query.trim()}>
+                    Search sources
+                  </button>
+                </form>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submit('fetch-source', { url });
+                  }}
+                >
+                  <label htmlFor="source-url">Attach URL</label>
+                  <input
+                    id="source-url"
+                    type="url"
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    disabled={busy}
+                  />
+                  <button type="submit" disabled={busy || !url.trim()}>
+                    Read source
+                  </button>
+                </form>
               </div>
-            )}
-            {detail.plan && (
-              <>
-                <label htmlFor="plan-comment">Plan comment</label>
-                <textarea
-                  id="plan-comment"
-                  value={comment}
-                  onChange={(event) => setComment(event.target.value)}
-                  disabled={busy}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    void submit('comment-plan', {
-                      planVersion: detail.plan!.version,
-                      content: comment,
-                    })
-                  }
-                  disabled={busy || !comment.trim()}
-                >
-                  Comment and regenerate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void submit('approve-plan', { planVersion: detail.plan!.version })}
-                  disabled={busy}
-                >
-                  Approve plan
-                </button>
-              </>
-            )}
-            {planVersion && (
+            </section>
+            <section
+              className="task-stage-pane task-stage-pane-plan task-stage-pane-todo"
+              aria-labelledby="task-plan-title"
+            >
+              <h3 id="task-plan-title">Review and confirm brief</h3>
+              <p className="muted">This is a draft until you explicitly confirm it.</p>
+              <BriefView brief={detail.draftBrief} />
               <button
                 type="button"
-                onClick={() => void submit('generate-todo', { planVersion })}
-                disabled={busy}
+                onClick={() =>
+                  void submit('confirm-brief', {
+                    brief: detail.draftBrief,
+                    throughSequence: detail.lastSequence,
+                    sourceIds: selectedSources,
+                  })
+                }
+                disabled={busy || briefReady}
               >
-                Generate TODO
+                {briefReady ? 'Brief confirmed' : 'Confirm brief'}
               </button>
-            )}
-          </section>
-          <TaskExecution api={props.api} task={props.task} />
+              <button
+                type="button"
+                onClick={() => void submit('generate-plan', { sourceIds: selectedSources })}
+                disabled={busy || !briefReady}
+              >
+                Generate plan
+              </button>
+              {detail.planDocument && (
+                <div className="plan-review">
+                  <h4>Plan version {detail.plan?.version} is available.</h4>
+                  <p>{detail.planDocument.summary}</p>
+                  <ol>
+                    {detail.planDocument.items.map((item) => (
+                      <li key={item.id}>
+                        <strong>{item.title}</strong>
+                        <p>{item.description}</p>
+                        <ul>
+                          {item.acceptanceCriteria.map((criterion) => (
+                            <li key={criterion}>{criterion}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ol>
+                  <h4>Verification</h4>
+                  <ul>
+                    {detail.planDocument.verification.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {detail.plan && (
+                <>
+                  <label htmlFor="plan-comment">Plan comment</label>
+                  <textarea
+                    id="plan-comment"
+                    value={comment}
+                    onChange={(event) => setComment(event.target.value)}
+                    disabled={busy}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void submit('comment-plan', {
+                        planVersion: detail.plan!.version,
+                        content: comment,
+                      })
+                    }
+                    disabled={busy || !comment.trim()}
+                  >
+                    Comment and regenerate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void submit('approve-plan', { planVersion: detail.plan!.version })
+                    }
+                    disabled={busy}
+                  >
+                    Approve plan
+                  </button>
+                </>
+              )}
+              {planVersion && (
+                <button
+                  type="button"
+                  onClick={() => void submit('generate-todo', { planVersion })}
+                  disabled={busy}
+                >
+                  Generate TODO
+                </button>
+              )}
+            </section>
+            <div className="task-stage-pane task-stage-pane-execution">
+              <TaskExecution api={props.api} task={props.task} />
+            </div>
+          </div>
         </>
       ) : (
         <p>Loading preparation...</p>

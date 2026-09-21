@@ -2,8 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { parseBuildPlan, planBuildWorkflow } from '../src/workflows/plan-build.js';
 import { researchPlanBuildWorkflow } from '../src/workflows/research-plan-build.js';
 import { serializeWorkflow, validateWorkflowDefinition } from '../src/core/workflow.js';
+import { composeAgentPrompt } from '../src/core/agent.js';
 
 describe('plan-build contracts', () => {
+  it('composes optional project instructions after the workflow prompt', () => {
+    const prompt = composeAgentPrompt('Base prompt', {
+      driver: 'pi',
+      model: 'test-model',
+      tools: ['read'],
+      workspaceMode: 'read-only',
+      timeoutMs: 1000,
+      retryLimit: 0,
+      instructions: 'Keep changes small.',
+    });
+
+    expect(prompt).toBe('Base prompt\n\nProject-specific agent instructions:\nKeep changes small.');
+  });
+
   it('is portable and serializable without harness-specific settings', () => {
     const serialized = serializeWorkflow(planBuildWorkflow);
     const restored: unknown = JSON.parse(serialized);

@@ -181,6 +181,12 @@ export function validateAgentProfile(
   if (value.thinking !== undefined && typeof value.thinking !== 'string') {
     errors.push('thinking must be a string');
   }
+  if (
+    value.instructions !== undefined &&
+    (typeof value.instructions !== 'string' || value.instructions.length > 12000)
+  ) {
+    errors.push('instructions must be a string of at most 12000 characters');
+  }
   const skills = parseSkillPolicy(value.skills, configPath, errors);
   if (errors.length > 0) return { errors };
 
@@ -198,6 +204,9 @@ export function validateAgentProfile(
   }
   if (typeof value.provider === 'string') profile.provider = value.provider;
   if (typeof value.thinking === 'string') profile.thinking = value.thinking;
+  if (typeof value.instructions === 'string' && value.instructions.trim()) {
+    profile.instructions = value.instructions.trim();
+  }
   return { profile, errors };
 }
 

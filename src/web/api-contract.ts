@@ -154,6 +154,44 @@ export interface WebProjectDirectoryPageDto {
   nextOffset: number | null;
 }
 
+export interface WebLocalFilesystemRootDto {
+  label: string;
+  path: string;
+}
+
+export interface WebLocalDirectoryItemDto {
+  name: string;
+  path: string;
+  hasBinaflowConfig: boolean;
+}
+
+export interface WebAgentSkillOptionDto {
+  name: string;
+  description: string;
+  path: string;
+  source: 'project' | 'global';
+}
+
+export interface WebAgentOptionsDto {
+  models: Array<{ provider: string; model: string; displayName?: string }>;
+  thinkingLevels: string[];
+  tools: Array<{
+    id: string;
+    label: string;
+    description: string;
+    writeCapable: boolean;
+  }>;
+  skills: WebAgentSkillOptionDto[];
+}
+
+export interface WebLocalDirectoryPageDto {
+  currentPath: string;
+  parentPath: string | null;
+  hasBinaflowConfig: boolean;
+  items: WebLocalDirectoryItemDto[];
+  nextOffset: number | null;
+}
+
 export type WebDeviceStatus = 'paired' | 'revoked';
 
 export interface WebDeviceSummaryDto {

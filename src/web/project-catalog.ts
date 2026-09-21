@@ -61,6 +61,11 @@ export interface RegisterProjectInput {
   ownerDeviceId: string;
 }
 
+export interface InitializeProjectInput {
+  rootId: string;
+  segments: readonly string[];
+}
+
 export function resolveDefaultProjectCatalogPath(environment: WebSettingsEnvironment = {}): string {
   return resolve(dirname(resolveDefaultWebSettingsPath(environment)), PROJECT_CATALOG_FILE);
 }
@@ -243,6 +248,47 @@ export async function listProjectDirectory(
     items: page,
     nextOffset: offset + limit < items.length ? offset + limit : null,
   };
+}
+
+export async function initializeProjectFromDirectory(
+  roots: readonly LauncherProjectRoot[],
+  input: InitializeProjectInput,
+): Promise<void> {
+  const root = roots.find((item) => item.rootId === input.rootId);
+  if (!root) throw new Error('Project root not found');
+  validateSegments(input.segments);
+  const rootPath = await realDirectory(root.path);
+  const workspacePath = resolve(rootPath, ...input.segments);
+  assertContained(rootPath, workspacePath);
+  await initializeProjectAtPath(workspacePath);
+}
+
+export async function initializeProjectAtPath(workspacePath: string): Promise<void> {
+  const resolvedWorkspace = await realDirectory(workspacePath);
+  const configDirectory = resolve(resolvedWorkspace, '.binaflow');
+  const configPath = resolve(configDirectory, 'config.json');
+  if (await fileExists(configPath)) throw new Error('Binaflow config already exists');
+  await mkdir(configDirectory, { recursive: true });
+  try {
+    await writeFile(
+      configPath,
+      `${JSON.stringify({ dataDir: './data', profiles: {} }, null, 2)}\n`,
+      { encoding: 'utf8', flag: 'wx' },
+    );
+    await mkdir(resolve(configDirectory, 'data'), { recursive: true });
+  } catch (cause) {
+    await rm(configPath, { force: true });
+    throw cause;
+  }
+}
+
+export async function registerProjectAtPath(
+  catalog: FileProjectCatalog,
+  workspacePath: string,
+  ownerDeviceId: string,
+  projectId?: string,
+): Promise<ProjectCatalogEntry> {
+  return catalog.register({ workspacePath, ownerDeviceId, ...(projectId ? { projectId } : {}) });
 }
 
 export async function registerProjectFromDirectory(

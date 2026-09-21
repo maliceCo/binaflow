@@ -35,6 +35,7 @@ export interface AgentProfileSnapshot {
   provider?: string;
   model: string;
   thinking?: string;
+  instructions?: string;
   tools: string[];
   workspaceMode: 'read-only' | 'read-write';
   projectTrust?: 'never' | 'always';

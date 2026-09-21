@@ -15,6 +15,51 @@ const operation = {
 };
 
 describe('web API routes', () => {
+  it('lists and updates project agent profiles through the local contract', async () => {
+    const profile = {
+      driver: 'pi',
+      model: 'test-model',
+      tools: ['ls', 'find', 'read'],
+      workspaceMode: 'read-only' as const,
+      projectTrust: 'never' as const,
+      timeoutMs: 1000,
+      retryLimit: 0,
+      skills: { mode: 'none' as const },
+    };
+    const update = vi.fn(async (input: { profileName: string }) => ({
+      sourceHash: 'next',
+      profiles: { [input.profileName]: profile },
+    }));
+    const api: WebApiCapabilities = {
+      agentProfiles: {
+        list: async () => ({ sourceHash: 'current', profiles: {} }),
+        update,
+      },
+    };
+    await expect(
+      handleWebApi(
+        { method: 'GET', path: '/api/v1/project-agent-profiles', remoteAddress: '127.0.0.1' },
+        api,
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { data: { profiles: {} } } });
+    await expect(
+      handleWebApi(
+        {
+          method: 'PUT',
+          path: '/api/v1/project-agent-profiles/planner',
+          remoteAddress: '127.0.0.1',
+          body: { profile, expectedSourceHash: 'current' },
+        },
+        api,
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { data: { sourceHash: 'next' } } });
+    expect(update).toHaveBeenCalledWith({
+      profile,
+      expectedSourceHash: 'current',
+      profileName: 'planner',
+    });
+  });
+
   it('validates operation targets and projects accepted records', async () => {
     const execute = vi.fn(async () => ({
       contractId,

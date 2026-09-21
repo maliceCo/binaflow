@@ -106,6 +106,37 @@ describe('Binaflow config', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('Profile planner has invalid');
   });
 
+  it('accepts bounded project instructions on an agent profile', () => {
+    const validation = validateAgentProfile('builder', {
+      driver: 'pi',
+      model: 'claude-test',
+      tools: ['read'],
+      workspaceMode: 'read-only',
+      timeoutMs: 1000,
+      retryLimit: 0,
+      instructions: 'Keep changes small.',
+    });
+
+    expect(validation.errors).toEqual([]);
+    expect(validation.profile?.instructions).toBe('Keep changes small.');
+  });
+
+  it('rejects oversized project instructions', () => {
+    const validation = validateAgentProfile('builder', {
+      driver: 'pi',
+      model: 'claude-test',
+      tools: ['read'],
+      workspaceMode: 'read-only',
+      timeoutMs: 1000,
+      retryLimit: 0,
+      instructions: 'x'.repeat(12001),
+    });
+
+    expect(validation.errors).toContain(
+      'instructions must be a string of at most 12000 characters',
+    );
+  });
+
   it('resolves an explicit skill policy relative to the config file', () => {
     const validation = validateAgentProfile(
       'qa',

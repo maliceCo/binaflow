@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Ajv, type ValidateFunction } from 'ajv';
-import type { AgentDriver } from './agent.js';
+import { composeAgentPrompt, type AgentDriver } from './agent.js';
 import type { EventSink, NormalizedEvent } from './events.js';
 import type {
   ArtifactReference,
@@ -274,7 +274,10 @@ export class WorkflowRuntime {
               runId: run.id,
               stepId: step.id,
               profile,
-              prompt: renderPrompt(step.prompt, resolvedInputs, step, repairReason),
+              prompt: composeAgentPrompt(
+                renderPrompt(step.prompt, resolvedInputs, step, repairReason),
+                profile,
+              ),
             },
             eventQueue.emit,
             request.signal ?? new AbortController().signal,
@@ -702,6 +705,7 @@ function snapshotProfile(profile: AgentProfile): AgentProfileSnapshot {
   };
   if (profile.provider !== undefined) snapshot.provider = profile.provider;
   if (profile.thinking !== undefined) snapshot.thinking = profile.thinking;
+  if (profile.instructions !== undefined) snapshot.instructions = profile.instructions;
   if (profile.projectTrust !== undefined) snapshot.projectTrust = profile.projectTrust;
   return snapshot;
 }

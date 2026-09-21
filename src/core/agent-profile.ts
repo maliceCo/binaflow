@@ -9,6 +9,7 @@ export interface AgentProfile {
   provider?: string;
   model: string;
   thinking?: string;
+  instructions?: string;
   tools: string[];
   workspaceMode: WorkspaceMode;
   projectTrust?: ProjectTrust;

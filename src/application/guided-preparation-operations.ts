@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { AgentDriver } from '../core/agent.js';
+import { composeAgentPrompt, type AgentDriver } from '../core/agent.js';
 import type { AgentProfile } from '../core/agent-profile.js';
 import type {
   GuidedPreparationBeginRequest,
@@ -345,7 +345,7 @@ async function runPlanner(
       runId: operation.requestId,
       stepId: operation.kind,
       profile: context.plannerProfile,
-      prompt,
+      prompt: composeAgentPrompt(prompt, context.plannerProfile),
       ...(operation.kind === 'reply' && preparation.externalSessionId
         ? { sessionId: preparation.externalSessionId }
         : {}),

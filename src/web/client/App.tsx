@@ -8,6 +8,7 @@ import { Devices } from './Devices.js';
 import { TransferWizard } from './TransferWizard.js';
 import { TaskCreate } from './TaskCreate.js';
 import { TaskPreparation } from './TaskPreparation.js';
+import { ProjectAgents } from './ProjectAgents.js';
 
 export function App(): ReactElement {
   const api = useMemo(() => createApiClient(), []);
@@ -19,6 +20,8 @@ export function App(): ReactElement {
   const [settings, setSettings] = useState<LauncherSettings>();
   const [activeProject, setActiveProject] = useState<ProjectSummary | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(false);
   const [selectedId, setSelectedId] = useState(() => getTaskFromHash());
 
   useEffect(() => {
@@ -61,6 +64,7 @@ export function App(): ReactElement {
       }
       const nextActiveProject = await api.getActiveProject();
       setActiveProject(nextActiveProject);
+      setShowWorkspace(false);
       if (nextActiveProject) await refreshTasks();
       else setTasks([]);
     } catch {
@@ -113,6 +117,9 @@ export function App(): ReactElement {
             setAuthenticated(false);
             setSettings(undefined);
             setActiveProject(null);
+            setShowWorkspace(false);
+            setShowSettings(false);
+            setShowAgents(false);
           }}
         >
           Log out
@@ -135,50 +142,143 @@ export function App(): ReactElement {
       ) : (
         <div className="app-content">
           <div className="app-toolbar">
-            <div>
-              <strong>
-                {activeProject?.name ??
-                  (settings === undefined ? 'Configured workspace' : 'No active project')}
-              </strong>
-              <span>{workspaceReady ? 'Workspace ready' : 'Open a project to begin'}</span>
+            <div className="app-toolbar-brand">
+              <strong>{showWorkspace ? activeProject?.name : 'Binaflow'}</strong>
+              <span>{showWorkspace ? 'Project workspace' : 'Choose a project to begin'}</span>
             </div>
-            {settings && (
-              <button
-                className="button-secondary"
-                type="button"
-                onClick={() => setShowSettings((visible) => !visible)}
-              >
-                {showSettings ? 'Close settings' : 'Server settings'}
-              </button>
-            )}
+            <div className="app-toolbar-actions">
+              {showWorkspace && (
+                <button
+                  className="button-secondary"
+                  type="button"
+                  onClick={() => setShowWorkspace(false)}
+                >
+                  ← Projects
+                </button>
+              )}
+              {showWorkspace && (
+                <button
+                  className="button-secondary"
+                  type="button"
+                  onClick={() => setShowAgents(true)}
+                >
+                  Agents
+                </button>
+              )}
+              {settings && (
+                <button
+                  className="button-secondary"
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                >
+                  Server settings
+                </button>
+              )}
+            </div>
           </div>
-          {showSettings && settings && (
-            <Settings api={api} settings={settings} onSaved={setSettings} />
+          {showAgents && showWorkspace && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onMouseDown={() => setShowAgents(false)}
+            >
+              <section
+                className="settings-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="agent-settings-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <ProjectAgents api={api} onClose={() => setShowAgents(false)} />
+              </section>
+            </div>
           )}
-          {settings && (
-            <section className="flow-section" aria-labelledby="project-step-title">
-              <div className="flow-heading">
-                <span className="step-number">1</span>
-                <div>
-                  <p className="eyebrow">Workspace</p>
-                  <h2 id="project-step-title">Choose a project</h2>
-                  <p>Register a Binaflow folder, then open it to load its tasks.</p>
+          {showSettings && settings && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onMouseDown={() => setShowSettings(false)}
+            >
+              <section
+                className="settings-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-modal-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="modal-heading">
+                  <div>
+                    <p className="eyebrow">Configuration</p>
+                    <h2 id="settings-modal-title">Server settings</h2>
+                  </div>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    aria-label="Close settings"
+                    onClick={() => setShowSettings(false)}
+                  >
+                    Close
+                  </button>
                 </div>
-              </div>
+                <Settings api={api} settings={settings} onSaved={setSettings} />
+              </section>
+            </div>
+          )}
+          {!showWorkspace && settings && (
+            <section className="landing-panel" aria-labelledby="landing-title">
+              <p className="eyebrow">Binaflow workspace</p>
+              <h2 id="landing-title">What are we working on?</h2>
+              <p className="landing-copy">
+                Continue with a project or find one in your local project locations.
+              </p>
+              {tasks.length > 0 && (
+                <section className="recent-tasks" aria-labelledby="recent-tasks-title">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">Continue where you left off</p>
+                      <h3 id="recent-tasks-title">Recent tasks</h3>
+                    </div>
+                    <span className="muted">{activeProject?.name ?? 'Current project'}</span>
+                  </div>
+                  <ul>
+                    {tasks.slice(0, 5).map((task) => (
+                      <li key={task.id}>
+                        <div>
+                          <strong>Task {task.id.slice(0, 8)}</strong>
+                          <small>
+                            {task.phase} · {task.readiness}
+                          </small>
+                        </div>
+                        <button
+                          className="button-secondary"
+                          type="button"
+                          onClick={() => {
+                            window.location.hash = task.id;
+                            setShowWorkspace(true);
+                          }}
+                        >
+                          Open task
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <Projects
                 key={settings.projectRoots.map((root) => root.id).join(':')}
                 api={api}
                 onProjectChanged={refreshWorkspace}
+                onProjectOpened={() => setShowWorkspace(true)}
               />
             </section>
           )}
-          {!workspaceReady && (
+          {!showWorkspace && !workspaceReady && (
             <div className="empty-state" role="status">
               <strong>No project is open.</strong>
               <p>Complete step 1 before creating or running tasks.</p>
             </div>
           )}
-          {workspaceReady && (
+          {showWorkspace && workspaceReady && (
             <section className="flow-section" aria-labelledby="task-step-title">
               <div className="flow-heading">
                 <span className="step-number">2</span>
@@ -208,7 +308,7 @@ export function App(): ReactElement {
               </section>
             </section>
           )}
-          {settings && (
+          {showWorkspace && settings && (
             <details className="advanced-tools">
               <summary>Advanced: devices and project handoff</summary>
               <p className="muted">

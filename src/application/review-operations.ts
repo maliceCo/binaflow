@@ -545,6 +545,7 @@ function snapshotProfile(profile: import('../core/agent-profile.js').AgentProfil
     ...(profile.provider ? { provider: profile.provider } : {}),
     model: profile.model,
     ...(profile.thinking ? { thinking: profile.thinking } : {}),
+    ...(profile.instructions ? { instructions: profile.instructions } : {}),
     tools: [...profile.tools],
     workspaceMode: profile.workspaceMode,
     ...(profile.projectTrust ? { projectTrust: profile.projectTrust } : {}),

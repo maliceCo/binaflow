@@ -2,7 +2,11 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { FileProjectCatalog, registerProjectFromDirectory } from '../src/web/project-catalog.js';
+import {
+  FileProjectCatalog,
+  initializeProjectFromDirectory,
+  registerProjectFromDirectory,
+} from '../src/web/project-catalog.js';
 
 const directories: string[] = [];
 const deviceId = 'a'.repeat(64);
@@ -53,6 +57,23 @@ describe('project catalog', () => {
       catalog.register({ workspacePath: second, ownerDeviceId: deviceId }),
     ]);
     expect((await catalog.list()).projects.map((item) => item.name).sort()).toEqual(['one', 'two']);
+  });
+
+  it('initializes an empty directory without overwriting existing files', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'binaflow-project-catalog-'));
+    directories.push(directory);
+    const workspace = join(directory, 'new-project');
+    await mkdir(workspace);
+    await writeFile(join(workspace, 'README.md'), 'keep');
+    const roots = [{ rootId, label: 'Projects', path: directory }];
+    await initializeProjectFromDirectory(roots, { rootId, segments: ['new-project'] });
+    expect(await readFile(join(workspace, 'README.md'), 'utf8')).toBe('keep');
+    expect(await readFile(join(workspace, '.binaflow', 'config.json'), 'utf8')).toContain(
+      'dataDir',
+    );
+    await expect(
+      initializeProjectFromDirectory(roots, { rootId, segments: ['new-project'] }),
+    ).rejects.toThrow(/already exists/i);
   });
 
   it('registers only a directory selected below an authorized root', async () => {

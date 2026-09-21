@@ -1,8 +1,12 @@
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { createPersonalWebRuntime, ProjectLifecycleError } from '../../application/web-runtime.js';
 import { createExecutionHost } from '../../application/execution-host.js';
 import { openApplicationContext } from '../../application/runtime.js';
+import { loadConfig, validateAgentProfile, type AgentProfile } from '../../config.js';
+import { replaceConfigurationAtomically } from '../../application/config-operations.js';
 import { loadWebConfig } from '../../web/config.js';
 import { loadOrCreateDeviceIdentity } from '../../web/device-identity.js';
 import { FileDeviceStore } from '../../web/device-store.js';
@@ -11,9 +15,19 @@ import {
   listProjectDirectory,
   discoverProjectRootCandidates,
   registerProjectFromDirectory,
+  initializeProjectAtPath,
+  initializeProjectFromDirectory,
+  registerProjectAtPath,
   resolveDefaultProjectCatalogPath,
 } from '../../web/project-catalog.js';
 import { PeerAuth } from '../../web/peer-auth.js';
+import { listLocalDirectory, listLocalFilesystemRoots } from '../../web/local-filesystem.js';
+import {
+  AGENT_THINKING_LEVELS,
+  AGENT_TOOL_OPTIONS,
+  discoverProjectSkills,
+} from '../../web/agent-options.js';
+import { PiModelDiscovery } from '../../drivers/pi-discovery.js';
 import {
   createWebSettingsController,
   launcherSettingsToWebConfig,
@@ -23,6 +37,7 @@ import {
 } from '../../web/settings-store.js';
 import { createWebServer } from '../../web/server.js';
 import type { WebApiCapabilities } from '../../web/routes.js';
+import type { ProjectCatalogEntry } from '../../web/launcher-contracts.js';
 import { rootOptions } from './common.js';
 import { createLauncherTransferResources } from './web-transfer.js';
 
@@ -106,8 +121,28 @@ export function registerWebCommand(cli: Command): void {
         };
         const api: WebApiCapabilities = {
           ...(settingsController ? { settings: settingsController } : {}),
+          ...(launcherResources ? { agentProfiles: launcherResources.agentProfiles } : {}),
+          ...(launcherResources ? { agentOptions: launcherResources.agentOptions } : {}),
           ...(launcherResources
             ? {
+                localFilesystem: {
+                  listRoots: listLocalFilesystemRoots,
+                  listDirectory: (path, offset, limit) => listLocalDirectory(path, offset, limit),
+                  openProject: (path) =>
+                    registerProjectAtPath(
+                      launcherResources.catalog,
+                      path,
+                      launcherResources.identity.deviceId,
+                    ),
+                  initializeProject: async (path) => {
+                    await initializeProjectAtPath(path);
+                    return registerProjectAtPath(
+                      launcherResources.catalog,
+                      path,
+                      launcherResources.identity.deviceId,
+                    );
+                  },
+                },
                 devices: launcherResources.devices,
                 projectCatalog: launcherResources.projectCatalog,
                 projectRuntime: launcherResources.runtime,
@@ -202,6 +237,30 @@ export function registerWebCommand(cli: Command): void {
     );
 }
 
+async function readAgentProfiles(project: ProjectCatalogEntry | undefined): Promise<{
+  sourceHash: string;
+  profiles: Record<string, AgentProfile>;
+}> {
+  if (!project) throw new Error('Select an active project first');
+  const content = await readFile(project.configPath);
+  return {
+    sourceHash: createHash('sha256').update(content.toString('utf8')).digest('hex'),
+    profiles: (await loadConfig(project.configPath)).profiles,
+  };
+}
+
+function serializeProfile(profile: AgentProfile, configPath: string): AgentProfile {
+  if (profile.skills?.mode !== 'only') return profile;
+  return {
+    ...profile,
+    skills: {
+      mode: 'only',
+      paths: profile.skills.paths.map((path) => relative(dirname(configPath), path) || '.'),
+      ...(profile.skills.required ? { required: [...profile.skills.required] } : {}),
+    },
+  };
+}
+
 async function createLauncherResources(
   settingsPath: string,
   settingsController: ReturnType<
@@ -267,6 +326,19 @@ async function createLauncherResources(
         identity.deviceId,
         projectId,
       ),
+    initialize: async (rootId: string, segments: string[]) => {
+      await initializeProjectFromDirectory(settingsController.get().projectRoots, {
+        rootId,
+        segments,
+      });
+      return registerProjectFromDirectory(
+        catalog,
+        settingsController.get().projectRoots,
+        rootId,
+        segments,
+        identity.deviceId,
+      );
+    },
   };
   const transferResources = await createLauncherTransferResources({
     settingsPath,
@@ -276,7 +348,73 @@ async function createLauncherResources(
     catalog,
     getActiveProject: () => runtime.getActiveProject(),
   });
+  const agentProfiles = {
+    list: async () => readAgentProfiles(runtime.getActiveProject()),
+    update: async (input: {
+      profileName: string;
+      profile: unknown;
+      expectedSourceHash: string;
+      writeAccessConfirmed?: boolean;
+    }) => {
+      const active = runtime.getActiveProject();
+      if (!active) throw new Error('Select an active project first');
+      const validation = validateAgentProfile(input.profileName, input.profile, active.configPath);
+      if (validation.errors.length > 0 || !validation.profile) {
+        throw new Error(
+          `Profile ${input.profileName} has invalid configuration: ${validation.errors.join('; ')}`,
+        );
+      }
+      if (
+        input.profileName === 'builder' &&
+        (validation.profile.workspaceMode === 'read-write' ||
+          validation.profile.tools.some((tool) => ['write', 'edit', 'bash'].includes(tool))) &&
+        input.writeAccessConfirmed !== true
+      ) {
+        throw new Error('Builder write access requires explicit confirmation');
+      }
+      const content = await readFile(active.configPath);
+      const sourceText = content.toString('utf8');
+      const sourceHash = createHash('sha256').update(sourceText).digest('hex');
+      if (sourceHash !== input.expectedSourceHash) {
+        throw new Error('Binaflow config changed since it was loaded');
+      }
+      const document = JSON.parse(sourceText) as Record<string, unknown>;
+      const profiles = (document.profiles ?? {}) as Record<string, unknown>;
+      profiles[input.profileName] = serializeProfile(validation.profile, active.configPath);
+      document.profiles = profiles;
+      await runtime.closeActiveProject();
+      try {
+        await replaceConfigurationAtomically({
+          configPath: active.configPath,
+          config: document as never,
+          sourceHash,
+        });
+        await runtime.selectProject(active.projectId);
+      } catch (cause) {
+        await runtime.selectProject(active.projectId).catch(() => undefined);
+        throw cause;
+      }
+      return readAgentProfiles(runtime.getActiveProject());
+    },
+  };
+  const agentOptions = {
+    get: async () => {
+      const active = runtime.getActiveProject();
+      if (!active) throw new Error('Select an active project first');
+      const models = await new PiModelDiscovery().discoverModels();
+      return {
+        models,
+        thinkingLevels: [...AGENT_THINKING_LEVELS],
+        tools: AGENT_TOOL_OPTIONS.map((tool) => ({ ...tool })),
+        skills: await discoverProjectSkills(active.workspacePath),
+      };
+    },
+  };
   return {
+    catalog,
+    identity,
+    agentProfiles,
+    agentOptions,
     runtime,
     projectCatalog,
     transfers: transferResources.transfers,

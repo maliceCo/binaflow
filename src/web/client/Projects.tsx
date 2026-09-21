@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { ApiClient, ProjectSummary } from './api.js';
-import { ProjectBrowser } from './ProjectBrowser.js';
+import { LocalProjectPicker } from './LocalProjectPicker.js';
 
 export function Projects(props: {
   api: ApiClient;
   onProjectChanged?: () => Promise<void>;
+  onProjectOpened?: () => void;
 }): ReactElement {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [activeId, setActiveId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [showBrowser, setShowBrowser] = useState(false);
 
   async function refresh(): Promise<void> {
     try {
@@ -38,23 +40,9 @@ export function Projects(props: {
       setActiveId(active.id);
       setError(undefined);
       await props.onProjectChanged?.();
+      props.onProjectOpened?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not select project');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function close(): Promise<void> {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await props.api.closeActiveProject();
-      setActiveId(undefined);
-      setError(undefined);
-      await props.onProjectChanged?.();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not close project');
     } finally {
       setBusy(false);
     }
@@ -63,27 +51,7 @@ export function Projects(props: {
   return (
     <section className="projects-panel panel" aria-labelledby="projects-title">
       <div className="section-heading">
-        <h2 id="projects-title">Projects</h2>
-        <div className="button-row">
-          {activeId && (
-            <button
-              className="button-secondary"
-              type="button"
-              disabled={busy}
-              onClick={() => void close()}
-            >
-              Close active project
-            </button>
-          )}
-          <button
-            className="button-secondary"
-            type="button"
-            disabled={busy}
-            onClick={() => void refresh()}
-          >
-            Refresh
-          </button>
-        </div>
+        <h2 id="projects-title">Recent projects</h2>
       </div>
       {projects.length === 0 ? (
         <p>No projects registered.</p>
@@ -99,22 +67,36 @@ export function Projects(props: {
                 type="button"
                 onClick={() => void select(project.id)}
                 className={project.id === activeId ? 'button-success' : 'button-secondary'}
-                disabled={busy || project.id === activeId}
+                disabled={busy}
               >
-                {project.id === activeId ? 'Active' : 'Open'}
+                {project.id === activeId ? 'Continue' : 'Open'}
               </button>
             </li>
           ))}
         </ul>
       )}
-      <ProjectBrowser
-        api={props.api}
-        onRegistered={async (project) => {
-          await props.api.selectProject(project.id);
-          await refresh();
-          await props.onProjectChanged?.();
-        }}
-      />
+      <div className="project-actions">
+        <button
+          className="primary-action"
+          type="button"
+          onClick={() => setShowBrowser((visible) => !visible)}
+        >
+          {showBrowser ? 'Hide project finder' : 'Find or initialize a project'}
+        </button>
+      </div>
+      {showBrowser && (
+        <LocalProjectPicker
+          api={props.api}
+          onClose={() => setShowBrowser(false)}
+          onOpened={async (project) => {
+            await props.api.selectProject(project.id);
+            await refresh();
+            await props.onProjectChanged?.();
+            props.onProjectOpened?.();
+            setShowBrowser(false);
+          }}
+        />
+      )}
       {error && (
         <p className="error" role="alert">
           {error}
