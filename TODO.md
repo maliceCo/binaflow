@@ -75,7 +75,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
   - **Verificación / TDD:** `pnpm --dir wireframe test -- src/editor-state.test.ts` debe probar cada acción, IDs nuevos, selección coherente, límites de 200 bloques, geometría normalizada e inmutabilidad del estado anterior.
   - **Commit Msg:** `feat: add deterministic wireframe editor state`
 
-- [ ] **Tarea 2.2: Construir la estructura del editor y el inspector**
+- [x] **Tarea 2.2: Construir la estructura del editor y el inspector**
   - **Archivo:** nuevos `wireframe/src/components/Toolbar.tsx`, `wireframe/src/components/Canvas.tsx`, `wireframe/src/components/Inspector.tsx`, `wireframe/src/App.test.tsx`; modificar `wireframe/src/App.tsx`, `wireframe/src/styles.css`.
   - **Funciones:** componentes `Toolbar`, `Canvas`, `Inspector`; composición y reducer en `App`.
   - **Descripción:** crear un layout de tres zonas: barra superior, lienzo principal y panel inspector. La barra muestra nombre editable del documento y acciones Nuevo, Importar JSON, Exportar JSON y Añadir bloque; Importar/Exportar pueden permanecer deshabilitadas hasta la Fase 3. El lienzo dibuja la grilla y los bloques con título visible, descripción truncada visualmente y estado de selección distinguible sin depender solo del color. El inspector permite editar título, descripción y campos numéricos `x`, `y`, `width`, `height`, además de Duplicar y Eliminar. Sin selección muestra instrucciones breves. Los labels, botones y foco deben ser accesibles; en pantallas estrechas el inspector pasa debajo del lienzo sin ocultar controles.
