@@ -67,7 +67,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
 
 ### Fase 2: Estado y edición visual
 
-- [ ] **Tarea 2.1: Implementar operaciones puras del editor**
+- [x] **Tarea 2.1: Implementar operaciones puras del editor**
   - **Archivo:** nuevos `wireframe/src/editor-state.ts`, `wireframe/src/editor-state.test.ts`.
   - **Funciones:** `createEditorState`, `editorReducer`, acciones `rename-document`, `add-block`, `select-block`, `update-block-text`, `set-block-geometry`, `duplicate-block`, `delete-block`, `replace-document` y `new-document`.
   - **Descripción:** centralizar las mutaciones del documento en un reducer inmutable. `add-block` crea un bloque 3x3 en la primera posición visible disponible o, si no hay hueco, debajo del contenido actual. Duplicar genera un ID nuevo y desplaza el bloque una celda cuando cabe; si no, lo coloca debajo. Eliminar limpia la selección. Toda geometría generada por acciones se normaliza con el helper de la Tarea 1.2. Inyectar el generador de ID en las acciones que crean bloques para que los tests sean deterministas; la UI usará `crypto.randomUUID()`.
