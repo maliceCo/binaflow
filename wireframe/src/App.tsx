@@ -26,6 +26,9 @@ export default function App() {
           document={state.document}
           selectedBlockId={state.selectedBlockId}
           onSelectBlock={(id) => dispatch({ type: 'select-block', id })}
+          onGeometryChange={(id, geometry) =>
+            dispatch({ type: 'set-block-geometry', id, geometry })
+          }
         />
         <Inspector
           block={selectedBlock}

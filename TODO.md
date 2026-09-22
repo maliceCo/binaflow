@@ -83,7 +83,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
   - **Verificación / TDD:** `pnpm --dir wireframe test -- src/App.test.tsx` debe crear/seleccionar un bloque, editar texto y geometría desde el inspector, duplicarlo, eliminarlo, renombrar el documento y comprobar que contenido con HTML se renderiza como texto.
   - **Commit Msg:** `feat: add wireframe canvas and inspector`
 
-- [ ] **Tarea 2.3: Permitir mover y redimensionar bloques en la grilla**
+- [x] **Tarea 2.3: Permitir mover y redimensionar bloques en la grilla**
   - **Archivo:** nuevos `wireframe/src/geometry.ts`, `wireframe/src/geometry.test.ts`, `wireframe/src/components/Canvas.test.tsx`; modificar `wireframe/src/components/Canvas.tsx`, `wireframe/src/styles.css`.
   - **Funciones:** `gridToPixels`, `pixelsToGrid`, `calculateCanvasRows`; handlers de `react-rnd` para fin de drag y resize.
   - **Descripción:** medir el ancho útil del lienzo con `ResizeObserver`, calcular el ancho de columna y representar cada bloque como `Rnd` controlado. Ajustar movimiento y tamaño a columnas/filas; limitar horizontalmente al lienzo, impedir tamaños menores de 1x1 y persistir el resultado en unidades de grilla al finalizar la interacción. El lienzo debe tener 18 filas mínimas y crecer hasta dos filas después del bloque más bajo. Seleccionar al enfocar o interactuar con un bloque. Los campos numéricos del inspector siguen siendo la alternativa sin ratón.
