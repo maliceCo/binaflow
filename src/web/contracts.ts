@@ -23,6 +23,7 @@ export function parseWebOperationRequest(value: unknown): WebOperationRequest {
   if (!isRecord(value) || Object.keys(value).length !== 1 || !('operation' in value)) {
     throw new WebContractError('invalid-input', 'Expected an operation object');
   }
+  assertReplyMessageLength(value.operation);
   return { operation: parseGuidedPreparationOperation(value.operation) };
 }
 
@@ -74,6 +75,17 @@ function isUuid(value: unknown): value is string {
     typeof value === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
   );
+}
+
+function assertReplyMessageLength(value: unknown): void {
+  if (
+    isRecord(value) &&
+    value.kind === 'reply' &&
+    typeof value.message === 'string' &&
+    new TextEncoder().encode(value.message).byteLength > 4 * 1024
+  ) {
+    throw new WebContractError('too-large', 'Message must be at most 4 KiB (4096 bytes)');
+  }
 }
 
 function assertUtf8Length(value: string, maxBytes: number, label: string): void {

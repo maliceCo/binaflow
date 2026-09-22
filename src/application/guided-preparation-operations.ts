@@ -295,12 +295,16 @@ async function runPlanner(
     context.workspace,
     operation.contractId,
   );
-  if (!state) throw new Error('Task contract does not exist');
+  if (!state) {
+    throw new GuidedPreparationError('invalid-target', 'Task contract does not exist');
+  }
   const preparation = await context.store.getGuidedPreparation(
     context.workspace,
     operation.contractId,
   );
-  if (!preparation) throw new Error('Guided preparation does not exist');
+  if (!preparation) {
+    throw new GuidedPreparationError('invalid-target', 'Guided preparation does not exist');
+  }
   const messages = await context.store.listGuidedPreparationMessages({
     workspace: context.workspace,
     contractId: operation.contractId,
@@ -315,13 +319,19 @@ async function runPlanner(
   const selectedIds = 'sourceIds' in operation ? operation.sourceIds : [];
   const selectedSources = sources.items.filter((source) => selectedIds.includes(source.id));
   if (selectedSources.length !== selectedIds.length) {
-    throw new Error('A selected source does not belong to the task');
+    throw new GuidedPreparationError(
+      'invalid-target',
+      'A selected source does not belong to the task',
+    );
   }
   if (
     operation.kind === 'generate-plan' &&
     preparation.briefConfirmedThroughSequence < preparation.lastSequence
   ) {
-    throw new Error('The brief must be confirmed before generating a plan');
+    throw new GuidedPreparationError(
+      'brief-not-confirmed',
+      'Confirm the brief before generating a plan',
+    );
   }
   const prompt = buildGuidedPreparationPrompt({
     brief: preparation.draftBrief ?? state.currentBrief.body,
@@ -403,7 +413,9 @@ async function saveSources(
   results: readonly PublicSourceResult[],
 ): Promise<void> {
   const state = await context.store.getGuidedPreparation(context.workspace, operation.contractId);
-  if (!state) throw new Error('Guided preparation does not exist');
+  if (!state) {
+    throw new GuidedPreparationError('invalid-target', 'Guided preparation does not exist');
+  }
   const sources: GuidedPreparationSource[] = results.slice(0, 5).map((source, index) => ({
     id: randomUUID(),
     contractId: operation.contractId,

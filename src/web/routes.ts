@@ -5,6 +5,7 @@ import type {
   GuidedStartRequest,
 } from '../application/guided-execution.js';
 import type { GuidedPreparationService } from '../application/guided-preparation-operations.js';
+import { GuidedPreparationError } from '../application/guided-preparation.js';
 import type { GuidedTaskViewQueries } from '../application/guided-task-view.js';
 import type { TaskContractBrief, TaskContractService } from '../application/task-contract.js';
 import {
@@ -917,19 +918,28 @@ function mapError(cause: unknown): WebApiResponse {
       ? cause.code
       : undefined;
   const publicCode = isPublicErrorCode(code) ? code : 'operation-failed';
-  return error(publicErrorStatus(publicCode), publicCode, publicErrorMessage(publicCode));
+  return error(
+    publicErrorStatus(publicCode),
+    publicCode,
+    publicErrorMessage(publicCode, cause),
+  );
 }
 
 const PUBLIC_ERROR_MESSAGES = {
   'invalid-input': 'Invalid request',
   'planner-output-invalid': 'The planner returned an invalid result. Generate it again.',
   'context-limit': 'Review and confirm the brief before continuing the conversation.',
+  'brief-not-confirmed': 'Confirm the brief before generating a plan.',
   'recovery-required': 'Recover the interrupted operation before continuing.',
   'preparation-not-confirmed': 'Review and confirm the preparation before executing.',
   'not-ready': 'The task is not ready for execution.',
   'execution-profile-invalid': 'The builder profile is incompatible with guided execution.',
   'workspace-not-ready': 'The workspace must be a clean Git repository before execution.',
   'too-large': 'Request is too large',
+  'prompt-too-large':
+    'The conversation and evidence exceed the context limit. Confirm the brief or remove sources.',
+  'source-invalid': 'The selected evidence source is invalid. Remove it and try again.',
+  busy: 'Another preparation request is already running. Wait for it to finish and try again.',
   'invalid-target': 'The requested resource was not found',
   'not-found': 'The requested resource was not found',
   conflict: 'The operation conflicts with the current state',
@@ -951,8 +961,8 @@ function isPublicErrorCode(code: string | undefined): code is PublicErrorCode {
 }
 
 function publicErrorStatus(code: PublicErrorCode): number {
-  if (code === 'invalid-input') return 400;
-  if (code === 'too-large') return 413;
+  if (code === 'invalid-input' || code === 'source-invalid') return 400;
+  if (code === 'too-large' || code === 'prompt-too-large') return 413;
   if (code === 'invalid-target' || code === 'not-found') return 404;
   if (
     code === 'conflict' ||
@@ -963,12 +973,20 @@ function publicErrorStatus(code: PublicErrorCode): number {
     code === 'preparation-not-confirmed' ||
     code === 'not-ready' ||
     code === 'execution-profile-invalid' ||
-    code === 'workspace-not-ready'
+    code === 'workspace-not-ready' ||
+    code === 'brief-not-confirmed' ||
+    code === 'busy'
   )
     return 409;
   return 422;
 }
 
-function publicErrorMessage(code: PublicErrorCode): string {
+function publicErrorMessage(code: PublicErrorCode, cause: unknown): string {
+  if (
+    cause instanceof GuidedPreparationError &&
+    ['invalid-input', 'invalid-target', 'source-invalid', 'busy'].includes(code)
+  ) {
+    return cause.message;
+  }
   return PUBLIC_ERROR_MESSAGES[code];
 }

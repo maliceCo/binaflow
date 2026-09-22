@@ -307,7 +307,8 @@ export type GuidedPreparationErrorCode =
   | 'profile-invalid'
   | 'prompt-too-large'
   | 'source-invalid'
-  | 'context-limit';
+  | 'context-limit'
+  | 'brief-not-confirmed';
 
 export class GuidedPreparationError extends Error {
   readonly code: GuidedPreparationErrorCode;

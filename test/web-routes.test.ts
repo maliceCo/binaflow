@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { GuidedPreparationError } from '../src/application/guided-preparation.js';
 import { handleWebApi, type WebApiCapabilities } from '../src/web/routes.js';
 
 const contractId = '123e4567-e89b-42d3-a456-426614174000';
@@ -91,6 +92,120 @@ describe('web API routes', () => {
         api,
       ),
     ).resolves.toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
+  });
+
+  it('explains when a conversation message exceeds its size limit', async () => {
+    const reply = {
+      ...operation,
+      kind: 'reply' as const,
+      message: 'x'.repeat(4097),
+      sourceIds: [],
+    };
+
+    await expect(
+      handleWebApi(
+        {
+          method: 'POST',
+          path: `/api/v1/tasks/${contractId}/operations`,
+          body: { operation: reply },
+        },
+        { guidedPreparation: { execute: vi.fn() } },
+      ),
+    ).resolves.toEqual({
+      status: 413,
+      body: {
+        version: 1,
+        error: {
+          code: 'too-large',
+          message: 'Message must be at most 4 KiB (4096 bytes)',
+        },
+      },
+    });
+  });
+
+  it('returns actionable messages for safe preparation errors', async () => {
+    const cases = [
+      {
+        error: new GuidedPreparationError('busy', 'Another guided preparation request is active'),
+        status: 409,
+        code: 'busy',
+        message: 'Another guided preparation request is active',
+      },
+      {
+        error: new GuidedPreparationError('source-invalid', 'Source URL is invalid'),
+        status: 400,
+        code: 'source-invalid',
+        message: 'Source URL is invalid',
+      },
+      {
+        error: new GuidedPreparationError(
+          'prompt-too-large',
+          'planner prompt exceeds its size limit',
+        ),
+        status: 413,
+        code: 'prompt-too-large',
+        message:
+          'The conversation and evidence exceed the context limit. Confirm the brief or remove sources.',
+      },
+      {
+        error: new GuidedPreparationError(
+          'brief-not-confirmed',
+          'Confirm the brief before generating a plan',
+        ),
+        status: 409,
+        code: 'brief-not-confirmed',
+        message: 'Confirm the brief before generating a plan.',
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      await expect(
+        handleWebApi(
+          { method: 'POST', path: `/api/v1/tasks/${contractId}/operations`, body: { operation } },
+          { guidedPreparation: { execute: vi.fn(async () => Promise.reject(testCase.error)) } },
+        ),
+      ).resolves.toEqual({
+        status: testCase.status,
+        body: {
+          version: 1,
+          error: { code: testCase.code, message: testCase.message },
+        },
+      });
+    }
+  });
+
+  it('keeps safe validation details for malformed preparation input', async () => {
+    const response = await handleWebApi(
+      {
+        method: 'POST',
+        path: `/api/v1/tasks/${contractId}/operations`,
+        body: { operation: { ...operation, query: '' } },
+      },
+      { guidedPreparation: { execute: vi.fn() } },
+    );
+
+    expect(response).toMatchObject({ status: 400, body: { error: { code: 'invalid-input' } } });
+    expect(JSON.stringify(response)).toContain('/query');
+    expect(JSON.stringify(response)).not.toContain('Invalid request');
+  });
+
+  it('does not expose internal details for unknown preparation errors', async () => {
+    const response = await handleWebApi(
+      { method: 'POST', path: `/api/v1/tasks/${contractId}/operations`, body: { operation } },
+      {
+        guidedPreparation: {
+          execute: vi.fn(async () => {
+            throw Object.assign(new Error('database password'), { code: 'invalid-input' });
+          }),
+        },
+      },
+    );
+
+    expect(response).toMatchObject({
+      status: 400,
+      body: { error: { code: 'invalid-input', message: 'Invalid request' } },
+    });
+    expect(JSON.stringify(response)).not.toContain('database password');
   });
 
   it('reports invalid planner output as a retryable generation failure', async () => {
