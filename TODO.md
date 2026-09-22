@@ -119,7 +119,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
   - **Verificación:** `pnpm --dir wireframe run build && pnpm --dir wireframe run test:e2e`. Si Chromium no está disponible, pedir autorización antes de ejecutar `pnpm --dir wireframe exec playwright install chromium`; no declarar aceptación sin navegador.
   - **Commit Msg:** `test: verify the wireframe editor journey`
 
-- [ ] **Tarea 4.2: Documentar uso, formato y límites del MVP**
+- [x] **Tarea 4.2: Documentar uso, formato y límites del MVP**
   - **Archivo:** nuevo `wireframe/README.md`.
   - **Funciones:** ninguna.
   - **Descripción:** documentar requisitos, `pnpm install`, `pnpm dev`, comandos de calidad, controles del editor, autosave, import/export, ejemplo JSON v1 y límites explícitos. Aclarar que el JSON describe intención visual para que una persona o agente implemente luego la UI, pero no genera código automáticamente. Enumerar como posibles extensiones, sin implementarlas: undo/redo, múltiples pantallas, PNG/SVG, responsive breakpoints y biblioteca de componentes.
