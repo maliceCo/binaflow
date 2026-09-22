@@ -1,26 +1,59 @@
-import { useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { Canvas } from './components/Canvas';
 import { Inspector } from './components/Inspector';
 import { Toolbar } from './components/Toolbar';
 import { createEditorState, editorReducer } from './editor-state';
+import { clearDraft, loadDraft, saveDraft } from './storage';
 
 export default function App() {
-  const [state, dispatch] = useReducer(editorReducer, undefined, createEditorState);
+  const [draft] = useState(() => loadDraft());
+  const [state, dispatch] = useReducer(
+    editorReducer,
+    draft.document ?? undefined,
+    createEditorState,
+  );
+  const [storageMessage, setStorageMessage] = useState(draft.error);
+
+  useEffect(() => {
+    const error = saveDraft(state.document);
+    if (error) {
+      setStorageMessage(error);
+    }
+  }, [state.document]);
   const selectedBlock = useMemo(
     () => state.document.blocks.find((block) => block.id === state.selectedBlockId) ?? null,
     [state.document.blocks, state.selectedBlockId],
   );
 
   const createBlockId = () => crypto.randomUUID();
+  const handleNewDocument = () => {
+    if (
+      state.document.blocks.length > 0 &&
+      !window.confirm('¿Crear un documento nuevo y descartar el borrador actual?')
+    ) {
+      return;
+    }
+
+    const error = clearDraft();
+    if (error) {
+      setStorageMessage(error);
+    }
+    dispatch({ type: 'new-document' });
+  };
 
   return (
     <main className="app-shell">
       <Toolbar
         documentName={state.document.name}
         onRename={(name) => dispatch({ type: 'rename-document', name })}
-        onNew={() => dispatch({ type: 'new-document' })}
+        onNew={handleNewDocument}
         onAddBlock={() => dispatch({ type: 'add-block', id: createBlockId() })}
       />
+      {storageMessage && (
+        <p className="storage-notice" role="alert">
+          {storageMessage}
+        </p>
+      )}
       <div className="editor-layout">
         <Canvas
           document={state.document}

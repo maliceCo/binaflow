@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import App from './App';
 
 describe('App', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it('renders the initial editor layout', () => {
     render(<App />);
 
@@ -58,5 +62,30 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Nuevo' }));
     expect(screen.getByLabelText('Nombre del wireframe')).toHaveValue('Nueva pantalla');
+  });
+
+  it('keeps the current document when creating a new one is cancelled', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+    await user.click(screen.getByRole('button', { name: 'Nuevo' }));
+
+    expect(screen.getByRole('button', { name: /Nuevo bloque/ })).toBeInTheDocument();
+    vi.restoreAllMocks();
+  });
+
+  it('clears the current document after confirming a new one', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+    await user.click(screen.getByRole('button', { name: 'Nuevo' }));
+
+    expect(screen.queryByRole('button', { name: /Nuevo bloque/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre del wireframe')).toHaveValue('Nueva pantalla');
+    vi.restoreAllMocks();
   });
 });

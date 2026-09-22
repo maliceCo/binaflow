@@ -93,7 +93,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
 
 ### Fase 3: Persistencia e intercambio
 
-- [ ] **Tarea 3.1: Guardar y recuperar el borrador local**
+- [x] **Tarea 3.1: Guardar y recuperar el borrador local**
   - **Archivo:** nuevos `wireframe/src/storage.ts`, `wireframe/src/storage.test.ts`; modificar `wireframe/src/App.tsx`, `wireframe/src/components/Toolbar.tsx`.
   - **Funciones:** `loadDraft`, `saveDraft`, `clearDraft`; inicialización y autosave en `App`.
   - **Descripción:** usar una clave estable `wireframe-editor.document.v1`. Al arrancar, validar el borrador con `parseWireframeDocument`; si es válido, restaurarlo; si es inválido, conservar un documento vacío y mostrar un aviso no técnico sin lanzar la aplicación. Guardar después de cambios del documento, no de selección. Nuevo documento solicita confirmación si existe contenido, limpia el borrador y crea estado vacío. Un error de cuota/seguridad se muestra sin bloquear la edición.
