@@ -57,7 +57,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
   - **Verificación:** `pnpm --dir wireframe run format:check && pnpm --dir wireframe run lint && pnpm --dir wireframe run typecheck && pnpm --dir wireframe run build`.
   - **Commit Msg:** `build: scaffold independent wireframe editor`
 
-- [ ] **Tarea 1.2: Definir y validar el documento JSON v1**
+- [x] **Tarea 1.2: Definir y validar el documento JSON v1**
   - **Archivo:** nuevos `wireframe/src/model.ts`, `wireframe/src/model.test.ts`.
   - **Funciones:** `createEmptyDocument`, `parseWireframeDocument`, `serializeWireframeDocument`, `normalizeBlockGeometry`, tipos `WireframeDocumentV1`, `WireframeGridV1` y `WireframeBlockV1`.
   - **Descripción:** implementar el contrato JSON y los límites descritos arriba mediante validación TypeScript explícita sobre `unknown`. `parseWireframeDocument` debe producir un documento nuevo sin conservar referencias mutables del valor recibido. `normalizeBlockGeometry` debe redondear y limitar geometría creada por la UI dentro de las 12 columnas, pero la importación debe rechazar geometría inválida en lugar de corregirla silenciosamente. La serialización debe ser determinista y legible con indentación de dos espacios.
