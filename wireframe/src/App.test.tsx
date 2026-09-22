@@ -88,4 +88,34 @@ describe('App', () => {
     expect(screen.getByLabelText('Nombre del wireframe')).toHaveValue('Nueva pantalla');
     vi.restoreAllMocks();
   });
+
+  it('imports a valid JSON document and keeps the current one after an error', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+    const input = screen.getByLabelText('Importar JSON');
+    await user.upload(
+      input,
+      new File(
+        [
+          JSON.stringify({
+            version: 1,
+            name: 'Importada',
+            grid: { columns: 12, rowHeight: 40 },
+            blocks: [],
+          }),
+        ],
+        'importada.json',
+        { type: 'application/json' },
+      ),
+    );
+
+    expect(await screen.findByLabelText('Nombre del wireframe')).toHaveValue('Importada');
+    expect(screen.queryByRole('button', { name: /Nuevo bloque/ })).not.toBeInTheDocument();
+
+    await user.upload(input, new File(['{bad'], 'invalida.json', { type: 'application/json' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('JSON válido');
+    expect(screen.getByLabelText('Nombre del wireframe')).toHaveValue('Importada');
+  });
 });

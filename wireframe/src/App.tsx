@@ -3,6 +3,7 @@ import { Canvas } from './components/Canvas';
 import { Inspector } from './components/Inspector';
 import { Toolbar } from './components/Toolbar';
 import { createEditorState, editorReducer } from './editor-state';
+import { createWireframeDownload, readWireframeFile } from './file-io';
 import { clearDraft, loadDraft, saveDraft } from './storage';
 
 export default function App() {
@@ -41,12 +42,33 @@ export default function App() {
     dispatch({ type: 'new-document' });
   };
 
+  const handleImport = async (file: File) => {
+    try {
+      const document = await readWireframeFile(file);
+      dispatch({ type: 'replace-document', document });
+      setStorageMessage(null);
+    } catch (error) {
+      setStorageMessage(error instanceof Error ? error.message : 'No se pudo importar el archivo.');
+    }
+  };
+
+  const handleExport = () => {
+    try {
+      createWireframeDownload(state.document);
+      setStorageMessage(null);
+    } catch {
+      setStorageMessage('No se pudo exportar el wireframe.');
+    }
+  };
+
   return (
     <main className="app-shell">
       <Toolbar
         documentName={state.document.name}
         onRename={(name) => dispatch({ type: 'rename-document', name })}
         onNew={handleNewDocument}
+        onImport={handleImport}
+        onExport={handleExport}
         onAddBlock={() => dispatch({ type: 'add-block', id: createBlockId() })}
       />
       {storageMessage && (

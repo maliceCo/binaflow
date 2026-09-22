@@ -2,10 +2,19 @@ interface ToolbarProps {
   documentName: string;
   onRename: (name: string) => void;
   onNew: () => void;
+  onImport: (file: File) => void;
+  onExport: () => void;
   onAddBlock: () => void;
 }
 
-export function Toolbar({ documentName, onRename, onNew, onAddBlock }: ToolbarProps) {
+export function Toolbar({
+  documentName,
+  onRename,
+  onNew,
+  onImport,
+  onExport,
+  onAddBlock,
+}: ToolbarProps) {
   return (
     <header className="toolbar">
       <label className="document-name-field">
@@ -21,10 +30,20 @@ export function Toolbar({ documentName, onRename, onNew, onAddBlock }: ToolbarPr
         <button type="button" onClick={onNew}>
           Nuevo
         </button>
-        <button type="button" disabled title="Disponible en la siguiente fase">
-          Importar JSON
-        </button>
-        <button type="button" disabled title="Disponible en la siguiente fase">
+        <label className="file-action-button">
+          <span>Importar JSON</span>
+          <input
+            type="file"
+            accept=".json,application/json"
+            aria-label="Importar JSON"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onImport(file);
+              event.target.value = '';
+            }}
+          />
+        </label>
+        <button type="button" onClick={onExport}>
           Exportar JSON
         </button>
         <button type="button" className="primary-action" onClick={onAddBlock}>

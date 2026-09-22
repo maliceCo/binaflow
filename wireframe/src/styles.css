@@ -22,7 +22,8 @@ textarea {
   font: inherit;
 }
 
-button {
+button,
+.file-action-button {
   min-height: 2.5rem;
   padding: 0.5rem 0.85rem;
   border: 1px solid #d1d5db;
@@ -32,7 +33,23 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+.file-action-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.file-action-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled),
+.file-action-button:hover {
   border-color: #9ca3af;
   background: #f9fafb;
 }

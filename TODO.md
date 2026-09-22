@@ -101,7 +101,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
   - **Verificación / TDD:** `pnpm --dir wireframe test -- src/storage.test.ts src/App.test.tsx` debe cubrir restauración, autosave, borrador corrupto, fallo de escritura y creación de documento nuevo confirmada/cancelada.
   - **Commit Msg:** `feat: persist the wireframe draft locally`
 
-- [ ] **Tarea 3.2: Importar y exportar archivos JSON sin pérdida accidental**
+- [x] **Tarea 3.2: Importar y exportar archivos JSON sin pérdida accidental**
   - **Archivo:** nuevo `wireframe/src/file-io.ts`, `wireframe/src/file-io.test.ts`; modificar `wireframe/src/App.tsx`, `wireframe/src/components/Toolbar.tsx`.
   - **Funciones:** `readWireframeFile`, `createWireframeDownload`, `safeWireframeFilename`; handlers de importación/exportación en `App`.
   - **Descripción:** habilitar Importar mediante un input de archivo oculto que acepte `.json`, lea UTF-8 y limite el archivo a 1 MiB antes de parsearlo. Reemplazar el documento solo después de validación completa y seleccionar ninguno. Mostrar errores comprensibles y mantener intacto el diseño actual ante fallo. Exportar el JSON determinista de la Tarea 1.2 mediante `Blob` y URL temporal; usar el nombre sanitizado del documento y revocar la URL. El botón Exportar debe funcionar también con un documento vacío.
