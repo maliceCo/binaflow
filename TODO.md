@@ -111,7 +111,7 @@ Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 12
 
 ### Fase 4: Aceptación y documentación
 
-- [ ] **Tarea 4.1: Verificar el recorrido real en navegador**
+- [x] **Tarea 4.1: Verificar el recorrido real en navegador**
   - **Archivo:** nuevos `wireframe/playwright.config.ts`, `wireframe/e2e/editor.spec.ts`.
   - **Funciones:** fixture del servidor Vite de Playwright y recorrido de usuario del editor.
   - **Descripción:** probar en Chromium el flujo: abrir app, añadir dos bloques, editar título/descripción, mover uno, redimensionarlo, recargar y comprobar autosave, exportar JSON, crear documento nuevo, importar el archivo descargado y comprobar que posiciones/textos se restauran. Usar selectores por rol/label o `data-testid` estable solo donde el drag/resize no tenga semántica accesible. No usar sleeps fijos ni screenshots como única aserción.
