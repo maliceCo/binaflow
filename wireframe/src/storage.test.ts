@@ -52,6 +52,18 @@ describe('wireframe draft storage', () => {
     };
     const document = createEmptyDocument();
 
+  it('handles a localStorage getter that throws before returning a storage object', () => {
+    vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Access denied', 'SecurityError');
+    });
+    const document = createEmptyDocument();
+
+    expect(loadDraft().error).toContain('No se pudo restaurar');
+    expect(saveDraft(document)).toContain('No se pudo guardar');
+    expect(clearDraft()).toContain('No se pudo limpiar');
+    vi.restoreAllMocks();
+  });
+
     expect(loadDraft(failingStorage).error).toContain('No se pudo restaurar');
     expect(saveDraft(document, failingStorage)).toContain('No se pudo guardar');
     expect(clearDraft(failingStorage)).toContain('No se pudo limpiar');

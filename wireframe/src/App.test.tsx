@@ -89,6 +89,30 @@ describe('App', () => {
     vi.restoreAllMocks();
   });
 
+  it('continues editing without localStorage and clears the warning when saving recovers', async () => {
+    const user = userEvent.setup();
+    const storage = window.localStorage;
+    const storageGetter = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Access denied', 'SecurityError');
+    });
+
+    try {
+      render(<App />);
+      expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo guardar');
+      await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+      expect(screen.getByRole('button', { name: /Nuevo bloque/ })).toBeInTheDocument();
+
+      storageGetter.mockImplementation(() => storage);
+      await user.clear(screen.getByLabelText('Título'));
+      await user.type(screen.getByLabelText('Título'), 'Guardado tras recuperar');
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(
+        JSON.parse(storage.getItem('wireframe-editor.document.v1') ?? '{}').blocks[0].title,
+      ).toBe('Guardado tras recuperar');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
   it('imports a valid JSON document and keeps the current one after an error', async () => {
     const user = userEvent.setup();
     render(<App />);

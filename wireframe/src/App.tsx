@@ -17,9 +17,7 @@ export default function App() {
 
   useEffect(() => {
     const error = saveDraft(state.document);
-    if (error) {
-      setStorageMessage(error);
-    }
+    setStorageMessage(error);
   }, [state.document]);
   const selectedBlock = useMemo(
     () => state.document.blocks.find((block) => block.id === state.selectedBlockId) ?? null,

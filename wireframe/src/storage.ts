@@ -17,9 +17,9 @@ export interface DraftLoadResult {
   error: string | null;
 }
 
-export function loadDraft(storage: StorageLike = getBrowserStorage()): DraftLoadResult {
+export function loadDraft(storage?: StorageLike): DraftLoadResult {
   try {
-    const serialized = storage.getItem(DRAFT_STORAGE_KEY);
+    const serialized = (storage ?? getBrowserStorage()).getItem(DRAFT_STORAGE_KEY);
     if (serialized === null) {
       return { document: null, error: null };
     }
@@ -38,19 +38,22 @@ export function loadDraft(storage: StorageLike = getBrowserStorage()): DraftLoad
 
 export function saveDraft(
   document: WireframeDocumentV1,
-  storage: StorageLike = getBrowserStorage(),
+  storage?: StorageLike,
 ): string | null {
   try {
-    storage.setItem(DRAFT_STORAGE_KEY, serializeWireframeDocument(document));
+    (storage ?? getBrowserStorage()).setItem(
+      DRAFT_STORAGE_KEY,
+      serializeWireframeDocument(document),
+    );
     return null;
   } catch {
     return 'No se pudo guardar el borrador local. Puedes continuar editando y exportarlo después.';
   }
 }
 
-export function clearDraft(storage: StorageLike = getBrowserStorage()): string | null {
+export function clearDraft(storage?: StorageLike): string | null {
   try {
-    storage.removeItem(DRAFT_STORAGE_KEY);
+    (storage ?? getBrowserStorage()).removeItem(DRAFT_STORAGE_KEY);
     return null;
   } catch {
     return 'No se pudo limpiar el borrador local.';
