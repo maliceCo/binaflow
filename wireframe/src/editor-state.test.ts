@@ -96,6 +96,22 @@ describe('editor state', () => {
     expect(duplicate.selectedBlockId).toBe('copy');
   });
 
+  it('rejects empty and whitespace IDs without mutating state', () => {
+    const state = createStateWithBlock();
+
+    for (const id of ['', '   ', 'first']) {
+      expect(editorReducer(state, { type: 'add-block', id })).toBe(state);
+    }
+    expect(editorReducer(state, { type: 'duplicate-block', sourceId: 'first', id: '   ' })).toBe(
+      state,
+    );
+
+    expect(addBlock(state, 'valid')).toMatchObject({
+      selectedBlockId: 'valid',
+      document: { blocks: [...state.document.blocks, expect.objectContaining({ id: 'valid' })] },
+    });
+  });
+
   it('deletes a block and clears its selection', () => {
     const state = createStateWithBlock();
     const deleted = editorReducer(state, { type: 'delete-block', id: 'first' });

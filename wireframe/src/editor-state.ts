@@ -70,6 +70,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 }
 
 function addBlock(state: EditorState, id: string): EditorState {
+  if (!id.trim() || id.length > 100) return state;
   if (
     state.document.blocks.length >= MAX_BLOCKS ||
     state.document.blocks.some((block) => block.id === id)
@@ -136,6 +137,7 @@ function updateBlockGeometry(state: EditorState, id: string, geometry: BlockGeom
 }
 
 function duplicateBlock(state: EditorState, sourceId: string, id: string): EditorState {
+  if (!id.trim() || id.length > 100) return state;
   const source = state.document.blocks.find((block) => block.id === sourceId);
   if (
     !source ||
