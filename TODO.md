@@ -1,159 +1,116 @@
-# PLAN DE EJECUCIÓN: Editor web básico de wireframes
+# PLAN DE ACCIÓN DE CORRECCIONES: QA del editor Wireframe
 
-> **ATENCIÓN SUB-AGENTE:** Sigue este plan de forma estrictamente secuencial. No saltes tareas. No agregues código que no esté explícitamente detallado. Si encuentras un obstáculo o comportamiento inesperado, DETÉN LA EJECUCIÓN e informa al Orquestador inmediatamente.
+> **ATENCIÓN SUB-AGENTE:** Sigue este plan de forma estrictamente secuencial. No saltes tareas, no agregues código no descrito y detente ante cualquier desviación. Este plan corrige únicamente los hallazgos QA del paquete `wireframe/`. No modificar `pending.md`.
 
-## Alcance aprobado
+## Estado de ejecución
 
-Crear en `wireframe/` una aplicación web independiente y reutilizable para diseñar una pantalla mediante rectángulos sobre una grilla. La persona podrá crear, seleccionar, mover, redimensionar, duplicar y eliminar bloques; cada bloque tendrá título y descripción. El documento se guardará localmente y podrá importarse/exportarse como JSON versionado.
+- Las tareas 1.1 a 7.1 de QA están completadas; sus correcciones y el E2E real se registraron en commits separados.
+- `wireframe/`: format, lint, typecheck, 57 tests unitarios, build y 5 E2E Chromium pasan.
+- Binaflow raíz: typecheck, 505 tests (1 omitido) y build pasan.
+- Los checks raíz siguen señalando problemas fuera del alcance: Prettier avisa de 60 archivos y ESLint reporta 68 errores en `test/style`. La exclusión de `wireframe/` redujo ESLint desde 1128 errores y eliminó del formato el reporte generado de Playwright.
+- `git diff --check` aún señala líneas CRLF en archivos web modificados anteriormente; no se normalizaron como parte de QA.
+- El ajuste general de listas de Binaflow Web sigue pendiente, como trabajo adicional independiente.
 
-### Decisiones de partida
+## Lista de tareas
 
-- `wireframe/` vive en este repositorio, pero es un paquete autónomo con `package.json`, lockfile, configuración y scripts propios.
-- Binaflow no importa ni ejecuta código de `wireframe/`; el editor tampoco importa módulos de Binaflow.
-- Stack mínimo: React, TypeScript y Vite. `react-rnd` resuelve drag/resize sin construir un sistema de punteros propio.
-- El formato canónico es JSON. Posiciones y tamaños se expresan en unidades de grilla, nunca en píxeles.
-- La grilla tiene 12 columnas y filas lógicas de 40 px. El lienzo conserva al menos 18 filas y crece según el bloque más bajo.
-- Se permite solapamiento entre bloques y no hay compactación o reordenamiento automático.
-- Un archivo representa una sola pantalla. No hay cuentas, backend, colaboración, IA, conexiones entre bloques ni componentes anidados.
-- El borrador automático usa una única clave de `localStorage`; el archivo JSON exportado es la fuente portable.
-- La aplicación trata títulos y descripciones como texto, nunca como HTML.
-- No se modifica el comportamiento, los contratos ni las dependencias de Binaflow.
+### Fase 1: Base de verificación
 
-### Contrato JSON v1
+- [x] **Tarea 1.1: Consolidar el aislamiento de tests unitarios y E2E**
+  - **Archivo:** `wireframe/vitest.config.ts`.
+  - **Funciones:** configuración `test.include`.
+  - **Descripción:** conservar el filtro `src/**/*.{test,spec}.{ts,tsx}` para que `pnpm --dir wireframe run test` ejecute únicamente Vitest. No cambiar la configuración de Playwright.
+  - **Evitar:** ejecutar E2E desde Vitest, aumentar timeouts para ocultar procesos colgados o tocar la configuración de Binaflow.
+  - **Verificación:** `pnpm --dir wireframe run format:check && pnpm --dir wireframe run lint && pnpm --dir wireframe run typecheck && pnpm --dir wireframe run test`.
+  - **Commit Msg:** `test: isolate wireframe unit tests from e2e`
 
-```json
-{
-  "version": 1,
-  "name": "Pantalla de ejecuciones",
-  "grid": {
-    "columns": 12,
-    "rowHeight": 40
-  },
-  "blocks": [
-    {
-      "id": "UUID",
-      "title": "Lista de ejecuciones",
-      "description": "Mostrar estado y fecha.",
-      "x": 0,
-      "y": 0,
-      "width": 3,
-      "height": 5
-    }
-  ]
-}
-```
+### Fase 2: Robustez del almacenamiento
 
-Restricciones v1: nombre de documento máximo 100 caracteres; título máximo 120; descripción máxima 4000; máximo 200 bloques; IDs únicos; enteros para geometría; `x >= 0`, `y >= 0`, `width >= 1`, `height >= 1` y `x + width <= 12`. La importación rechaza campos desconocidos, versiones no soportadas y documentos que incumplan límites. Un fallo de importación no reemplaza el documento abierto.
+- [x] **Tarea 2.1: Manejar almacenamiento local no disponible**
+  - **Archivo:** `wireframe/src/storage.ts`, `wireframe/src/storage.test.ts`, `wireframe/src/App.tsx`, `wireframe/src/App.test.tsx`.
+  - **Funciones:** `loadDraft`, `saveDraft`, `clearDraft` y la inicialización de `App`.
+  - **Descripción:** evitar que `getBrowserStorage()` se evalúe antes del `try`. Si acceder a `localStorage` produce `SecurityError`, no disponible o falla por cuota, la aplicación debe seguir editándose con un documento vacío o actual, devolver un mensaje controlado y no lanzar durante el render. Mantener la inyección `StorageLike` para tests. Añadir un caso donde el getter de almacenamiento falla.
+  - **Descripción adicional:** cuando un autosave posterior funciona, limpiar el aviso de almacenamiento obsoleto. Mantener el aviso si el último intento sigue fallando.
+  - **Evitar:** guardar selección, silenciar el error sin feedback, capturar errores fuera de la frontera de almacenamiento o introducir IndexedDB.
+  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/storage.test.ts src/App.test.tsx` debe cubrir getter fallido, lectura corrupta, escritura fallida, recuperación de guardado y edición continua sin crash; después `pnpm --dir wireframe run typecheck`.
+  - **Commit Msg:** `fix: keep wireframe usable when local storage fails`
 
-## Lista de Tareas
+### Fase 3: Mantener documentos y estado válidos
 
-### Fase 1: Prerrequisitos y contrato del documento
+- [x] **Tarea 3.1: Fijar el contrato de grilla v1**
+  - **Archivo:** `wireframe/src/model.ts`, `wireframe/src/model.test.ts`, `wireframe/README.md`.
+  - **Funciones:** `parseGrid`, `createEmptyDocument` y límites del contrato.
+  - **Descripción:** decidir y aplicar una única regla para v1: `grid.columns` debe ser 12 y `grid.rowHeight` debe ser exactamente `DEFAULT_ROW_HEIGHT` (40). Rechazar valores positivos arbitrarios que creen lienzos desproporcionados. Actualizar el ejemplo/documentación solo si el texto actual no expresa claramente esta regla.
+  - **Evitar:** migrar versiones futuras, corregir silenciosamente archivos importados o agregar configuración de tamaño no solicitada.
+  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/model.test.ts` debe cubrir 40 válido y 0, 1, 999999999 o decimales inválidos; `pnpm --dir wireframe run typecheck`.
+  - **Commit Msg:** `fix: constrain wireframe grid dimensions`
 
-- [x] **Tarea 1.1: Crear el paquete web independiente**
-  - **Archivo:** nuevos `wireframe/package.json`, `wireframe/pnpm-workspace.yaml`, `wireframe/pnpm-lock.yaml`, `wireframe/.gitignore`, `wireframe/.prettierrc.json`, `wireframe/eslint.config.js`, `wireframe/tsconfig.json`, `wireframe/vite.config.ts`, `wireframe/vitest.config.ts`, `wireframe/index.html`, `wireframe/src/main.tsx`, `wireframe/src/App.tsx`, `wireframe/src/styles.css`, `wireframe/src/test/setup.ts`.
-  - **Funciones:** entrada `main.tsx` y componente `App` mínimo; scripts `dev`, `build`, `typecheck`, `lint`, `format`, `format:check`, `test` y `test:e2e`.
-  - **Descripción:** crear un proyecto React/TypeScript/Vite que arranque con una pantalla vacía y un encabezado “Wireframe”. Declarar React, React DOM y `react-rnd` como dependencias; Vite, TypeScript, Vitest, jsdom, Testing Library, Playwright, ESLint y Prettier como dependencias de desarrollo. El `pnpm-workspace.yaml` anidado debe mantener instalación y lockfile dentro de `wireframe/`. Usar Node >=22 y fijar versiones en el lockfile. La instalación de paquetes requiere autorización explícita del owner antes de usar red.
-  - **Evitar:** modificar el `package.json`, lockfile, scripts, configuración o código de Binaflow; agregar router, framework CSS, backend, servicio de desarrollo LAN, estado global externo o librerías adicionales.
-  - **Verificación:** `pnpm --dir wireframe run format:check && pnpm --dir wireframe run lint && pnpm --dir wireframe run typecheck && pnpm --dir wireframe run build`.
-  - **Commit Msg:** `build: scaffold independent wireframe editor`
+- [x] **Tarea 3.2: Rechazar IDs inválidos en el reducer**
+  - **Archivo:** `wireframe/src/editor-state.ts`, `wireframe/src/editor-state.test.ts`.
+  - **Funciones:** `addBlock` y `duplicateBlock` dentro de `editorReducer`.
+  - **Descripción:** impedir que acciones internas con ID vacío o solo espacios creen un documento que después no pueda serializarse. Mantener la regla de IDs únicos y devolver el mismo estado cuando la acción es inválida.
+  - **Evitar:** validar UUIDs estrictos si el contrato solo exige IDs únicos, cambiar el formato JSON o agregar estado de error global al reducer.
+  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/editor-state.test.ts` debe probar ID vacío, ID de espacios, duplicado y estado válido tras acciones normales.
+  - **Commit Msg:** `fix: preserve valid block identifiers`
 
-- [x] **Tarea 1.2: Definir y validar el documento JSON v1**
-  - **Archivo:** nuevos `wireframe/src/model.ts`, `wireframe/src/model.test.ts`.
-  - **Funciones:** `createEmptyDocument`, `parseWireframeDocument`, `serializeWireframeDocument`, `normalizeBlockGeometry`, tipos `WireframeDocumentV1`, `WireframeGridV1` y `WireframeBlockV1`.
-  - **Descripción:** implementar el contrato JSON y los límites descritos arriba mediante validación TypeScript explícita sobre `unknown`. `parseWireframeDocument` debe producir un documento nuevo sin conservar referencias mutables del valor recibido. `normalizeBlockGeometry` debe redondear y limitar geometría creada por la UI dentro de las 12 columnas, pero la importación debe rechazar geometría inválida en lugar de corregirla silenciosamente. La serialización debe ser determinista y legible con indentación de dos espacios.
-  - **Evitar:** usar casts para aceptar JSON no validado, agregar timestamps o rutas locales, aceptar campos extra, migrar versiones futuras, incluir estilos/HTML, corregir silenciosamente archivos inválidos o introducir una biblioteca de schema para este único contrato pequeño.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/model.test.ts` debe cubrir round-trip, documento vacío, límites válidos, campos extra, versión desconocida, IDs duplicados, strings/tamaños excesivos y geometría fuera de la grilla.
-  - **Commit Msg:** `feat: define versioned wireframe documents`
+### Fase 4: Exportación segura
 
-### Fase 2: Estado y edición visual
+- [x] **Tarea 4.1: Revocar URLs temporales aunque falle la descarga**
+  - **Archivo:** `wireframe/src/file-io.ts`, `wireframe/src/file-io.test.ts`.
+  - **Funciones:** `createWireframeDownload`.
+  - **Descripción:** envolver la operación posterior a `createObjectURL` en `try/finally` para garantizar `revokeObjectURL(url)` si fallan `createAnchor`, `appendAnchor`, `click` o `removeAnchor`. Mantener el nombre sanitizado y el comportamiento de descarga existente.
+  - **Evitar:** ocultar el error de descarga, crear reintentos automáticos o conservar anchors en el DOM.
+  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/file-io.test.ts` debe cubrir descarga exitosa y fallo de `click` verificando siempre la revocación; `pnpm --dir wireframe run lint`.
+  - **Commit Msg:** `fix: revoke wireframe download URLs on failure`
 
-- [x] **Tarea 2.1: Implementar operaciones puras del editor**
-  - **Archivo:** nuevos `wireframe/src/editor-state.ts`, `wireframe/src/editor-state.test.ts`.
-  - **Funciones:** `createEditorState`, `editorReducer`, acciones `rename-document`, `add-block`, `select-block`, `update-block-text`, `set-block-geometry`, `duplicate-block`, `delete-block`, `replace-document` y `new-document`.
-  - **Descripción:** centralizar las mutaciones del documento en un reducer inmutable. `add-block` crea un bloque 3x3 en la primera posición visible disponible o, si no hay hueco, debajo del contenido actual. Duplicar genera un ID nuevo y desplaza el bloque una celda cuando cabe; si no, lo coloca debajo. Eliminar limpia la selección. Toda geometría generada por acciones se normaliza con el helper de la Tarea 1.2. Inyectar el generador de ID en las acciones que crean bloques para que los tests sean deterministas; la UI usará `crypto.randomUUID()`.
-  - **Evitar:** acceso a DOM, `localStorage`, archivos o React dentro del reducer; historial undo/redo, selección múltiple, auto-layout, colisiones o mutar objetos previos.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/editor-state.test.ts` debe probar cada acción, IDs nuevos, selección coherente, límites de 200 bloques, geometría normalizada e inmutabilidad del estado anterior.
-  - **Commit Msg:** `feat: add deterministic wireframe editor state`
+### Fase 5: Interacción real del canvas
 
-- [x] **Tarea 2.2: Construir la estructura del editor y el inspector**
-  - **Archivo:** nuevos `wireframe/src/components/Toolbar.tsx`, `wireframe/src/components/Canvas.tsx`, `wireframe/src/components/Inspector.tsx`, `wireframe/src/App.test.tsx`; modificar `wireframe/src/App.tsx`, `wireframe/src/styles.css`.
-  - **Funciones:** componentes `Toolbar`, `Canvas`, `Inspector`; composición y reducer en `App`.
-  - **Descripción:** crear un layout de tres zonas: barra superior, lienzo principal y panel inspector. La barra muestra nombre editable del documento y acciones Nuevo, Importar JSON, Exportar JSON y Añadir bloque; Importar/Exportar pueden permanecer deshabilitadas hasta la Fase 3. El lienzo dibuja la grilla y los bloques con título visible, descripción truncada visualmente y estado de selección distinguible sin depender solo del color. El inspector permite editar título, descripción y campos numéricos `x`, `y`, `width`, `height`, además de Duplicar y Eliminar. Sin selección muestra instrucciones breves. Los labels, botones y foco deben ser accesibles; en pantallas estrechas el inspector pasa debajo del lienzo sin ocultar controles.
-  - **Evitar:** implementar todavía drag/resize, persistencia o archivos; `dangerouslySetInnerHTML`, estilos inline extensos, iconos sin texto accesible, más de cinco acciones principales simultáneas o componentes genéricos especulativos.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/App.test.tsx` debe crear/seleccionar un bloque, editar texto y geometría desde el inspector, duplicarlo, eliminarlo, renombrar el documento y comprobar que contenido con HTML se renderiza como texto.
-  - **Commit Msg:** `feat: add wireframe canvas and inspector`
+- [x] **Tarea 5.1: Probar arrastre y redimensionado reales en Chromium**
+  - **Archivo:** `wireframe/e2e/editor.spec.ts`; ampliar `wireframe/src/components/Canvas.test.tsx` solo para conversiones puras si falta una aserción.
+  - **Funciones:** recorrido real de `react-rnd`, handles de resize y persistencia de geometría.
+  - **Descripción:** mantener los checks del inspector, pero agregar interacción con el ratón sobre un bloque real: arrastrar a otra columna/fila y usar el handle de esquina para cambiar ancho/alto. Verificar después los campos del inspector y, tras recargar, que la geometría permanece. Usar `boundingBox`, movimientos con pasos y aserciones semánticas; no usar sleeps fijos.
+  - **Evitar:** reemplazar `react-rnd` por un mock en el E2E, validar solo estilos pixel-perfect, ocultar fallos con reintentos o cambiar el comportamiento de solapamiento.
+  - **Verificación:** `pnpm --dir wireframe run build && pnpm --dir wireframe run test:e2e`; si el gesto real revela un bug de límites/offset, detenerse y reportar desviación antes de modificar producción.
+  - **Commit Msg:** `test: cover real canvas drag and resize`
 
-- [x] **Tarea 2.3: Permitir mover y redimensionar bloques en la grilla**
-  - **Archivo:** nuevos `wireframe/src/geometry.ts`, `wireframe/src/geometry.test.ts`, `wireframe/src/components/Canvas.test.tsx`; modificar `wireframe/src/components/Canvas.tsx`, `wireframe/src/styles.css`.
-  - **Funciones:** `gridToPixels`, `pixelsToGrid`, `calculateCanvasRows`; handlers de `react-rnd` para fin de drag y resize.
-  - **Descripción:** medir el ancho útil del lienzo con `ResizeObserver`, calcular el ancho de columna y representar cada bloque como `Rnd` controlado. Ajustar movimiento y tamaño a columnas/filas; limitar horizontalmente al lienzo, impedir tamaños menores de 1x1 y persistir el resultado en unidades de grilla al finalizar la interacción. El lienzo debe tener 18 filas mínimas y crecer hasta dos filas después del bloque más bajo. Seleccionar al enfocar o interactuar con un bloque. Los campos numéricos del inspector siguen siendo la alternativa sin ratón.
-  - **Evitar:** guardar píxeles, actualizar el reducer en cada pixel de movimiento, compactar bloques, impedir solapamiento, desplazar otros bloques, implementar zoom/pan o depender de dimensiones globales de ventana.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/geometry.test.ts src/components/Canvas.test.tsx` debe cubrir conversiones con varios anchos, redondeo, límites, crecimiento vertical y publicación de geometría al terminar drag/resize.
-  - **Commit Msg:** `feat: move and resize blocks on the grid`
+### Fase 6: Aislamiento de herramientas del paquete
 
-### Fase 3: Persistencia e intercambio
+- [x] **Tarea 6.1: Evitar que las herramientas raíz inspeccionen el paquete independiente**
+  - **Archivo:** `eslint.config.js`, `.prettierignore`; únicamente si la verificación confirma que siguen inspeccionando `wireframe/` o sus artefactos generados.
+  - **Funciones:** patrones de exclusión de ESLint/Prettier.
+  - **Descripción:** hacer explícito que `wireframe/` tiene sus propios comandos de calidad y que Binaflow raíz no debe inspeccionar sus fuentes, `dist`, reportes o dependencias. Mantener `pnpm --dir wireframe run format:check` y `lint` como validación obligatoria del paquete. No intentar resolver los fallos históricos de `test/style` ni reformatear archivos ajenos.
+  - **Evitar:** ocultar errores de `src/` o `test/` de Binaflow, cambiar `package.json` raíz, borrar artefactos para falsear una verificación o incluir `pending.md`.
+  - **Verificación:** comprobar `pnpm run lint`/`format:check` antes y después, registrar por separado los fallos históricos restantes y ejecutar los checks propios de `wireframe`.
+  - **Commit Msg:** `chore: isolate wireframe quality checks`
 
-- [x] **Tarea 3.1: Guardar y recuperar el borrador local**
-  - **Archivo:** nuevos `wireframe/src/storage.ts`, `wireframe/src/storage.test.ts`; modificar `wireframe/src/App.tsx`, `wireframe/src/components/Toolbar.tsx`.
-  - **Funciones:** `loadDraft`, `saveDraft`, `clearDraft`; inicialización y autosave en `App`.
-  - **Descripción:** usar una clave estable `wireframe-editor.document.v1`. Al arrancar, validar el borrador con `parseWireframeDocument`; si es válido, restaurarlo; si es inválido, conservar un documento vacío y mostrar un aviso no técnico sin lanzar la aplicación. Guardar después de cambios del documento, no de selección. Nuevo documento solicita confirmación si existe contenido, limpia el borrador y crea estado vacío. Un error de cuota/seguridad se muestra sin bloquear la edición.
-  - **Evitar:** guardar selección, tokens o rutas; varias bases de datos locales, IndexedDB, debounce complejo, sincronización entre pestañas o reemplazar el documento por datos no validados.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/storage.test.ts src/App.test.tsx` debe cubrir restauración, autosave, borrador corrupto, fallo de escritura y creación de documento nuevo confirmada/cancelada.
-  - **Commit Msg:** `feat: persist the wireframe draft locally`
+### Fase 7: Regresión y cierre
 
-- [x] **Tarea 3.2: Importar y exportar archivos JSON sin pérdida accidental**
-  - **Archivo:** nuevo `wireframe/src/file-io.ts`, `wireframe/src/file-io.test.ts`; modificar `wireframe/src/App.tsx`, `wireframe/src/components/Toolbar.tsx`.
-  - **Funciones:** `readWireframeFile`, `createWireframeDownload`, `safeWireframeFilename`; handlers de importación/exportación en `App`.
-  - **Descripción:** habilitar Importar mediante un input de archivo oculto que acepte `.json`, lea UTF-8 y limite el archivo a 1 MiB antes de parsearlo. Reemplazar el documento solo después de validación completa y seleccionar ninguno. Mostrar errores comprensibles y mantener intacto el diseño actual ante fallo. Exportar el JSON determinista de la Tarea 1.2 mediante `Blob` y URL temporal; usar el nombre sanitizado del documento y revocar la URL. El botón Exportar debe funcionar también con un documento vacío.
-  - **Evitar:** File System Access API, paths del equipo, subida a servidor, base64, HTML/SVG/PNG, recuperación parcial de JSON inválido o descargar desde los tests reales sin adaptar las APIs del navegador.
-  - **Verificación / TDD:** `pnpm --dir wireframe test -- src/file-io.test.ts src/App.test.tsx` debe cubrir nombre seguro, export round-trip, archivo demasiado grande, JSON inválido, schema inválido, importación válida y conservación del documento ante error.
-  - **Commit Msg:** `feat: import and export wireframe JSON`
-
-### Fase 4: Aceptación y documentación
-
-- [x] **Tarea 4.1: Verificar el recorrido real en navegador**
-  - **Archivo:** nuevos `wireframe/playwright.config.ts`, `wireframe/e2e/editor.spec.ts`.
-  - **Funciones:** fixture del servidor Vite de Playwright y recorrido de usuario del editor.
-  - **Descripción:** probar en Chromium el flujo: abrir app, añadir dos bloques, editar título/descripción, mover uno, redimensionarlo, recargar y comprobar autosave, exportar JSON, crear documento nuevo, importar el archivo descargado y comprobar que posiciones/textos se restauran. Usar selectores por rol/label o `data-testid` estable solo donde el drag/resize no tenga semántica accesible. No usar sleeps fijos ni screenshots como única aserción.
-  - **Evitar:** navegador o red remotos, datos reales del usuario, pruebas visuales pixel-perfect, múltiples navegadores/plataformas en este MVP o helpers de producción creados solo para el test.
-  - **Verificación:** `pnpm --dir wireframe run build && pnpm --dir wireframe run test:e2e`. Si Chromium no está disponible, pedir autorización antes de ejecutar `pnpm --dir wireframe exec playwright install chromium`; no declarar aceptación sin navegador.
-  - **Commit Msg:** `test: verify the wireframe editor journey`
-
-- [x] **Tarea 4.2: Documentar uso, formato y límites del MVP**
-  - **Archivo:** nuevo `wireframe/README.md`.
-  - **Funciones:** ninguna.
-  - **Descripción:** documentar requisitos, `pnpm install`, `pnpm dev`, comandos de calidad, controles del editor, autosave, import/export, ejemplo JSON v1 y límites explícitos. Aclarar que el JSON describe intención visual para que una persona o agente implemente luego la UI, pero no genera código automáticamente. Enumerar como posibles extensiones, sin implementarlas: undo/redo, múltiples pantallas, PNG/SVG, responsive breakpoints y biblioteca de componentes.
-  - **Evitar:** prometer integración con Binaflow, IA, colaboración, backend, compatibilidad con versiones futuras o características no verificadas.
-  - **Verificación:** `pnpm --dir wireframe exec prettier --check README.md && pnpm --dir wireframe run build`.
-  - **Commit Msg:** `docs: explain the wireframe editor MVP`
-
-- [ ] **Tarea 4.3: Ejecutar regresión final y retirar el plan temporal**
-  - **Archivo:** `TODO.md` (eliminar únicamente después de todas las verificaciones); no modificar `pending.md`.
+- [x] **Tarea 7.1: Aceptar las correcciones QA**
+  - **Archivo:** `TODO.md`; no modificar `pending.md`.
   - **Funciones:** ninguna nueva.
-  - **Descripción:** ejecutar la validación completa del paquete independiente y la regresión obligatoria de Binaflow. Confirmar que `wireframe/` no es importado por Binaflow y que ningún archivo generado (`dist`, coverage, resultados Playwright) queda tracked. Revisar el estado Git y distinguir cualquier cambio ajeno antes de borrar este plan.
-  - **Evitar:** construir bundles Linux/Windows, instalar paquetes adicionales, corregir fallos preexistentes o incluir `pending.md`/cambios ajenos en el commit.
-  - **Verificación:** `pnpm --dir wireframe run format:check && pnpm --dir wireframe run lint && pnpm --dir wireframe run typecheck && pnpm --dir wireframe run test && pnpm --dir wireframe run build && pnpm --dir wireframe run test:e2e && pnpm run format:check && pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build && git diff --check && git status --short`.
-  - **Commit Msg:** `chore: complete the wireframe editor MVP`
+  - **Descripción:** ejecutar toda la suite del paquete, E2E y las verificaciones raíz. Marcar como resueltos solo los hallazgos con evidencia. La regresión raíz debe conservar un registro explícito de los fallos preexistentes; no declararla verde si persisten.
+  - **Evitar:** construir bundles Linux/Windows, corregir problemas no relacionados, modificar datos reales o borrar `pending.md`.
+  - **Verificación:** `pnpm --dir wireframe run format:check && pnpm --dir wireframe run lint && pnpm --dir wireframe run typecheck && pnpm --dir wireframe run test && pnpm --dir wireframe run build && pnpm --dir wireframe run test:e2e && pnpm run typecheck && pnpm run test && pnpm run build && git diff --check`.
+  - **Resultado:** los checks propios de `wireframe/` y los checks raíz typecheck/test/build pasan. `format:check` raíz conserva 60 archivos históricos y `lint` raíz 68 errores en `test/style`; `git diff --check` reporta CRLF en cambios web preexistentes. Ninguno se corrigió aquí.
+  - **Commit Msg:** `test: accept wireframe QA corrections`
 
 ## Criterios de aceptación
 
-- [ ] La aplicación arranca desde `wireframe/` sin iniciar ni configurar Binaflow.
-- [ ] Se pueden crear, seleccionar, mover, redimensionar, editar, duplicar y borrar bloques.
-- [ ] La geometría se conserva en unidades de una grilla de 12 columnas.
-- [ ] Recargar restaura el borrador válido del navegador.
-- [ ] Exportar e importar conserva nombre, textos, IDs, posiciones y tamaños.
-- [ ] Un JSON inválido no reemplaza el documento abierto.
-- [ ] El JSON v1 es legible y suficiente para implementar posteriormente la UI descrita.
-- [ ] El recorrido Chromium y las suites completas de `wireframe/` y Binaflow pasan.
+- [x] El editor sigue funcionando aunque el almacenamiento local no esté disponible.
+- [x] Los avisos de almacenamiento reflejan el último estado real del autosave.
+- [x] Los documentos v1 solo aceptan una grilla de 12 columnas y filas de 40 px.
+- [x] Ninguna acción del reducer crea IDs vacíos o documentos no serializables.
+- [x] Las URLs de descarga se revocan también ante errores.
+- [x] Chromium prueba arrastre y redimensionado reales, no solo campos del inspector.
+- [x] Los checks propios de `wireframe/` pasan sin que sus artefactos contaminen Binaflow.
+- [x] Los fallos históricos de Binaflow quedan documentados y no se presentan como corregidos.
 
-## Reglas de Operación para el Sub-Modelo
+## Reglas de operación
 
-1. **Un solo check a la vez:** no comiences la tarea `N+1` hasta que la tarea `N` tenga su check (`[x]`) y su verificación sea exitosa.
-2. **Política de commits:** haz un commit de Git inmediatamente al marcar un check. Usa el mensaje especificado y agrega solo los archivos de esa tarea; nunca uses `git add .`.
-3. **Límite de alcance:** no adivines el futuro. Si falta información, una dependencia resulta incompatible o se necesita un archivo/función no contemplado, detente y aplica el protocolo de desviación.
-4. **Cambios existentes:** `pending.md` y cualquier cambio no creado por la tarea se consideran ajenos; no modificarlos, borrarlos ni incluirlos en commits.
-5. **Dependencias y red:** no instalar ni actualizar paquetes sin autorización explícita. No usar red pública, credenciales, HOME real ni datos reales en pruebas.
-6. **Autodestrucción:** cuando todas las tareas y criterios estén verificados, elimina físicamente `TODO.md` y realiza el commit final indicado.
+1. Un solo check a la vez. No comenzar la tarea siguiente hasta verificar y committear la anterior.
+2. Cada commit debe contener únicamente los archivos de su tarea y usar el mensaje indicado.
+3. No modificar `pending.md`, datos reales ni código no relacionado.
+4. Si aparece un bug distinto, una API incompatible o una tarea necesita más archivos de los indicados, detenerse con el protocolo de desviación.
+5. No borrar este `TODO.md` hasta completar la Tarea 7.1, el trabajo adicional autorizado y sus verificaciones.
 
 ## Protocolo de desviación
 
@@ -166,4 +123,12 @@ Impacto: <archivos, contratos y verificaciones>
 Propuesta: <ajuste mínimo solicitado>
 ```
 
-No marcar la tarea en curso ni corregir silenciosamente el bloqueo hasta que el Orquestador actualice este plan.
+## Trabajo adicional autorizado: listas de Binaflow Web
+
+> Este bloque es independiente de las correcciones QA de `wireframe/` anteriores. Ejecutarlo por separado, sin ampliar su alcance ni cambiar el editor de wireframes. El modal Project locations ya tiene el patrón de referencia; conservarlo.
+
+- [ ] **Ajustar la presentación de elementos de listas en Binaflow Web**
+  - **Archivos a revisar:** `src/web/client/styles.css` y las vistas que usan `.project-list` (`Projects.tsx`), `.task-list` y `.recent-tasks` (`App.tsx`), `.folder-list` (`ProjectBrowser.tsx`) y `.local-folder-list` (`LocalProjectPicker.tsx`). Cambiar componentes solo si la estructura actual impide el resultado; no tocar API ni lógica de negocio.
+  - **Objetivo:** que cada elemento se lea como una unidad clara, con espaciado, borde completo y estados distinguibles por texto y estructura, no solo por color. Evitar filas que parecen cortadas (especialmente la primera), dobles bordes, solapamientos y botones que invaden nombres largos. Mantener acciones, selección, estados vacíos y foco accesible. En ancho móvil, permitir que el contenido y las acciones se apilen sin desbordar ni ocultarse.
+  - **Enfoque:** auditar los selectores compartidos (`.task-list li`, `.project-list li`, `.settings-section li` y `li:first-child`) antes de cambiar CSS; preferir reglas acotadas por lista frente a un estilo global para todos los `li`. Reutilizar el criterio visual del modal de ubicaciones, no aplicar verde ni tarjetas idénticas indiscriminadamente.
+  - **Aceptación:** revisar visualmente cada lista con un elemento y con varios, nombres largos y viewport estrecho. Extender solo los E2E web existentes pertinentes para proteger el borde superior del primer elemento y la ausencia de solapamiento horizontal/vertical; verificar que selección y acciones sigan funcionando. Ejecutar typecheck, build y pruebas enfocadas, y registrar por separado los fallos globales preexistentes de formato/lint sin corregirlos aquí.
