@@ -73,7 +73,7 @@ Las posiciones y tamaños usan unidades lógicas de grilla, no píxeles:
 - `x` y `y` empiezan en cero.
 - `width` y `height` son como mínimo `1`.
 - `x + width` no puede superar 12.
-- `rowHeight` es 40 en los documentos creados por el editor.
+- `rowHeight` debe ser exactamente 40.
 - Los bloques pueden solaparse; el editor no compacta ni mueve otros bloques automáticamente.
 
 Límites del formato v1:

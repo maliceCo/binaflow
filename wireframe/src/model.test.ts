@@ -75,6 +75,17 @@ describe('wireframe document model', () => {
     expect(parsed.grid.rowHeight).toBe(40);
   });
 
+  it('accepts only the fixed 12-column, 40-pixel grid', () => {
+    const document = createValidDocument();
+    expect(parseWireframeDocument(document).grid.rowHeight).toBe(40);
+
+    for (const rowHeight of [0, 1, 999999999, 1.5]) {
+      expect(() =>
+        parseWireframeDocument({ ...document, grid: { ...document.grid, rowHeight } }),
+      ).toThrow();
+    }
+  });
+
   it('normalizes geometry created by the editor', () => {
     expect(normalizeBlockGeometry({ x: 3.6, y: -2.4, width: 20.2, height: 0.2 })).toEqual({
       x: 4,

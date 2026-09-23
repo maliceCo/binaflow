@@ -93,15 +93,12 @@ function parseGrid(input: unknown): WireframeGridV1 {
   const grid = asRecord(input, 'grid debe ser un objeto');
   assertExactKeys(grid, ['columns', 'rowHeight'], 'grid');
 
-  if (grid.columns !== GRID_COLUMNS) {
-    throw new WireframeDocumentValidationError('grid.columns debe ser 12');
+  if (grid.columns !== GRID_COLUMNS || grid.rowHeight !== DEFAULT_ROW_HEIGHT) {
+    throw new WireframeDocumentValidationError('La grilla debe tener 12 columnas y filas de 40 px');
   }
-
-  const rowHeight = readPositiveInteger(grid.rowHeight, 'grid.rowHeight');
-
   return {
     columns: GRID_COLUMNS,
-    rowHeight,
+    rowHeight: DEFAULT_ROW_HEIGHT,
   };
 }
 
