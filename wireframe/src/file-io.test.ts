@@ -40,6 +40,26 @@ describe('wireframe file IO', () => {
       /formato de wireframe/,
     );
   });
+  it('revokes its temporary URL and removes the anchor when clicking fails', () => {
+    const anchor = window.document.createElement('a');
+    vi.spyOn(anchor, 'click').mockImplementation(() => {
+      throw new Error('download failed');
+    });
+    const environment = {
+      createObjectURL: vi.fn(() => 'blob:wireframe'),
+      revokeObjectURL: vi.fn(),
+      createAnchor: vi.fn(() => anchor),
+      appendAnchor: vi.fn(),
+      removeAnchor: vi.fn(),
+    };
+
+    expect(() => createWireframeDownload(createEmptyDocument(), environment)).toThrow(
+      'download failed',
+    );
+    expect(environment.removeAnchor).toHaveBeenCalledWith(anchor);
+    expect(environment.revokeObjectURL).toHaveBeenCalledWith('blob:wireframe');
+  });
+
 
   it('creates a JSON download and revokes its temporary URL', () => {
     const anchor = window.document.createElement('a');

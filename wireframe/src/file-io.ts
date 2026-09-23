@@ -48,13 +48,20 @@ export function createWireframeDownload(
     type: 'application/json;charset=utf-8',
   });
   const url = environment.createObjectURL(blob);
-  const anchor = environment.createAnchor();
-  anchor.href = url;
-  anchor.download = safeWireframeFilename(document.name);
-  environment.appendAnchor(anchor);
-  anchor.click();
-  environment.removeAnchor(anchor);
-  environment.revokeObjectURL(url);
+  let anchor: HTMLAnchorElement | null = null;
+  try {
+    anchor = environment.createAnchor();
+    anchor.href = url;
+    anchor.download = safeWireframeFilename(document.name);
+    environment.appendAnchor(anchor);
+    anchor.click();
+  } finally {
+    try {
+      if (anchor) environment.removeAnchor(anchor);
+    } finally {
+      environment.revokeObjectURL(url);
+    }
+  }
 }
 
 export function safeWireframeFilename(name: string): string {
