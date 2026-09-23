@@ -242,6 +242,7 @@ p {
   z-index: 10;
   inset: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 1rem;
   background: rgba(24, 32, 51, 0.42);
@@ -273,21 +274,26 @@ p {
 
 .project-picker-modal {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: 1.25rem;
 }
 
 .path-form {
   width: 100%;
+  min-width: 0;
 }
 
 .path-form > div {
   display: flex;
+  min-width: 0;
   gap: 0.65rem;
   align-items: end;
 }
 
 .path-form > div input {
   flex: 1;
+  min-width: 0;
 }
 
 .picker-roots {
@@ -313,6 +319,7 @@ p {
 .local-folder-list button {
   display: flex;
   width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.7rem;
   min-height: 3.25rem;
@@ -327,6 +334,15 @@ p {
   background: var(--primary-soft);
 }
 
+.local-folder-list button > span:first-child {
+  flex: 0 0 auto;
+}
+
+.local-folder-list button > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .local-folder-list small {
   display: block;
   margin-top: 0.15rem;
@@ -339,6 +355,10 @@ p {
   margin-top: 0.5rem;
   border-top: 1px solid var(--line);
   padding-top: 1.25rem;
+}
+
+.picker-selection > strong {
+  overflow-wrap: anywhere;
 }
 
 .picker-selection p {
@@ -511,22 +531,27 @@ p {
   list-style: none;
 }
 
+.task-list ul,
+.project-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
 .task-list li,
 .project-list li {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-top: 1px solid var(--line);
-  padding: 0.8rem 0;
-}
-
-.task-list li:first-child,
-.project-list li:first-child {
-  border-top: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  padding: 0.7rem;
+  background: var(--surface-soft);
 }
 
 .task-list a {
+  min-width: 0;
   overflow-wrap: anywhere;
   color: var(--primary-dark);
   font-weight: 650;
@@ -543,21 +568,24 @@ p {
   font-size: 0.8rem;
 }
 
-.project-list li {
-  margin-bottom: 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 0.65rem;
-  padding: 0.7rem;
+.task-list li > span {
+  flex: 0 0 auto;
+}
+
+.project-list li > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+  overflow-wrap: anywhere;
+}
+
+.project-list li > button {
+  flex: 0 0 auto;
 }
 
 .project-list li.is-active {
   border-color: #9bd0bd;
   background: var(--success-soft);
-}
-
-.project-list li > span {
-  display: grid;
-  gap: 0.15rem;
 }
 
 .project-actions {
@@ -588,6 +616,7 @@ p {
 
 .recent-tasks li {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -599,7 +628,13 @@ p {
 
 .recent-tasks li div {
   display: grid;
+  min-width: 0;
   gap: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.recent-tasks li > button {
+  flex: 0 0 auto;
 }
 
 .recent-tasks small {
@@ -628,8 +663,12 @@ p {
 
 .folder-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
   gap: 0.55rem;
+}
+
+.folder-list li {
+  min-width: 0;
 }
 
 .folder-list button {
@@ -653,6 +692,15 @@ p {
 .folder-list button.project-folder {
   border-color: #9bcdbb;
   background: var(--success-soft);
+}
+
+.folder-list button > span:first-child {
+  flex: 0 0 auto;
+}
+
+.folder-list button > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .folder-list button small {
@@ -1241,7 +1289,23 @@ select {
   }
 
   .folder-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-list li,
+  .project-list li,
+  .recent-tasks li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .task-list li > span {
+    align-self: flex-start;
+  }
+
+  .project-list li > button,
+  .recent-tasks li > button {
+    width: 100%;
   }
 
   .task-stage-nav button {

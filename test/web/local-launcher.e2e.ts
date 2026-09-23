@@ -26,8 +26,25 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
 
     await page.getByRole('button', { name: 'Find or initialize a project' }).click();
     const projectDialog = page.getByRole('dialog', { name: 'Find or initialize a project' });
+    await page.setViewportSize({ width: 375, height: 812 });
     await projectDialog.getByRole('button', { name: /projects/ }).click();
+    const localFolderRows = projectDialog.locator('.local-folder-list li');
+    await expect(localFolderRows).toHaveCount(2);
+    for (const row of await localFolderRows.all()) {
+      const folderButton = row.getByRole('button');
+      await expect(folderButton).toHaveCSS('border-top-width', '1px');
+      const buttonBox = await folderButton.boundingBox();
+      const folderNameBox = await folderButton.locator('span').last().boundingBox();
+      expect(buttonBox).not.toBeNull();
+      expect(folderNameBox).not.toBeNull();
+      expect(buttonBox!.x).toBeGreaterThanOrEqual(0);
+      expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(375);
+      expect(folderNameBox!.x + folderNameBox!.width).toBeLessThanOrEqual(
+        buttonBox!.x + buttonBox!.width,
+      );
+    }
     await projectDialog.getByRole('button', { name: /sample Binaflow project/ }).click();
+    await page.setViewportSize({ width: 1280, height: 900 });
     const taskRefresh = page.waitForResponse(
       (response) => response.url().endsWith('/api/v1/tasks') && response.status() === 200,
     );
@@ -99,6 +116,9 @@ async function startLocalLauncher(): Promise<{
     mode: 0o755,
   });
   await mkdir(join(workspace, '.binaflow'), { recursive: true });
+  await mkdir(join(projects, 'folder-name-that-is-deliberately-long-to-check-wrapping-on-mobile'), {
+    recursive: true,
+  });
   await mkdir(configHome, { recursive: true });
   await writeFile(join(workspace, '.binaflow', '.gitignore'), 'data/\n');
   await writeFile(

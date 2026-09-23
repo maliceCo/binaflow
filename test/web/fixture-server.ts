@@ -34,6 +34,11 @@ export async function startBrowserFixture(): Promise<BrowserFixture> {
     ownership: { status: 'active', ownerDeviceId: 'fixture-device' },
     updatedAt: '',
   };
+  const secondProject: ProjectCatalogEntry = {
+    ...project,
+    projectId: 'project-2',
+    name: 'Fixture project with a deliberately long name to check narrow layouts',
+  };
   const server = createWebServer({
     config,
     auth,
@@ -58,7 +63,7 @@ export async function startBrowserFixture(): Promise<BrowserFixture> {
       },
       projectCatalog: {
         getRoots: () => [],
-        listProjects: async () => [project],
+        listProjects: async () => [project, secondProject],
         listDirectory: async () => ({
           rootId: 'root-1',
           segments: [],

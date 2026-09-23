@@ -9,7 +9,7 @@
 - Binaflow raíz: typecheck, 505 tests (1 omitido) y build pasan.
 - Los checks raíz siguen señalando problemas fuera del alcance: Prettier avisa de 60 archivos y ESLint reporta 68 errores en `test/style`. La exclusión de `wireframe/` redujo ESLint desde 1128 errores y eliminó del formato el reporte generado de Playwright.
 - `git diff --check` aún señala líneas CRLF en archivos web modificados anteriormente; no se normalizaron como parte de QA.
-- El ajuste general de listas de Binaflow Web sigue pendiente, como trabajo adicional independiente.
+- El ajuste general de listas de Binaflow Web quedó completado como trabajo adicional independiente. `ProjectBrowser` no está montado en la app actual; su `.folder-list` se auditó y se dejó preparada para nombres largos.
 
 ## Lista de tareas
 
@@ -127,8 +127,9 @@ Propuesta: <ajuste mínimo solicitado>
 
 > Este bloque es independiente de las correcciones QA de `wireframe/` anteriores. Ejecutarlo por separado, sin ampliar su alcance ni cambiar el editor de wireframes. El modal Project locations ya tiene el patrón de referencia; conservarlo.
 
-- [ ] **Ajustar la presentación de elementos de listas en Binaflow Web**
+- [x] **Ajustar la presentación de elementos de listas en Binaflow Web**
   - **Archivos a revisar:** `src/web/client/styles.css` y las vistas que usan `.project-list` (`Projects.tsx`), `.task-list` y `.recent-tasks` (`App.tsx`), `.folder-list` (`ProjectBrowser.tsx`) y `.local-folder-list` (`LocalProjectPicker.tsx`). Cambiar componentes solo si la estructura actual impide el resultado; no tocar API ni lógica de negocio.
   - **Objetivo:** que cada elemento se lea como una unidad clara, con espaciado, borde completo y estados distinguibles por texto y estructura, no solo por color. Evitar filas que parecen cortadas (especialmente la primera), dobles bordes, solapamientos y botones que invaden nombres largos. Mantener acciones, selección, estados vacíos y foco accesible. En ancho móvil, permitir que el contenido y las acciones se apilen sin desbordar ni ocultarse.
   - **Enfoque:** auditar los selectores compartidos (`.task-list li`, `.project-list li`, `.settings-section li` y `li:first-child`) antes de cambiar CSS; preferir reglas acotadas por lista frente a un estilo global para todos los `li`. Reutilizar el criterio visual del modal de ubicaciones, no aplicar verde ni tarjetas idénticas indiscriminadamente.
-  - **Aceptación:** revisar visualmente cada lista con un elemento y con varios, nombres largos y viewport estrecho. Extender solo los E2E web existentes pertinentes para proteger el borde superior del primer elemento y la ausencia de solapamiento horizontal/vertical; verificar que selección y acciones sigan funcionando. Ejecutar typecheck, build y pruebas enfocadas, y registrar por separado los fallos globales preexistentes de formato/lint sin corregirlos aquí.
+  - **Aceptación:** revisar cada lista con uno o varios elementos, nombres largos y viewport estrecho. Extender solo los E2E web existentes pertinentes para proteger el borde superior del primer elemento y la ausencia de solapamiento horizontal/vertical; verificar que selección y acciones sigan funcionando. Ejecutar typecheck, build y pruebas enfocadas, y registrar por separado los fallos globales preexistentes de formato/lint sin corregirlos aquí.
+  - **Resultado:** `browser.e2e.ts` valida listas de tareas, recientes y proyectos (incluidos dos proyectos y nombre largo) a 375 px; `local-launcher.e2e.ts` valida dos carpetas, nombre largo, bordes y límites móviles. Ambos E2E pasan. `.folder-list` de `ProjectBrowser` se auditó, pero ese componente no tiene uso/importación activa para probarlo en navegador. Typecheck, build y Prettier focalizado pasan.
