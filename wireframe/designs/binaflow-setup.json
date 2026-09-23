@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "name": "Binaflow - Configuración inicial",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "setup-progress",
+      "title": "Progreso del setup",
+      "description": "Indicar claramente si se está autorizando ubicaciones o configurando el servidor.",
+      "x": 0,
+      "y": 1,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "setup-explanation",
+      "title": "Explicación del paso",
+      "description": "Explicar por qué se solicita cada dato y qué queda fuera del alcance de Binaflow.",
+      "x": 0,
+      "y": 4,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "authorized-roots",
+      "title": "Carpetas autorizadas",
+      "description": "Lista de roots con eliminar autorización. No mostrar paths absolutos al usuario del navegador si no son necesarios.",
+      "x": 5,
+      "y": 4,
+      "width": 7,
+      "height": 7
+    },
+    {
+      "id": "root-candidates",
+      "title": "Carpetas disponibles",
+      "description": "Candidatos detectados por el servidor con acción Autorizar y feedback de operación ocupado.",
+      "x": 5,
+      "y": 12,
+      "width": 7,
+      "height": 6
+    },
+    {
+      "id": "server-settings",
+      "title": "Configuración del servidor",
+      "description": "Nombre del equipo, host, puerto, origin y TLS. Separar campos sensibles y explicar cuándo hace falta reiniciar.",
+      "x": 0,
+      "y": 11,
+      "width": 5,
+      "height": 8
+    },
+    {
+      "id": "setup-actions",
+      "title": "Continuar o guardar",
+      "description": "Una acción principal por paso, con volver disponible sin perder los datos introducidos.",
+      "x": 0,
+      "y": 20,
+      "width": 12,
+      "height": 2
+    }
+  ]
+}

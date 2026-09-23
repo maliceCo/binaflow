@@ -1,16 +1,16 @@
-export const WIREFRAME_DOCUMENT_VERSION = 1 as const;
+export const WIREFRAME_DOCUMENT_VERSION = 2 as const;
 export const GRID_COLUMNS = 12;
 export const DEFAULT_ROW_HEIGHT = 40;
+export const MIN_CANVAS_ROWS = 18;
+export const MAX_CANVAS_ROWS = 500;
 export const MAX_BLOCKS = 200;
 export const MAX_DOCUMENT_NAME_LENGTH = 100;
 export const MAX_TITLE_LENGTH = 120;
 export const MAX_DESCRIPTION_LENGTH = 4000;
 
-export type WireframeDocumentVersion = typeof WIREFRAME_DOCUMENT_VERSION;
-
-export interface WireframeGridV1 {
+export interface WireframeGrid {
   columns: typeof GRID_COLUMNS;
-  rowHeight: number;
+  rowHeight: typeof DEFAULT_ROW_HEIGHT;
 }
 
 export interface WireframeBlockV1 {
@@ -23,13 +23,27 @@ export interface WireframeBlockV1 {
   height: number;
 }
 
+export interface WireframeBlockV2 extends WireframeBlockV1 {
+  parentId: string | null;
+}
+
 export interface WireframeDocumentV1 {
-  version: WireframeDocumentVersion;
+  version: 1;
   name: string;
-  grid: WireframeGridV1;
+  grid: { columns: number; rowHeight: number };
   blocks: WireframeBlockV1[];
 }
 
+export interface WireframeDocumentV2 {
+  version: typeof WIREFRAME_DOCUMENT_VERSION;
+  name: string;
+  grid: WireframeGrid;
+  canvas: { rows: number };
+  blocks: WireframeBlockV2[];
+}
+
+export type WireframeDocument = WireframeDocumentV2;
+export type WireframeBlock = WireframeBlockV2;
 export type BlockGeometry = Pick<WireframeBlockV1, 'x' | 'y' | 'width' | 'height'>;
 
 export class WireframeDocumentValidationError extends Error {
@@ -39,7 +53,7 @@ export class WireframeDocumentValidationError extends Error {
   }
 }
 
-export function createEmptyDocument(name = 'Nueva pantalla'): WireframeDocumentV1 {
+export function createEmptyDocument(name = 'Nueva pantalla'): WireframeDocumentV2 {
   if (name.length > MAX_DOCUMENT_NAME_LENGTH) {
     throw new WireframeDocumentValidationError('El nombre del documento es demasiado largo');
   }
@@ -47,66 +61,88 @@ export function createEmptyDocument(name = 'Nueva pantalla'): WireframeDocumentV
   return {
     version: WIREFRAME_DOCUMENT_VERSION,
     name,
-    grid: {
-      columns: GRID_COLUMNS,
-      rowHeight: DEFAULT_ROW_HEIGHT,
-    },
+    grid: { columns: GRID_COLUMNS, rowHeight: DEFAULT_ROW_HEIGHT },
+    canvas: { rows: MIN_CANVAS_ROWS },
     blocks: [],
   };
 }
 
-export function normalizeBlockGeometry(geometry: BlockGeometry): BlockGeometry {
-  const x = clampInteger(geometry.x, 0, GRID_COLUMNS - 1);
+export function normalizeBlockGeometry(
+  geometry: BlockGeometry,
+  columns = GRID_COLUMNS,
+): BlockGeometry {
+  const x = clampInteger(geometry.x, 0, columns - 1);
   const y = Math.max(0, toInteger(geometry.y));
-  const width = clampInteger(geometry.width, 1, GRID_COLUMNS - x);
+  const width = clampInteger(geometry.width, 1, columns - x);
   const height = Math.max(1, toInteger(geometry.height));
-
   return { x, y, width, height };
 }
 
-export function parseWireframeDocument(input: unknown): WireframeDocumentV1 {
-  const document = asRecord(input, 'El documento debe ser un objeto');
-  assertExactKeys(document, ['version', 'name', 'grid', 'blocks'], 'documento');
-
-  if (document.version !== WIREFRAME_DOCUMENT_VERSION) {
+export function parseWireframeDocument(input: unknown): WireframeDocumentV2 {
+  const record = asRecord(input, 'El documento debe ser un objeto');
+  if (record.version !== 1 && record.version !== WIREFRAME_DOCUMENT_VERSION) {
     throw new WireframeDocumentValidationError('La versión del documento no está soportada');
   }
 
-  const name = readString(document.name, 'name', MAX_DOCUMENT_NAME_LENGTH);
-  const grid = parseGrid(document.grid);
-  const blocks = parseBlocks(document.blocks);
+  const legacy = record.version === 1;
+  assertExactKeys(
+    record,
+    legacy
+      ? ['version', 'name', 'grid', 'blocks']
+      : ['version', 'name', 'grid', 'canvas', 'blocks'],
+    'documento',
+  );
+  const name = readString(record.name, 'name', MAX_DOCUMENT_NAME_LENGTH);
+  const grid = parseGrid(record.grid);
+  const blocks = parseBlocks(record.blocks, legacy);
+  const rows = legacy
+    ? Math.max(
+        MIN_CANVAS_ROWS,
+        ...blocks
+          .filter((block) => block.parentId === null)
+          .map((block) => block.y + block.height + 2),
+      )
+    : parseCanvas(record.canvas);
 
-  return {
-    version: WIREFRAME_DOCUMENT_VERSION,
-    name,
-    grid,
-    blocks,
-  };
+  if (rows > MAX_CANVAS_ROWS) {
+    throw new WireframeDocumentValidationError(
+      `El lienzo no puede superar ${MAX_CANVAS_ROWS} filas`,
+    );
+  }
+
+  validateHierarchy(blocks, rows);
+  return { version: WIREFRAME_DOCUMENT_VERSION, name, grid, canvas: { rows }, blocks };
 }
 
-export function serializeWireframeDocument(document: WireframeDocumentV1): string {
-  const validated = parseWireframeDocument(document);
-  return `${JSON.stringify(validated, null, 2)}\n`;
+export function serializeWireframeDocument(document: WireframeDocumentV2): string {
+  return `${JSON.stringify(parseWireframeDocument(document), null, 2)}\n`;
 }
 
-function parseGrid(input: unknown): WireframeGridV1 {
+function parseGrid(input: unknown): WireframeGrid {
   const grid = asRecord(input, 'grid debe ser un objeto');
   assertExactKeys(grid, ['columns', 'rowHeight'], 'grid');
-
   if (grid.columns !== GRID_COLUMNS || grid.rowHeight !== DEFAULT_ROW_HEIGHT) {
     throw new WireframeDocumentValidationError('La grilla debe tener 12 columnas y filas de 40 px');
   }
-  return {
-    columns: GRID_COLUMNS,
-    rowHeight: DEFAULT_ROW_HEIGHT,
-  };
+  return { columns: GRID_COLUMNS, rowHeight: DEFAULT_ROW_HEIGHT };
 }
 
-function parseBlocks(input: unknown): WireframeBlockV1[] {
+function parseCanvas(input: unknown): number {
+  const canvas = asRecord(input, 'canvas debe ser un objeto');
+  assertExactKeys(canvas, ['rows'], 'canvas');
+  const rows = readPositiveInteger(canvas.rows, 'canvas.rows');
+  if (rows < MIN_CANVAS_ROWS || rows > MAX_CANVAS_ROWS) {
+    throw new WireframeDocumentValidationError(
+      `canvas.rows debe estar entre ${MIN_CANVAS_ROWS} y ${MAX_CANVAS_ROWS}`,
+    );
+  }
+  return rows;
+}
+
+function parseBlocks(input: unknown, legacy: boolean): WireframeBlockV2[] {
   if (!Array.isArray(input)) {
     throw new WireframeDocumentValidationError('blocks debe ser un array');
   }
-
   if (input.length > MAX_BLOCKS) {
     throw new WireframeDocumentValidationError(`No se permiten más de ${MAX_BLOCKS} bloques`);
   }
@@ -116,38 +152,65 @@ function parseBlocks(input: unknown): WireframeBlockV1[] {
     const block = asRecord(value, `blocks[${index}] debe ser un objeto`);
     assertExactKeys(
       block,
-      ['id', 'title', 'description', 'x', 'y', 'width', 'height'],
+      legacy
+        ? ['id', 'title', 'description', 'x', 'y', 'width', 'height']
+        : ['id', 'parentId', 'title', 'description', 'x', 'y', 'width', 'height'],
       `blocks[${index}]`,
     );
 
     const id = readString(block.id, `blocks[${index}].id`, 100);
-    if (id.length === 0) {
-      throw new WireframeDocumentValidationError(`blocks[${index}].id no puede estar vacío`);
-    }
-    if (ids.has(id)) {
-      throw new WireframeDocumentValidationError(`El ID de bloque está repetido: ${id}`);
+    if (!id.trim() || ids.has(id)) {
+      throw new WireframeDocumentValidationError(`El ID de bloque está vacío o repetido: ${id}`);
     }
     ids.add(id);
 
-    const title = readString(block.title, `blocks[${index}].title`, MAX_TITLE_LENGTH);
-    const description = readString(
-      block.description,
-      `blocks[${index}].description`,
-      MAX_DESCRIPTION_LENGTH,
-    );
-    const x = readNonNegativeInteger(block.x, `blocks[${index}].x`);
-    const y = readNonNegativeInteger(block.y, `blocks[${index}].y`);
-    const width = readPositiveInteger(block.width, `blocks[${index}].width`);
-    const height = readPositiveInteger(block.height, `blocks[${index}].height`);
+    const parentId = legacy ? null : readParentId(block.parentId, index);
+    return {
+      id,
+      parentId,
+      title: readString(block.title, `blocks[${index}].title`, MAX_TITLE_LENGTH),
+      description: readString(
+        block.description,
+        `blocks[${index}].description`,
+        MAX_DESCRIPTION_LENGTH,
+      ),
+      x: readNonNegativeInteger(block.x, `blocks[${index}].x`),
+      y: readNonNegativeInteger(block.y, `blocks[${index}].y`),
+      width: readPositiveInteger(block.width, `blocks[${index}].width`),
+      height: readPositiveInteger(block.height, `blocks[${index}].height`),
+    };
+  });
+}
 
-    if (x + width > GRID_COLUMNS) {
+function readParentId(input: unknown, index: number): string | null {
+  if (input === null) return null;
+  if (typeof input !== 'string' || !input.trim() || input.length > 100) {
+    throw new WireframeDocumentValidationError(`blocks[${index}].parentId debe ser un ID o null`);
+  }
+  return input;
+}
+
+function validateHierarchy(blocks: WireframeBlockV2[], rows: number): void {
+  const byId = new Map(blocks.map((block) => [block.id, block]));
+  for (const block of blocks) {
+    const parent = block.parentId === null ? null : byId.get(block.parentId);
+    if (
+      block.parentId !== null &&
+      (!parent || parent.id === block.id || parent.parentId !== null)
+    ) {
       throw new WireframeDocumentValidationError(
-        `blocks[${index}] debe permanecer dentro de las ${GRID_COLUMNS} columnas`,
+        `El padre de ${block.id} no existe o no es un bloque raíz`,
       );
     }
 
-    return { id, title, description, x, y, width, height };
-  });
+    const maxColumns = parent?.width ?? GRID_COLUMNS;
+    const maxRows = parent?.height ?? rows;
+    if (block.x + block.width > maxColumns || block.y + block.height > maxRows) {
+      throw new WireframeDocumentValidationError(
+        `El bloque ${block.id} queda fuera de ${parent ? 'su padre' : 'el lienzo'}`,
+      );
+    }
+  }
 }
 
 function asRecord(input: unknown, message: string): Record<string, unknown> {
@@ -197,7 +260,7 @@ function readNonNegativeInteger(input: unknown, field: string): number {
 }
 
 function readInteger(input: unknown, field: string): number {
-  if (typeof input !== 'number' || !Number.isInteger(input) || !Number.isFinite(input)) {
+  if (typeof input !== 'number' || !Number.isSafeInteger(input)) {
     throw new WireframeDocumentValidationError(`${field} debe ser un entero`);
   }
   return input;
@@ -208,8 +271,5 @@ function clampInteger(value: number, minimum: number, maximum: number): number {
 }
 
 function toInteger(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  return Math.round(value);
+  return Number.isFinite(value) ? Math.round(value) : 0;
 }

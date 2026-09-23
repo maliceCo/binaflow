@@ -1,7 +1,7 @@
 import { fireEvent, render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { Canvas } from './Canvas';
-import type { WireframeDocumentV1 } from '../model';
+import type { WireframeDocumentV2 } from '../model';
 
 interface MockRndProps {
   children: ReactNode;
@@ -51,13 +51,15 @@ vi.mock('react-rnd', () => ({
   },
 }));
 
-const wireframeDocument: WireframeDocumentV1 = {
-  version: 1,
+const wireframeDocument: WireframeDocumentV2 = {
+  version: 2,
   name: 'Prueba',
   grid: { columns: 12, rowHeight: 40 },
+  canvas: { rows: 18 },
   blocks: [
     {
       id: 'block-1',
+      parentId: null,
       title: 'Panel',
       description: 'Descripción',
       x: 0,

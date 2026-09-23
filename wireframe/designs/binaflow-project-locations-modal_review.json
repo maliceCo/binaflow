@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "name": "OVERLAY MODAL - Binaflow - Ubicaciones de proyectos",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "canvas": {
+    "rows": 20
+  },
+  "blocks": [
+    {
+      "id": "overlay-backdrop",
+      "parentId": null,
+      "title": "Fondo overlay",
+      "description": "",
+      "x": 1,
+      "y": 0,
+      "width": 10,
+      "height": 20
+    },
+    {
+      "id": "modal-frame",
+      "parentId": null,
+      "title": "CONTENEDOR MODAL",
+      "description": "Projects\nProject locations\n\nquita esto aqui sobra\n\ndeberias poner esto \n\nFolders Binaflow can browse\n\nBinaflow can look for projects only inside these folders. Removing a folder keeps its registered projects and files.",
+      "x": 2,
+      "y": 2,
+      "width": 8,
+      "height": 17
+    },
+    {
+      "id": "modal-heading",
+      "parentId": "modal-frame",
+      "title": "Ubicaciones de proyectos",
+      "description": "Folders Binaflow can browse\n\nBinaflow can look for projects only inside these folders. Removing a folder keeps its registered projects and files.\n\nesto sobra lo puse mejor arriba",
+      "x": 1,
+      "y": 2,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "id": "authorized-roots",
+      "parentId": "modal-frame",
+      "title": "Carpetas autorizadas",
+      "description": "no se distinge mucho las autorizadas pone un verde y que se sepre de lo de abajo mejor",
+      "x": 1,
+      "y": 5,
+      "width": 6,
+      "height": 4
+    },
+    {
+      "id": "root-candidates",
+      "parentId": "modal-frame",
+      "title": "Carpetas locales disponibles",
+      "description": "las disponibles no se distingen mucho encierralas mejor para que sepa que son elementos",
+      "x": 1,
+      "y": 9,
+      "width": 6,
+      "height": 4
+    },
+    {
+      "id": "modal-status",
+      "parentId": "modal-frame",
+      "title": "Estado de operación",
+      "description": "Confirmación o error accesible después de autorizar o retirar una carpeta.",
+      "x": 1,
+      "y": 14,
+      "width": 6,
+      "height": 2
+    }
+  ]
+}

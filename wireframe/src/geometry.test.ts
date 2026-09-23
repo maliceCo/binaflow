@@ -1,5 +1,5 @@
 import { calculateCanvasRows, gridToPixels, pixelsToGrid } from './geometry';
-import type { WireframeBlockV1 } from './model';
+import type { WireframeBlockV2 } from './model';
 
 describe('wireframe geometry', () => {
   it('converts grid geometry to pixels for different canvas widths', () => {
@@ -41,14 +41,23 @@ describe('wireframe geometry', () => {
     });
   });
 
-  it('keeps 18 rows minimum and adds two rows below the lowest block', () => {
-    const blocks: WireframeBlockV1[] = [
-      { id: 'a', title: '', description: '', x: 0, y: 0, width: 1, height: 1 },
-      { id: 'b', title: '', description: '', x: 0, y: 20, width: 1, height: 3 },
+  it('uses the saved canvas height and grows for roots without counting children', () => {
+    const blocks: WireframeBlockV2[] = [
+      { id: 'root', parentId: null, title: '', description: '', x: 0, y: 0, width: 1, height: 1 },
+      {
+        id: 'child',
+        parentId: 'root',
+        title: '',
+        description: '',
+        x: 0,
+        y: 12,
+        width: 1,
+        height: 2,
+      },
+      { id: 'lower', parentId: null, title: '', description: '', x: 0, y: 20, width: 1, height: 3 },
     ];
-
-    expect(calculateCanvasRows([])).toBe(18);
-    expect(calculateCanvasRows([{ ...blocks[0]!, y: 15, height: 1 }])).toBe(18);
-    expect(calculateCanvasRows(blocks)).toBe(25);
+    expect(calculateCanvasRows([], 18)).toBe(18);
+    expect(calculateCanvasRows(blocks, 18)).toBe(25);
+    expect(calculateCanvasRows(blocks, 40)).toBe(40);
   });
 });

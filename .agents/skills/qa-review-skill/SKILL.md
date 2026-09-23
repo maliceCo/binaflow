@@ -1,11 +1,13 @@
 ---
 name: qa-review-skill
-description: Use when reviewing code for bugs, architecture, SRP, orthogonality, test quality, maintainability, and readability.
+description: Use when reviewing existing code for bugs, architecture, SRP, orthogonality, maintainability, readability, and existing test quality when applicable.
 ---
 
 # Skill: QA & Code Review (Pragmatic & Sustainable)
 
 Este prompt unifica las tareas de auditoría técnica, detección de bugs y análisis de arquitectura de forma interactiva y sin fricciones. Permite auditar el código que el usuario decida ingresar de forma dinámica (ya sea el proyecto completo, un archivo específico, un fragmento de una funcionalidad o un `git diff` crudo de cambios recientes).
+
+**Alcance de QA:** Revisa el código existente y, si los hay, los tests existentes. No crees ni ejecutes tests automatizados ni los incluyas como requisito obligatorio del plan, salvo que el usuario lo solicite explícitamente. Un tracer bullet es un recorrido funcional mínimo del código real, no un test que QA deba producir.
 
 Para evitar abrumar al usuario y garantizar que comprenda los problemas antes de planificar las soluciones, **el modelo operará de forma estrictamente interactiva en dos turnos de conversación independientes**.
 
@@ -43,7 +45,7 @@ El objetivo de esta fase es asegurar que el diseño sea robusto y que los compon
 
 ---
 
-## 2. Fase de Diseño y Mantenibilidad de Pruebas (Test de Calidad, No Teatro)
+## 2. Revisión de Pruebas Existentes (Solo Si Las Hay)
 
 Para evitar que la suite de pruebas se convierta en un lastre que ralentice el desarrollo, la IA debe auditar los test existentes bajo los siguientes criterios estrictos:
 
@@ -54,7 +56,7 @@ Para evitar que la suite de pruebas se convierta en un lastre que ralentice el d
     - No busques cobertura del 100% por vanidad. Concéntrate en la lógica de negocio compleja, flujos críticos y algoritmos propensos a fallos.
     - Aplica análisis de partición de equivalencia y valores límite (límites de arrays, valores nulos, vacíos, números negativos, desbordamientos). Ahí es donde estadísticamente se encuentran la mayoría de los errores de codificación.
 - **El Principio de "Clean Tests" (Código Sostenible):**
-    - Un test debe ser tan legible y limpio como el código de producción. Debe servir como documentación viva. Si un desarrollador no entiende qué hace un test al leerlo en 10 segundos, el test debe ser simplificado.
+    - Un test existente debe ser tan legible y limpio como el código de producción. Debe servir como documentación viva. Si un desarrollador no entiende qué hace un test al leerlo en 10 segundos, señala el problema sin reescribirlo durante la revisión.
 
 ---
 
@@ -122,8 +124,7 @@ El `TODO.md` debe seguir este formato estricto:
     - [ ] Asegurar que el sistema muera rápido (Crash Early) si recibe datos corruptos.
           _Mensaje de commit recomendado:_ `fix: controlar valores nulos en [Componente]`
 
-- [ ] **Fase 3: Verificación Rápida (QA Manual)**
-    - [ ] Validar de forma manual que el flujo general funcione simulando entradas con datos vacíos o erróneos.
+**Guía para la revisión posterior (no es una tarea de implementación):** Inspeccionar que el flujo general trate entradas vacías o erróneas según el comportamiento esperado; la creación de tests solo se incluye si el usuario la solicita.
 ```
 
 ---
@@ -132,4 +133,4 @@ El `TODO.md` debe seguir este formato estricto:
 
 1.  **Cero código de corrección en el Turno 1:** No abrumes al usuario con páginas enteras de código corregido de golpe. El objetivo es que **comprenda** el problema primero. Las líneas conflictivas mostradas son únicamente ilustrativas de la falla.
 2.  **No mezclar turnos:** Bajo ninguna circunstancia te adelantes a generar el `TODO.md` antes de que el usuario apruebe la Fase 1. La separación de responsabilidades e interacciones mantiene la cabeza del programador despejada.
-3.  **Acepta el estado actual:** Entiende que el usuario puede darte código incompleto. No exijas código de pruebas (testing) en este punto ni detengas el flujo ágil; enfócate en corregir la funcionalidad y la legibilidad de forma pragmática.
+3.  **Acepta el estado actual:** Entiende que el usuario puede darte código incompleto. No exijas ni generes tests salvo solicitud explícita del usuario; enfócate en diagnosticar la funcionalidad y la legibilidad de forma pragmática.

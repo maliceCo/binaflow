@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "name": "Binaflow - Ejecución y revisión",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "execution-header",
+      "title": "Contexto de ejecución",
+      "description": "Tarea, run, estado global y acción principal disponible. Mostrar si está ejecutando, esperando revisión o terminó.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 3
+    },
+    {
+      "id": "run-summary",
+      "title": "Resumen del run",
+      "description": "Estado, etapa y señales importantes sin porcentajes inventados. Incluir errores y bloqueos.",
+      "x": 0,
+      "y": 4,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "phase-progress",
+      "title": "Fases y tareas",
+      "description": "Lista jerárquica de fases y tareas con estado, intento y tarea activa. Debe poder leerse rápidamente.",
+      "x": 5,
+      "y": 4,
+      "width": 7,
+      "height": 9
+    },
+    {
+      "id": "active-operation",
+      "title": "Actividad actual",
+      "description": "Qué está haciendo el agente, verificaciones recientes y evidencia asociada. Acciones de cancelar o recuperar cuando proceda.",
+      "x": 0,
+      "y": 10,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "artifacts",
+      "title": "Artefactos",
+      "description": "Resultados y metadatos seguros por IDs. No mostrar rutas internas del filesystem.",
+      "x": 0,
+      "y": 16,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "change-set",
+      "title": "Revisión de cambios",
+      "description": "Resumen estructurado de archivos y hunks. La revisión debe ser explícita y no continuar silenciosamente.",
+      "x": 5,
+      "y": 14,
+      "width": 7,
+      "height": 9
+    },
+    {
+      "id": "execution-actions",
+      "title": "Acciones seguras",
+      "description": "Cancelar, recuperar, reintentar o aprobar cambios solo si el backend las permite para el estado exacto del run.",
+      "x": 0,
+      "y": 23,
+      "width": 12,
+      "height": 2
+    }
+  ]
+}

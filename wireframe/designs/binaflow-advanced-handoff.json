@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "name": "Binaflow - Herramientas avanzadas (sección expandible, no modal)",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "disclosure-trigger",
+      "title": "Advanced: devices and project handoff",
+      "description": "Disclosure expandible dentro del workspace de proyecto, no overlay ni modal. Referenciada desde binaflow-projects.json.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "advanced-explanation",
+      "title": "Contexto de handoff",
+      "description": "Explicar que pairing y transferencia son herramientas avanzadas y separadas del flujo local de tareas.",
+      "x": 0,
+      "y": 3,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "devices",
+      "title": "Dispositivos emparejados",
+      "description": "Estado de peers, fingerprint, acciones de emparejar y revocar.",
+      "x": 0,
+      "y": 6,
+      "width": 6,
+      "height": 7
+    },
+    {
+      "id": "project-transfer",
+      "title": "Transferir proyecto A → B",
+      "description": "Preflight, advertencia del modo de transporte, confirmación de ownership y progreso/recuperación de la transferencia.",
+      "x": 6,
+      "y": 6,
+      "width": 6,
+      "height": 7
+    }
+  ]
+}

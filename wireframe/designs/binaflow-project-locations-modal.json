@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "name": "OVERLAY MODAL - Binaflow - Ubicaciones de proyectos",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "overlay-backdrop",
+      "title": "Fondo overlay",
+      "description": "Capa sobre la pantalla Projects. No forma parte del layout base; se abre desde el botón Project locations.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 18
+    },
+    {
+      "id": "modal-frame",
+      "title": "CONTENEDOR MODAL",
+      "description": "Ventana superpuesta con scroll propio. Referencia de origen: binaflow-projects.json. Cerrar retorna al mismo estado de la pantalla de proyectos.",
+      "x": 2,
+      "y": 2,
+      "width": 8,
+      "height": 13
+    },
+    {
+      "id": "modal-heading",
+      "title": "Ubicaciones de proyectos",
+      "description": "Título, explicación de que autorizar una carpeta no modifica sus archivos y botón para cerrar.",
+      "x": 3,
+      "y": 3,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "authorized-roots",
+      "title": "Carpetas autorizadas",
+      "description": "Lista de raíces permitidas y acción para retirar autorización. Aclarar que los proyectos y archivos registrados no se borran.",
+      "x": 3,
+      "y": 6,
+      "width": 6,
+      "height": 4
+    },
+    {
+      "id": "root-candidates",
+      "title": "Carpetas locales disponibles",
+      "description": "Candidatos detectados por el servidor. Cada fila permite autorizar una carpeta y muestra feedback de carga/error.",
+      "x": 3,
+      "y": 11,
+      "width": 6,
+      "height": 4
+    },
+    {
+      "id": "modal-status",
+      "title": "Estado de operación",
+      "description": "Confirmación o error accesible después de autorizar o retirar una carpeta.",
+      "x": 3,
+      "y": 16,
+      "width": 6,
+      "height": 2
+    }
+  ]
+}

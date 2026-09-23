@@ -89,6 +89,42 @@ describe('App', () => {
     vi.restoreAllMocks();
   });
 
+  it('creates a child, shows its parent relationship, reparents it and saves the expanded canvas', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+    await user.click(screen.getByRole('button', { name: 'Añadir dentro' }));
+    expect(screen.getByText(/Dentro de:/)).toHaveTextContent('Nuevo bloque');
+    expect(screen.getByText(/parentId/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Seleccionar padre' }));
+    await user.click(screen.getByRole('button', { name: 'Añadir dentro' }));
+    expect(screen.getAllByTestId(/wireframe-block-/)).toHaveLength(3);
+    await user.selectOptions(screen.getByLabelText('Contenedor del bloque'), '');
+    expect(screen.getByText(/Bloque raíz/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '+6 filas' }));
+    expect(screen.getByText('Lienzo: 24 filas')).toBeInTheDocument();
+    const saved = JSON.parse(window.localStorage.getItem('wireframe-editor.document.v1') ?? '{}');
+    expect(saved.version).toBe(2);
+    expect(saved.canvas.rows).toBe(24);
+    expect(saved.blocks[1].parentId).toBe(saved.blocks[0].id);
+    expect(saved.blocks[2].parentId).toBeNull();
+  });
+
+  it('asks before deleting a parent and its child blocks', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Añadir bloque' }));
+    await user.click(screen.getByRole('button', { name: 'Añadir dentro' }));
+    await user.click(screen.getByRole('button', { name: 'Seleccionar padre' }));
+    await user.click(screen.getByRole('button', { name: 'Eliminar grupo' }));
+    expect(screen.getAllByTestId(/wireframe-block-/)).toHaveLength(2);
+    vi.restoreAllMocks();
+  });
+
   it('continues editing without localStorage and clears the warning when saving recovers', async () => {
     const user = userEvent.setup();
     const storage = window.localStorage;
@@ -113,6 +149,7 @@ describe('App', () => {
       vi.restoreAllMocks();
     }
   });
+
   it('imports a valid JSON document and keeps the current one after an error', async () => {
     const user = userEvent.setup();
     render(<App />);

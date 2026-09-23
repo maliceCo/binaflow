@@ -2,7 +2,7 @@ import {
   GRID_COLUMNS,
   normalizeBlockGeometry,
   type BlockGeometry,
-  type WireframeBlockV1,
+  type WireframeBlockV2,
 } from './model';
 
 export interface PixelRectangle {
@@ -42,9 +42,11 @@ export function pixelsToGrid(
   });
 }
 
-export function calculateCanvasRows(blocks: WireframeBlockV1[]): number {
-  const lowestBlock = blocks.reduce((lowest, block) => Math.max(lowest, block.y + block.height), 0);
-  return Math.max(18, lowestBlock + 2);
+export function calculateCanvasRows(blocks: WireframeBlockV2[], requestedRows = 18): number {
+  const lowestBlock = blocks
+    .filter((block) => block.parentId === null)
+    .reduce((lowest, block) => Math.max(lowest, block.y + block.height), 0);
+  return Math.max(requestedRows, lowestBlock + 2);
 }
 
 function safeCanvasWidth(canvasWidth: number): number {

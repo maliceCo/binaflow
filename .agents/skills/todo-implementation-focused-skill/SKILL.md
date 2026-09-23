@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Skill: Implementation-Focused TODO Workflow (No-Blocking QA)
 
-Este Skill define un flujo de trabajo optimizado para **modelos de implementación pura (sub-agentes)**. Su objetivo es ejecutar tareas de construcción de código de forma continua, rápida y sin bloqueos, delegando la verificación de calidad (QA) y el testing a una fase posterior ejecutada manualmente o por un modelo especializado en QA.
+Este Skill define un flujo de trabajo optimizado para **modelos de implementación pura (sub-agentes)**. Su objetivo es ejecutar tareas de construcción de código de forma continua, rápida y sin bloqueos, dejando la revisión del código existente (QA) para una fase posterior realizada por el usuario o un modelo especializado. QA no implica crear ni ejecutar tests.
 
 Inspirado en la separación de fases del **Pseudocode Programming Process** de _Code Complete_ y en evitar el sesgo de confirmación del programador, este flujo maximiza la velocidad de desarrollo aislando la fase de construcción de la fase de verificación.
 
@@ -14,7 +14,7 @@ Inspirado en la separación de fases del **Pseudocode Programming Process** de _
 
 ## 1. Reglas de Comportamiento para el Agente de Implementación
 
-1. **Enfoque en Construcción Pura:** No escribas código de pruebas (tests), ni ejecutes comandos de prueba (pytest, jest, etc.), a menos que el TODO lo pida explícitamente como entregable de negocio.
+1. **Enfoque en Construcción Pura:** No escribas código de pruebas (tests), ni ejecutes comandos de prueba (pytest, jest, etc.), salvo que el usuario lo haya solicitado explícitamente y figure en el TODO. Para funcionalidades que atraviesen varias capas, implementa primero el recorrido funcional mínimo (tracer bullet) indicado en el plan; no equivale a crear un test.
 2. **Ejecución Continua (No-Blocking):** Si encuentras un obstáculo menor o una decisión de diseño ambigua:
     - **No te detengas.** Toma la decisión más simple y limpia (_Código Sostenible_).
     - **Documenta** la asunción o el desvío de inmediato en la sección de "Notas de Implementación" en el `TODO.md`.
@@ -48,7 +48,7 @@ Una vez que todas las casillas del `TODO.md` están marcadas `[x]`, el sub-agent
 
 1. **Archivos Modificados:** Lista de archivos tocados.
 2. **Asunciones y Notas Técnicas:** Qué decisiones de diseño se tomaron de forma autónoma.
-3. **Puntos Críticos para QA:** Sugerencias específicas de qué debería probar el usuario o el modelo de QA (ej: _"Probar comportamiento con inputs nulos en la línea 45 de billing.py"_).
+3. **Puntos Críticos para QA:** Indica qué comportamiento y qué partes del código existente deberían inspeccionarse (ej: _"Revisar el tratamiento de inputs nulos en billing.py:45"_). No asignes al revisor la creación ni la ejecución de tests por defecto.
 
 ### Fase D: Autodestrucción
 
@@ -63,7 +63,7 @@ La IA de implementación debe inicializar (o seguir) el `TODO.md` usando exactam
 ```markdown
 # TODO: Plan de Implementación Activo
 
-> **Rol del Agente:** Construcción continua y directa. No ejecutes pruebas ni te bloquees por QA. Documenta asunciones y avanza.
+> **Rol del Agente:** Construcción continua y directa. No crees ni ejecutes tests salvo petición explícita del usuario incluida en este TODO. QA es revisión posterior del código. Documenta asunciones y avanza.
 
 ## 📋 Lista de Tareas
 
@@ -95,13 +95,13 @@ _Sección autogenerada por el agente al finalizar todas las tareas._
 
 ---
 
-## 4. Instrucciones de Cierre para el Usuario (Fase de QA Manual)
+## 4. Instrucciones de Cierre para el Usuario (Fase de Revisión de Código)
 
 Cuando el sub-agente de implementación termine, tú (el usuario) puedes:
 
-1. **Cambiar de modelo** a uno especializado en QA/Refactorización (como tu `qa-review-skill`).
+1. **Cambiar de modelo** a uno especializado en revisión de código (como tu `qa-review-skill`).
 2. **Pedirle al modelo de QA** que analice el código modificado basándose en la **Guía de Handover** generada.
-3. **Ejecutar tus pruebas manuales** o automáticas.
+3. **Decidir si hacen falta comprobaciones adicionales** a partir de los hallazgos; la revisión no exige crear tests automatizados salvo solicitud explícita.
 4. Si se encuentran fallos, **generar un nuevo `TODO.md`** con la lista de correcciones necesarias y volver a delegar la tarea de implementación.
 
 ---

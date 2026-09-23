@@ -100,70 +100,80 @@ export function Settings(props: {
   }
 
   return (
-    <section className="settings-card" aria-labelledby="settings-title">
-      <p className="eyebrow">
-        {mode === 'locations' ? 'Projects' : props.setup ? 'First start' : 'Local server'}
-      </p>
-      <h2 id="settings-title">
-        {mode === 'locations'
-          ? 'Project locations'
-          : props.setup
-            ? 'Set up Binaflow'
-            : 'Server settings'}
-      </h2>
-      <p>
-        {mode === 'locations'
-          ? 'Choose which folders Binaflow can browse for projects. This does not modify their files.'
-          : 'These settings belong to the computer running Binaflow.'}
-      </p>
+    <section
+      className="settings-card"
+      aria-labelledby={mode === 'locations' ? 'authorized-roots-title' : 'settings-title'}
+    >
+      {mode !== 'locations' && (
+        <>
+          <p className="eyebrow">{props.setup ? 'First start' : 'Local server'}</p>
+          <h2 id="settings-title">{props.setup ? 'Set up Binaflow' : 'Server settings'}</h2>
+          <p>These settings belong to the computer running Binaflow.</p>
+        </>
+      )}
       {(mode === 'locations' || props.setup) && (
-        <div className="settings-section" aria-labelledby="project-roots-title">
-          <h3 id="project-roots-title">Folders Binaflow can browse</h3>
-          <p>
-            Binaflow can look for projects only inside these folders. Removing a folder keeps its
-            registered projects and files.
-          </p>
-          {props.settings.projectRoots.length > 0 ? (
-            <ul>
-              {props.settings.projectRoots.map((root) => (
-                <li key={root.id}>
-                  <span>{root.label}</span>
-                  {props.api.revokeProjectRoot && (
-                    <button
-                      className="button-secondary"
-                      type="button"
-                      onClick={() => void revokeRoot(root.id)}
-                      disabled={rootBusy !== undefined}
-                    >
-                      {rootBusy === root.id ? 'Removing...' : 'Remove authorization'}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>No folders are authorized.</p>
-          )}
-          {rootCandidates.length > 0 ? (
-            <>
-              <h3>Available local folders</h3>
-              <ul>
-                {rootCandidates.map((candidate) => (
-                  <li key={candidate.id}>
-                    <span>{candidate.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => void authorizeRoot(candidate.id)}
-                      disabled={rootBusy !== undefined}
-                    >
-                      {rootBusy === candidate.id ? 'Authorizing...' : 'Authorize'}
-                    </button>
+        <div
+          className={`settings-section project-roots-groups${mode === 'locations' ? ' locations-groups' : ''}`}
+        >
+          <section className="project-root-group authorized-root-group">
+            <h3 id={mode === 'locations' ? 'authorized-roots-title' : 'project-roots-title'}>
+              {mode === 'locations' ? 'Authorized folders' : 'Folders Binaflow can browse'}
+            </h3>
+            {mode !== 'locations' && (
+              <p>
+                Binaflow can look for projects only inside these folders. Removing a folder keeps
+                its registered projects and files.
+              </p>
+            )}
+            {props.settings.projectRoots.length > 0 ? (
+              <ul className="authorized-root-list">
+                {props.settings.projectRoots.map((root) => (
+                  <li key={root.id}>
+                    <span>{root.label}</span>
+                    {props.api.revokeProjectRoot && (
+                      <button
+                        className="button-secondary"
+                        type="button"
+                        onClick={() => void revokeRoot(root.id)}
+                        disabled={rootBusy !== undefined}
+                      >
+                        {rootBusy === root.id ? 'Removing...' : 'Remove authorization'}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
-            </>
-          ) : (
-            <p>No additional local folders were detected.</p>
+            ) : (
+              <p className="project-root-empty">No folders are authorized.</p>
+            )}
+          </section>
+          {(mode === 'locations' || rootCandidates.length > 0) && (
+            <section className="project-root-group available-root-group">
+              <h3 id={mode === 'locations' ? 'available-roots-title' : undefined}>
+                Available local folders
+              </h3>
+              {rootCandidates.length > 0 ? (
+                <ul className="available-root-list">
+                  {rootCandidates.map((candidate) => (
+                    <li key={candidate.id}>
+                      <span>{candidate.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => void authorizeRoot(candidate.id)}
+                        disabled={rootBusy !== undefined}
+                      >
+                        {rootBusy === candidate.id ? 'Authorizing...' : 'Authorize'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="project-root-empty">No additional local folders were detected.</p>
+              )}
+            </section>
+          )}
+          {mode !== 'locations' && rootCandidates.length === 0 && (
+            <p className="project-root-empty">No additional local folders were detected.</p>
           )}
         </div>
       )}

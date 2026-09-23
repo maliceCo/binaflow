@@ -1,7 +1,7 @@
 import {
   parseWireframeDocument,
   serializeWireframeDocument,
-  type WireframeDocumentV1,
+  type WireframeDocumentV2,
 } from './model';
 
 export const DRAFT_STORAGE_KEY = 'wireframe-editor.document.v1';
@@ -13,7 +13,7 @@ export interface StorageLike {
 }
 
 export interface DraftLoadResult {
-  document: WireframeDocumentV1 | null;
+  document: WireframeDocumentV2 | null;
   error: string | null;
 }
 
@@ -36,10 +36,7 @@ export function loadDraft(storage?: StorageLike): DraftLoadResult {
   }
 }
 
-export function saveDraft(
-  document: WireframeDocumentV1,
-  storage?: StorageLike,
-): string | null {
+export function saveDraft(document: WireframeDocumentV2, storage?: StorageLike): string | null {
   try {
     (storage ?? getBrowserStorage()).setItem(
       DRAFT_STORAGE_KEY,

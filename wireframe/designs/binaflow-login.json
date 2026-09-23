@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "name": "Binaflow - Login",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "brand",
+      "title": "Binaflow",
+      "description": "Identidad breve de la aplicación. Mantener una entrada tranquila y sin elementos secundarios.",
+      "x": 4,
+      "y": 2,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "id": "access-card",
+      "title": "Acceso local",
+      "description": "Tarjeta central con el contexto: el servidor imprime un código temporal y el usuario lo introduce aquí.",
+      "x": 3,
+      "y": 5,
+      "width": 6,
+      "height": 6
+    },
+    {
+      "id": "access-code",
+      "title": "Código de acceso",
+      "description": "Campo de contraseña sin autocompletado. Mostrar label claro y conservar el texto si el envío falla.",
+      "x": 4,
+      "y": 6,
+      "width": 4,
+      "height": 2
+    },
+    {
+      "id": "continue-action",
+      "title": "Continuar",
+      "description": "Acción principal del formulario. Deshabilitar solo mientras se envía la solicitud.",
+      "x": 4,
+      "y": 9,
+      "width": 4,
+      "height": 1
+    },
+    {
+      "id": "login-error",
+      "title": "Error de acceso",
+      "description": "Mensaje visible y comprensible para código inválido o servidor no disponible. No mostrar detalles internos.",
+      "x": 3,
+      "y": 12,
+      "width": 6,
+      "height": 2
+    }
+  ]
+}

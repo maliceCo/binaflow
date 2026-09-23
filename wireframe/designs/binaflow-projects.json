@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "name": "Binaflow - Proyectos",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "global-header",
+      "title": "Encabezado global",
+      "description": "Marca Binaflow, contexto del equipo y cerrar sesión. Debe permanecer estable al cambiar de proyecto.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "workspace-toolbar",
+      "title": "Barra de workspace",
+      "description": "Barra de la pantalla principal. Los botones Project locations y Server settings solo abren overlays: consultar binaflow-project-locations-modal.json y binaflow-server-settings-modal.json. Su contenido NO forma parte de este layout.",
+      "x": 0,
+      "y": 2,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "welcome",
+      "title": "¿En qué trabajamos?",
+      "description": "Explicar el siguiente paso con una sola acción principal. No competir con la lista de proyectos.",
+      "x": 0,
+      "y": 4,
+      "width": 7,
+      "height": 3
+    },
+    {
+      "id": "recent-tasks",
+      "title": "Tareas recientes",
+      "description": "Mostrar hasta cinco tareas para continuar rápidamente, con fase y readiness visibles.",
+      "x": 0,
+      "y": 8,
+      "width": 7,
+      "height": 6
+    },
+    {
+      "id": "projects-list",
+      "title": "Proyectos registrados",
+      "description": "Lista de proyectos con nombre, ownership y una acción clara: abrir o continuar.",
+      "x": 7,
+      "y": 4,
+      "width": 5,
+      "height": 8
+    },
+    {
+      "id": "project-finder",
+      "title": "Buscar o inicializar proyecto",
+      "description": "Área plegable para navegar raíces autorizadas y registrar un proyecto sin mostrar paths absolutos innecesarios.",
+      "x": 7,
+      "y": 13,
+      "width": 5,
+      "height": 6
+    },
+    {
+      "id": "advanced-tools",
+      "title": "Herramientas avanzadas expandibles",
+      "description": "Sección expandible dentro del workspace, no es un modal. Al abrir muestra pairing, dispositivos y handoff A → B; consultar binaflow-advanced-handoff.json. No incluir su contenido en el layout de proyectos.",
+      "x": 0,
+      "y": 20,
+      "width": 12,
+      "height": 3
+    },
+    {
+      "id": "empty-state",
+      "title": "Sin proyecto abierto",
+      "description": "Estado alternativo cuando no hay proyecto activo. Explicar cómo completar setup o seleccionar un proyecto.",
+      "x": 0,
+      "y": 15,
+      "width": 7,
+      "height": 4
+    }
+  ]
+}

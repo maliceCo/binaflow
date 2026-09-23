@@ -1,19 +1,25 @@
+import { MAX_CANVAS_ROWS } from '../model';
+
 interface ToolbarProps {
   documentName: string;
+  canvasRows: number;
   onRename: (name: string) => void;
   onNew: () => void;
   onImport: (file: File) => void;
   onExport: () => void;
   onAddBlock: () => void;
+  onGrowCanvas: () => void;
 }
 
 export function Toolbar({
   documentName,
+  canvasRows,
   onRename,
   onNew,
   onImport,
   onExport,
   onAddBlock,
+  onGrowCanvas,
 }: ToolbarProps) {
   return (
     <header className="toolbar">
@@ -45,6 +51,10 @@ export function Toolbar({
         </label>
         <button type="button" onClick={onExport}>
           Exportar JSON
+        </button>
+        <span className="canvas-rows">Lienzo: {canvasRows} filas</span>
+        <button type="button" onClick={onGrowCanvas} disabled={canvasRows >= MAX_CANVAS_ROWS}>
+          +6 filas
         </button>
         <button type="button" className="primary-action" onClick={onAddBlock}>
           Añadir bloque

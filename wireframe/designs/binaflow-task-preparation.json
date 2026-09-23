@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "name": "Binaflow - Preparación de tarea",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "global-header",
+      "title": "Encabezado y proyecto activo",
+      "description": "Mantener visible Binaflow, el proyecto actual y navegación de regreso sin ocupar demasiado espacio.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "task-identity",
+      "title": "Identidad de la tarea",
+      "description": "Título/ID, fase, revisión y readiness. El estado debe entenderse sin depender solo del color.",
+      "x": 0,
+      "y": 3,
+      "width": 12,
+      "height": 3
+    },
+    {
+      "id": "stage-navigation",
+      "title": "Brief · Plan · TODO · Ejecución",
+      "description": "Navegación de etapas con la etapa actual, bloqueos y la próxima acción recomendada.",
+      "x": 0,
+      "y": 7,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "id": "conversation",
+      "title": "Conversación y objetivo",
+      "description": "Entrada principal para describir el resultado. Conservar el borrador y mostrar mensajes recientes acotados.",
+      "x": 0,
+      "y": 10,
+      "width": 7,
+      "height": 9
+    },
+    {
+      "id": "sources",
+      "title": "Fuentes seleccionadas",
+      "description": "Buscar o leer fuentes opcionales. Distinguir evidencia externa de instrucciones y permitir seleccionar citas.",
+      "x": 7,
+      "y": 10,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "brief-summary",
+      "title": "Resumen confirmado",
+      "description": "Objetivo, conclusiones, restricciones y fuera de alcance. Confirmar explícitamente antes de generar el plan.",
+      "x": 7,
+      "y": 16,
+      "width": 5,
+      "height": 5
+    },
+    {
+      "id": "plan-todo",
+      "title": "Plan y TODO",
+      "description": "Revisión estructurada con versiones, comentarios, aprobación y criterios de parada. No mezclarlo con el chat completo.",
+      "x": 0,
+      "y": 21,
+      "width": 12,
+      "height": 7
+    },
+    {
+      "id": "preparation-actions",
+      "title": "Acciones de la etapa",
+      "description": "Como máximo cinco acciones principales: confirmar brief, generar plan, aprobar plan y generar TODO según readiness.",
+      "x": 0,
+      "y": 29,
+      "width": 12,
+      "height": 2
+    }
+  ]
+}

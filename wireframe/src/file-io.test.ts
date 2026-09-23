@@ -24,11 +24,27 @@ describe('wireframe file IO', () => {
         version: 1,
         name: 'Importada',
         grid: { columns: 12, rowHeight: 40 },
-        blocks: [],
+        blocks: [
+          { id: 'legacy', title: 'Antiguo', description: '', x: 0, y: 3, width: 2, height: 2 },
+        ],
       }),
     );
 
-    await expect(readWireframeFile(file)).resolves.toEqual(createEmptyDocument('Importada'));
+    await expect(readWireframeFile(file)).resolves.toEqual({
+      ...createEmptyDocument('Importada'),
+      blocks: [
+        {
+          id: 'legacy',
+          parentId: null,
+          title: 'Antiguo',
+          description: '',
+          x: 0,
+          y: 3,
+          width: 2,
+          height: 2,
+        },
+      ],
+    });
   });
 
   it('rejects oversized, malformed and schema-invalid files', async () => {
@@ -40,6 +56,7 @@ describe('wireframe file IO', () => {
       /formato de wireframe/,
     );
   });
+
   it('revokes its temporary URL and removes the anchor when clicking fails', () => {
     const anchor = window.document.createElement('a');
     vi.spyOn(anchor, 'click').mockImplementation(() => {
@@ -59,7 +76,6 @@ describe('wireframe file IO', () => {
     expect(environment.removeAnchor).toHaveBeenCalledWith(anchor);
     expect(environment.revokeObjectURL).toHaveBeenCalledWith('blob:wireframe');
   });
-
 
   it('creates a JSON download and revokes its temporary URL', () => {
     const anchor = window.document.createElement('a');

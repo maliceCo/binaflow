@@ -229,8 +229,11 @@ export function App(): ReactElement {
               >
                 <div className="modal-heading">
                   <div>
-                    <p className="eyebrow">Projects</p>
-                    <h2 id="project-locations-title">Project locations</h2>
+                    <h2 id="project-locations-title">Folders Binaflow can browse</h2>
+                    <p className="project-locations-intro">
+                      Binaflow can look for projects only inside these folders. Removing a folder
+                      keeps its registered projects and files.
+                    </p>
                   </div>
                   <button
                     className="button-secondary"

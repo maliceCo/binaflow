@@ -86,6 +86,43 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(page.getByText('Execution finished.')).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Project locations' }).click();
+    const locationsDialog = page.getByRole('dialog', { name: 'Folders Binaflow can browse' });
+    await expect(locationsDialog).toBeVisible();
+    await expect(
+      locationsDialog.getByRole('heading', { name: 'Folders Binaflow can browse' }),
+    ).toHaveCount(1);
+    await expect(
+      locationsDialog.getByText(
+        'Binaflow can look for projects only inside these folders. Removing a folder keeps its registered projects and files.',
+        { exact: true },
+      ),
+    ).toHaveCount(1);
+    await expect(
+      locationsDialog.getByRole('heading', { name: 'Authorized folders' }),
+    ).toBeVisible();
+    await expect(
+      locationsDialog.getByRole('heading', { name: 'Available local folders' }),
+    ).toBeVisible();
+    await expect(locationsDialog.locator('.authorized-root-group')).toBeVisible();
+    await expect(locationsDialog.locator('.available-root-group')).toBeVisible();
+    await expect(locationsDialog.locator('.authorized-root-list li')).toHaveCount(1);
+    await page.setViewportSize({ width: 375, height: 812 });
+    const modalBox = await locationsDialog.boundingBox();
+    expect(modalBox).not.toBeNull();
+    expect(modalBox!.x).toBeGreaterThanOrEqual(0);
+    expect(modalBox!.x + modalBox!.width).toBeLessThanOrEqual(375);
+    for (const row of [
+      locationsDialog.locator('.authorized-root-list li').first(),
+      locationsDialog.locator('.available-root-list li').first(),
+    ]) {
+      const labelBox = await row.locator('span').boundingBox();
+      const actionBox = await row.locator('button').boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(actionBox).not.toBeNull();
+      expect(actionBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height);
+      await expect(row).toHaveCSS('border-top-width', '1px');
+    }
+
     const revokeResponse = page.waitForResponse((response) =>
       response.url().includes('/api/v1/project-roots/'),
     );
@@ -95,6 +132,23 @@ test('accepts the complete local launcher workflow in one computer', async ({ pa
     await expect(
       page.getByText('Folder authorization removed. Registered projects and files were kept.'),
     ).toBeVisible();
+    const availableFolder = locationsDialog.locator('.available-root-list li').first();
+    await expect(availableFolder).toBeVisible();
+    const authorizeResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/v1/setup-roots') && response.request().method() === 'POST',
+    );
+    await availableFolder.getByRole('button', { name: 'Authorize' }).click();
+    expect((await authorizeResponse).status()).toBe(200);
+    await expect(locationsDialog.getByRole('status')).toContainText(/authorized/i);
+    await locationsDialog.getByRole('button', { name: 'Close' }).click();
+    await expect(locationsDialog).not.toBeVisible();
+    await page.getByRole('button', { name: 'Project locations' }).click();
+    await expect(page.getByRole('dialog', { name: 'Folders Binaflow can browse' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(
+      page.getByRole('dialog', { name: 'Folders Binaflow can browse' }),
+    ).not.toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create or continue a task' })).toBeVisible();
   } finally {
     await page.close();

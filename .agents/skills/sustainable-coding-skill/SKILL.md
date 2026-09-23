@@ -35,7 +35,7 @@ _No programes por inercia. Escribe código limpio para humanos, garantizando que
 - **Diseño para el presente:** (Código Sostenible) No introduzcas abstracciones prematuras ni dejes ganchos ("hooks") para preparar futuras características teóricas que no han sido solicitadas explícitamente. Recuerda que la duplicación es mucho más barata que la abstracción incorrecta.
 - **Minimizar el diseño superfluo:** (Code Complete) Mantén el sistema "esbelto" (Lean). Cada clase, método o variable debe ganarse su lugar. Elimina cualquier asunción o configuración especulativa.
 - **Reglas del Diseño Simple (Kent Beck):** Prioriza siempre las siguientes cuatro reglas en orden:
-    1. Que pasen todas las pruebas automatizadas.
+    1. Que el comportamiento solicitado funcione y se compruebe de forma adecuada al cambio.
     2. Que revele claramente la intención del programador (legibilidad para humanos).
     3. Que no contenga duplicidad innecesaria.
     4. Que minimice el número de elementos (clases, métodos, líneas).
@@ -47,18 +47,17 @@ _No programes por inercia. Escribe código limpio para humanos, garantizando que
 **Regla:** Realiza intervenciones de mínimo impacto para preservar la estabilidad del sistema histórico, aislando de forma estricta los tipos de cambio.
 
 - **Aislamiento de Cambios:** (Código Sostenible) **Nunca mezcles cambios funcionales con refactorizaciones, cambios de formato o limpieza de estilo en el mismo commit/pull request.** Si detectas código adyacente que requiere limpieza (Regla del Boy Scout), hazlo en un paso de refactorización completamente independiente y dedicado.
-- **Paranoia en cambios pequeños:** (Code Complete) Los cambios pequeños (de 1 a 5 líneas) estadísticamente sufren más tasas de error debido a que se tratan con informalidad. Trata las modificaciones quirúrgicas con la misma rigurosidad, pruebas y revisiones que un gran cambio estructural.
+- **Paranoia en cambios pequeños:** (Code Complete) Los cambios pequeños (de 1 a 5 líneas) estadísticamente sufren más tasas de error debido a que se tratan con informalidad. Revisa también las modificaciones quirúrgicas y comprueba su comportamiento con un esfuerzo proporcional al riesgo.
 - **Trazabilidad estricta:** Cada línea de código que agregues o modifiques debe poder ser rastreado directamente a una decisión tomada en la especificación inicial aprobada.
 - **Limpieza de huellas:** Elimina de inmediato variables, importaciones, constantes o funciones que queden huérfanas o en desuso debido exclusivamente a _tus_ modificaciones. No elimines código muerto preexistente a menos que sea explícitamente solicitado.
 
 ---
 
-## 4. Ejecución Orientada a Objetivos y TDD (Goal-Driven Execution)
+## 4. Ejecución Orientada a Objetivos con Tracer Bullets
 
-**Regla:** No se da por terminado un cambio de código hasta que exista evidencia física y automatizada de su correcto funcionamiento.
+**Regla:** Para trabajos que atraviesen varias capas, construye pronto un recorrido funcional mínimo de extremo a extremo y úsalo para confirmar que la dirección elegida funciona. La verificación debe ser proporcional al cambio, sin imponer la creación de tests.
 
-- **Test-First (Escribir pruebas primero):** (The Pragmatic Programmer / Código Sostenible)
-    - **Para añadir funcionalidad:** Escribe primero la prueba unitaria o de integración, verifica que falle (Red), implementa el código mínimo indispensable para que pase (Green), y luego limpia el diseño (Refactor).
-    - **Para corregir un bug:** Escribe una prueba automatizada que reproduzca fielmente el error antes de intentar solucionarlo. Tu corrección es exitosa solo cuando esa prueba en específico pasa de rojo a verde de manera estable.
-- **Evidencia Física de Éxito:** Sigue la disciplina del modo "Strict TDD" de Gentle-AI. El éxito no se asume ni se declara por estimación; se demuestra documentando la ejecución exitosa de la suite de pruebas locales.
+- **Tracer bullet (recorrido trazador):** (The Pragmatic Programmer) Conecta el camino real más pequeño que atraviese los componentes implicados y produzca un resultado observable. Úsalo para descubrir temprano problemas de integración y orientar el resto del trabajo. Es código funcional que puede evolucionar, no un prototipo descartable ni una obligación de escribir tests.
+- **Para cambios acotados o bugs:** Identifica el comportamiento esperado, implementa la corrección mínima y comprueba el resultado por el medio disponible y pertinente; no fuerces un recorrido extremo a extremo si no aporta información.
+- **Evidencia y alcance:** Informa qué se comprobó y qué quedó sin comprobar. Puedes aprovechar pruebas existentes cuando el flujo permita ejecutarlas, pero no crees tests automatizados salvo solicitud explícita del usuario. QA revisa el código existente; no es una fase implícita de creación de pruebas.
 - **Diseño por Contrato:** Define precondiciones, postcondiciones e invariantes de clase claras (aserciones) en tus funciones para validar límites matemáticos antes y después de cada flujo importante.

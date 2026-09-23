@@ -119,6 +119,12 @@ button:disabled {
   width: min(24rem, 100%);
 }
 
+.canvas-rows {
+  align-self: center;
+  color: #4b5563;
+  font-size: 0.85rem;
+}
+
 .toolbar-actions,
 .inspector-actions {
   display: flex;
@@ -235,6 +241,21 @@ h2 {
   text-align: left;
 }
 
+.canvas-block.is-child {
+  z-index: 2;
+  border-style: dashed;
+  border-color: #7c3aed;
+  background: #f3e8ff;
+}
+
+.canvas-block-parent {
+  overflow: hidden;
+  color: #6b21a8;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-block:hover,
 .canvas-block.is-selected {
   border-color: #2563eb;
@@ -284,6 +305,30 @@ h2 {
   margin: 1rem 0 0;
   color: #6b7280;
   line-height: 1.5;
+}
+
+.hierarchy-status {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid #ddd6fe;
+  border-radius: 0.5rem;
+  background: #f5f3ff;
+  font-size: 0.85rem;
+}
+
+.hierarchy-status small {
+  color: #4b5563;
+  line-height: 1.4;
+}
+
+.inspector-fields select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.45rem;
+  background: #fff;
 }
 
 .inspector-fields {

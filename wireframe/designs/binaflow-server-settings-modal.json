@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "name": "OVERLAY MODAL - Binaflow - Configuración del servidor",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "overlay-backdrop",
+      "title": "Fondo overlay",
+      "description": "Capa oscurecida sobre la pantalla Projects. No pertenece al layout base; se muestra solo al activar Server settings.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 18
+    },
+    {
+      "id": "modal-frame",
+      "title": "CONTENEDOR MODAL",
+      "description": "Ventana centrada con límite de ancho y scroll interno. Origen: botón Server settings de binaflow-projects.json. Cerrar vuelve a la pantalla previa sin cambiarla.",
+      "x": 2,
+      "y": 2,
+      "width": 8,
+      "height": 13
+    },
+    {
+      "id": "modal-heading",
+      "title": "Título y cerrar",
+      "description": "Server settings, explicación breve y botón accesible de cierre.",
+      "x": 3,
+      "y": 3,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "device-network-fields",
+      "title": "Equipo y red",
+      "description": "Nombre del equipo, host, puerto y origin. Organizar campos en grupos legibles.",
+      "x": 3,
+      "y": 6,
+      "width": 6,
+      "height": 4
+    },
+    {
+      "id": "tls-fields",
+      "title": "Certificado HTTPS",
+      "description": "Sección plegable para certificado y clave privada. Explicar que la clave es sensible y nunca se devuelve al navegador.",
+      "x": 3,
+      "y": 11,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "id": "modal-save",
+      "title": "Guardar configuración",
+      "description": "Acción de guardado, errores y aviso restartRequired si los cambios necesitan reiniciar el servidor.",
+      "x": 3,
+      "y": 15,
+      "width": 6,
+      "height": 2
+    }
+  ]
+}

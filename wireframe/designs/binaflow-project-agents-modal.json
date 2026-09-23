@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "name": "OVERLAY MODAL - Binaflow - Perfiles de agentes del proyecto",
+  "grid": {
+    "columns": 12,
+    "rowHeight": 40
+  },
+  "blocks": [
+    {
+      "id": "overlay-backdrop",
+      "title": "Fondo overlay",
+      "description": "Capa sobre el workspace del proyecto. No pertenece al layout de tareas; se abre desde Agents.",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 18
+    },
+    {
+      "id": "modal-frame",
+      "title": "CONTENEDOR MODAL",
+      "description": "Ventana superpuesta centrada con scroll interno. Origen: acción Agents del workspace en binaflow-projects.json.",
+      "x": 2,
+      "y": 2,
+      "width": 8,
+      "height": 13
+    },
+    {
+      "id": "modal-heading",
+      "title": "Agentes del proyecto",
+      "description": "Título, contexto del proyecto y cierre accesible.",
+      "x": 3,
+      "y": 3,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "id": "planner-profile",
+      "title": "Perfil planner",
+      "description": "Configuración visible del planner lógico, proveedor/modelo y permisos de solo lectura.",
+      "x": 3,
+      "y": 6,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "id": "builder-profile",
+      "title": "Perfil builder",
+      "description": "Configuración del builder lógico y límites aplicados al proyecto.",
+      "x": 3,
+      "y": 10,
+      "width": 6,
+      "height": 3
+    },
+    {
+      "id": "modal-feedback",
+      "title": "Guardado y errores",
+      "description": "Confirmación de cambios y errores de configuración sin cerrar el modal ni perder el contexto.",
+      "x": 3,
+      "y": 14,
+      "width": 6,
+      "height": 2
+    }
+  ]
+}

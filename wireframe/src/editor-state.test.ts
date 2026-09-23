@@ -1,9 +1,10 @@
 import {
   MAX_BLOCKS,
+  MAX_CANVAS_ROWS,
   MAX_DESCRIPTION_LENGTH,
   MAX_TITLE_LENGTH,
   createEmptyDocument,
-  type WireframeBlockV1,
+  type WireframeBlockV2,
 } from './model';
 import { createEditorState, editorReducer, type EditorState } from './editor-state';
 
@@ -131,14 +132,23 @@ describe('editor state', () => {
   });
 
   it('does not exceed the block limit or accept duplicate IDs', () => {
-    let state = createEditorState();
-    for (let index = 0; index < MAX_BLOCKS; index += 1) {
-      state = addBlock(state, `block-${index}`);
-    }
+    const document = createEmptyDocument();
+    document.blocks = Array.from({ length: MAX_BLOCKS }, (_, index) => ({
+      id: `block-${index}`,
+      parentId: null,
+      title: `Bloque ${index}`,
+      description: '',
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    }));
+    const state = createEditorState(document);
     const full = addBlock(state, 'overflow');
     const duplicate = addBlock(state, 'block-0');
 
     expect(full.document.blocks).toHaveLength(MAX_BLOCKS);
+    expect(full.notice).toMatch(/200/);
     expect(duplicate).toBe(state);
   });
 
@@ -160,14 +170,142 @@ describe('editor state', () => {
     expect(missingGeometry).toBe(state);
   });
 
+  it('adds children with relative coordinates and refuses deeper nesting', () => {
+    const parent = editorReducer(createStateWithBlock(), {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 6, height: 6 },
+    });
+    const child = editorReducer(parent, { type: 'add-child', id: 'child', parentId: 'first' });
+    const secondChild = editorReducer(child, {
+      type: 'add-child',
+      id: 'child-2',
+      parentId: 'first',
+    });
+    expect(secondChild.document.blocks[1]).toMatchObject({ parentId: 'first', x: 0, y: 0 });
+    expect(secondChild.document.blocks[2]).toMatchObject({ parentId: 'first', x: 2, y: 0 });
+    const rejected = editorReducer(secondChild, {
+      type: 'add-child',
+      id: 'grandchild',
+      parentId: 'child',
+    });
+    expect(rejected.document.blocks).toHaveLength(3);
+    expect(rejected.notice).toMatch(/bloque raíz/);
+  });
+
+  it('reparents without changing visual position and rejects a child that cannot fit', () => {
+    const state = editorReducer(createStateWithBlock(), {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 6, height: 6 },
+    });
+    const withSecond = editorReducer(addBlock(state, 'second'), {
+      type: 'set-block-geometry',
+      id: 'second',
+      geometry: { x: 3, y: 0, width: 3, height: 3 },
+    });
+    const movedIn = editorReducer(withSecond, {
+      type: 'move-to-parent',
+      id: 'second',
+      parentId: 'first',
+    });
+    expect(movedIn.document.blocks[1]).toMatchObject({ parentId: 'first', x: 3, y: 0 });
+    const movedParent = editorReducer(movedIn, {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 2, y: 2, width: 6, height: 6 },
+    });
+    expect(movedParent.document.blocks[1]).toMatchObject({ parentId: 'first', x: 3, y: 0 });
+    const movedOut = editorReducer(movedParent, {
+      type: 'move-to-parent',
+      id: 'second',
+      parentId: null,
+    });
+    expect(movedOut.document.blocks[1]).toMatchObject({ parentId: null, x: 5, y: 2 });
+  });
+
+  it('rejects reparenting when relative coordinates would place the child outside its parent', () => {
+    const parent = createStateWithBlock();
+    const other = addBlock(parent, 'other');
+    const rejected = editorReducer(other, {
+      type: 'move-to-parent',
+      id: 'other',
+      parentId: 'first',
+    });
+    expect(rejected.document).toBe(other.document);
+    expect(rejected.document.blocks[1]).toMatchObject({ parentId: null, x: 3, y: 0 });
+    expect(rejected.notice).toMatch(/no cabe/);
+  });
+
+  it('duplicates a parent together with its child under new IDs', () => {
+    const parent = editorReducer(createStateWithBlock(), {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 6, height: 6 },
+    });
+    const child = editorReducer(parent, { type: 'add-child', id: 'child', parentId: 'first' });
+    const duplicate = editorReducer(child, {
+      type: 'duplicate-block',
+      sourceId: 'first',
+      id: 'copy',
+      childIds: ['copy-child'],
+    });
+    expect(duplicate.document.blocks).toHaveLength(4);
+    expect(duplicate.document.blocks[2]).toMatchObject({ id: 'copy', parentId: null });
+    expect(duplicate.document.blocks[3]).toMatchObject({ id: 'copy-child', parentId: 'copy' });
+  });
+
+  it('keeps children inside resized parents and deletes parent families', () => {
+    const parent = editorReducer(createStateWithBlock(), {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 6, height: 6 },
+    });
+    const child = editorReducer(parent, { type: 'add-child', id: 'child', parentId: 'first' });
+    const undersized = editorReducer(child, {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 1, height: 1 },
+    });
+    expect(undersized.document.blocks[0]).toMatchObject({ width: 2, height: 1 });
+    const deleted = editorReducer(undersized, { type: 'delete-block', id: 'first' });
+    expect(deleted.document.blocks).toEqual([]);
+  });
+
+  it('grows the canvas on demand and reports when a root cannot fit', () => {
+    const state = editorReducer(createStateWithBlock(), {
+      type: 'set-block-geometry',
+      id: 'first',
+      geometry: { x: 0, y: 0, width: 12, height: 18 },
+    });
+    const full = addBlock(state, 'second');
+    expect(full.document.blocks).toHaveLength(1);
+    expect(full.notice).toMatch(/Amplíalo/);
+    const grown = editorReducer(full, { type: 'grow-canvas' });
+    const added = addBlock(grown, 'second');
+    expect(added.document.canvas.rows).toBe(24);
+    expect(added.document.blocks).toHaveLength(2);
+  });
+
+  it('caps canvas growth at 500 rows', () => {
+    const document = createEmptyDocument();
+    document.canvas.rows = MAX_CANVAS_ROWS - 2;
+    const almostFull = editorReducer(createEditorState(document), { type: 'grow-canvas' });
+    expect(almostFull.document.canvas.rows).toBe(MAX_CANVAS_ROWS);
+    const full = editorReducer(almostFull, { type: 'grow-canvas' });
+    expect(full.document.canvas.rows).toBe(MAX_CANVAS_ROWS);
+    expect(full.notice).toMatch(/máximo de 500 filas/);
+  });
+
   it('keeps block values as plain serializable records', () => {
     const state = createStateWithBlock();
-    const block: WireframeBlockV1 = state.document.blocks[0]!;
+    const block: WireframeBlockV2 = state.document.blocks[0]!;
 
     expect(Object.keys(block).sort()).toEqual([
       'description',
       'height',
       'id',
+      'parentId',
       'title',
       'width',
       'x',

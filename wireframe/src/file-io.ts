@@ -1,7 +1,7 @@
 import {
   parseWireframeDocument,
   serializeWireframeDocument,
-  type WireframeDocumentV1,
+  type WireframeDocumentV2,
 } from './model';
 
 export const MAX_WIREFRAME_FILE_SIZE = 1024 * 1024;
@@ -21,7 +21,7 @@ export interface DownloadEnvironment {
   removeAnchor: (anchor: HTMLAnchorElement) => void;
 }
 
-export async function readWireframeFile(file: File): Promise<WireframeDocumentV1> {
+export async function readWireframeFile(file: File): Promise<WireframeDocumentV2> {
   if (file.size > MAX_WIREFRAME_FILE_SIZE) {
     throw new WireframeFileError('El archivo supera el límite de 1 MiB.');
   }
@@ -36,12 +36,12 @@ export async function readWireframeFile(file: File): Promise<WireframeDocumentV1
   try {
     return parseWireframeDocument(parsed);
   } catch {
-    throw new WireframeFileError('El archivo no coincide con el formato de wireframe v1.');
+    throw new WireframeFileError('El archivo no coincide con el formato de wireframe v1 o v2.');
   }
 }
 
 export function createWireframeDownload(
-  document: WireframeDocumentV1,
+  document: WireframeDocumentV2,
   environment: DownloadEnvironment = createBrowserDownloadEnvironment(),
 ): void {
   const blob = new Blob([serializeWireframeDocument(document)], {

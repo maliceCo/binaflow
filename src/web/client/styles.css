@@ -272,6 +272,12 @@ p {
   margin-bottom: 0;
 }
 
+.project-locations-intro {
+  max-width: 42rem;
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+}
+
 .project-picker-modal {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1184,6 +1190,68 @@ select {
   background: var(--surface-soft);
 }
 
+.settings-section.locations-groups {
+  display: grid;
+  gap: 1rem;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.locations-groups .project-root-group {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.locations-groups .project-root-group h3 {
+  margin-bottom: 0.7rem;
+}
+
+.locations-groups .available-root-group {
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+}
+
+.locations-groups .authorized-root-list,
+.locations-groups .available-root-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.locations-groups .authorized-root-list li,
+.locations-groups .available-root-list li {
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  background: var(--surface-soft);
+}
+
+.locations-groups .authorized-root-list li {
+  border-color: rgba(125, 226, 172, 0.55);
+  background: var(--success-soft);
+}
+
+.locations-groups .project-root-empty {
+  margin: 0;
+  border: 1px dashed var(--line-strong);
+  border-radius: 0.55rem;
+  padding: 0.75rem 0.8rem;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.locations-groups .project-root-group li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.locations-groups .project-root-group li > button {
+  flex: 0 0 auto;
+}
+
 .settings-section li {
   display: flex;
   align-items: center;
@@ -1195,6 +1263,14 @@ select {
 
 .settings-section li:first-child {
   border-top: 0;
+}
+
+.locations-groups .authorized-root-list li:first-child {
+  border-top: 1px solid rgba(125, 226, 172, 0.55);
+}
+
+.locations-groups .available-root-list li:first-child {
+  border-top: 1px solid var(--line-strong);
 }
 
 .transfer-preview {
@@ -1306,6 +1382,11 @@ select {
   .project-list li > button,
   .recent-tasks li > button {
     width: 100%;
+  }
+
+  .locations-groups .project-root-group li {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .task-stage-nav button {
