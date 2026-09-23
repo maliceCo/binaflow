@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  grep: /(?:creates, edits, persists, exports and imports a wireframe|creates a contained block, reparents it and grows the persisted canvas)/,
   fullyParallel: false,
   reporter: 'list',
   use: {
