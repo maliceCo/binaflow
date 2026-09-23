@@ -47,3 +47,49 @@ test('creates, edits, persists, exports and imports a wireframe', async ({ page 
   await expect(page.getByLabel('Columna')).toHaveValue('2');
   await expect(page.getByLabel('Ancho')).toHaveValue('5');
 });
+
+test('drags and resizes a real canvas block and persists its geometry', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Añadir bloque' }).click();
+
+  const canvas = page.getByTestId('canvas');
+  const block = page.locator('.canvas-block');
+  const canvasBox = await canvas.boundingBox();
+  const blockBox = await block.boundingBox();
+  expect(canvasBox).not.toBeNull();
+  expect(blockBox).not.toBeNull();
+  const cellWidth = canvasBox!.width / 12;
+
+  await page.mouse.move(
+    blockBox!.x + blockBox!.width * 0.75,
+    blockBox!.y + blockBox!.height * 0.75,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    blockBox!.x + blockBox!.width * 0.75 + cellWidth,
+    blockBox!.y + blockBox!.height * 0.75 + 40,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+
+  await expect(page.getByLabel('Columna')).toHaveValue('1');
+  await expect(page.getByLabel('Fila')).toHaveValue('1');
+  const resizeHandle = block.locator('div[style*="se-resize"]');
+  const handleBox = await resizeHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  const handleX = handleBox!.x + 15;
+  const handleY = handleBox!.y + 15;
+  await resizeHandle.hover({ position: { x: 15, y: 15 } });
+  await page.mouse.down();
+  await page.mouse.move(handleX + cellWidth, handleY + 40, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByLabel('Ancho')).toHaveValue('4');
+  await expect(page.getByLabel('Alto')).toHaveValue('4');
+  await page.reload();
+  await block.click();
+  await expect(page.getByLabel('Columna')).toHaveValue('1');
+  await expect(page.getByLabel('Fila')).toHaveValue('1');
+  await expect(page.getByLabel('Ancho')).toHaveValue('4');
+  await expect(page.getByLabel('Alto')).toHaveValue('4');
+});
